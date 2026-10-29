@@ -70,6 +70,8 @@ class Context:
     # Aralığı belgenin kendi başlığında yazan belgeler (ör. Luca "Tarih Aralığı").
     # Diğerlerinde aralık yalnızca kayıt tarihlerinden çıkarılır ve kapsam için kanıt sayılmaz.
     declared: set = field(default_factory=set)
+    # Mizan yalnızca bir tarih aralığının hareketlerini içeriyorsa (devir yok) bakiyeleri gerçek bakiye değildir.
+    mizan_hareket: bool = False
 
     @property
     def leaves(self):
@@ -243,7 +245,11 @@ def k05(ctx: Context) -> Result:
     leaves = {ln.hesap_kodu: ln for ln in ctx.leaves}
     yb, ya = defaultdict(int), defaultdict(int)
     yrows = defaultdict(list)
+    rng = ctx.ranges.get("mizan") if "mizan" in ctx.declared else None
     for ln in ctx.yevmiye:
+        # Mizan tarih aralığını belirtiyorsa (Luca), yalnızca o aralıktaki yevmiye kayıtları karşılaştırılır.
+        if rng and not (rng[0] <= ln.tarih <= rng[1]):
+            continue
         yb[ln.hesap_kodu] += ln.borc
         ya[ln.hesap_kodu] += ln.alacak
         yrows[ln.hesap_kodu].append(ln)
@@ -290,11 +296,14 @@ def _running_negative(lines, opening: int):
 
 
 def k09(ctx: Context) -> Result:
-    if ctx.mizan:
+    if ctx.mizan and not ctx.mizan_hareket:
         return _k09_mizan(ctx)
     for doc in ("kebir", "muavin"):
         if getattr(ctx, doc):
             return _k09_ledger(ctx, doc)
+    if ctx.mizan:
+        return Result(K09, "calistirilamadi", "Çalıştırılamadı: mizan yalnızca tarih aralığındaki hareketleri içeriyor, "
+                                              "kasa bakiyesi bundan hesaplanamaz. Dönem başından alınmış mizan veya defteri kebir gerekli.")
     return Result(K09, "calistirilamadi", "Çalıştırılamadı: mizan, defteri kebir veya muavin yüklenmemiş.")
 
 

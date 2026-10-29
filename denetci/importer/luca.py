@@ -31,8 +31,9 @@ PROFILE_LABELS = {
     "luca_yevmiye": "Luca yevmiye defteri",
     "luca_kebir": "Luca defteri kebir",
     "luca_muavin": "Luca muavin defter",
+    "luca_mizan": "Luca mizan",
 }
-PROFILE_DOC = {"luca_yevmiye": "yevmiye", "luca_kebir": "kebir", "luca_muavin": "muavin"}
+PROFILE_DOC = {"luca_yevmiye": "yevmiye", "luca_kebir": "kebir", "luca_muavin": "muavin", "luca_mizan": "mizan"}
 
 
 @dataclass
@@ -43,6 +44,7 @@ class ParsedRow:
     note: str | None = None
     record: dict | None = None
     opening: dict | None = None
+    tb: dict | None = None  # mizan satırı
 
 
 @dataclass
@@ -84,6 +86,9 @@ def sniff(sheets) -> tuple[str, object] | None:
             return "luca_kebir", sheet
         if any(h.startswith("tarih tip fis no aciklama borc alacak bakiye") for h in heads):
             return "luca_muavin", sheet
+        if any(h.startswith("hesap kodu hesap adi") and "borc bakiyesi" in h and "alacak bakiyesi" in h for h in heads) \
+                and any(h.startswith("tarih araligi") for h in heads):
+            return "luca_mizan", sheet
     return None
 
 
@@ -101,7 +106,8 @@ def _info(rows) -> dict:
 
 
 def parse(profile: str, sheet) -> Parsed:
-    fn = {"luca_yevmiye": _parse_yevmiye, "luca_kebir": _parse_kebir, "luca_muavin": _parse_muavin}[profile]
+    fn = {"luca_yevmiye": _parse_yevmiye, "luca_kebir": _parse_kebir, "luca_muavin": _parse_muavin,
+          "luca_mizan": _parse_mizan}[profile]
     out = Parsed(profile, PROFILE_DOC[profile], [])
     out.info = _info(sheet.rows)
     fn(sheet, out)
@@ -309,3 +315,54 @@ def _parse_muavin(sheet, out: Parsed):
                 "borc": _amt(_v(vals, 4)), "alacak": _amt(_v(vals, 5))}))
             continue
         out.rows.append(ParsedRow(row_no, vals, "bilgi"))
+
+
+# ---- Mizan ------------------------------------------------------------------
+
+MIZAN_COLS = {"borc": "borc", "alacak": "alacak", "borc bakiyesi": "bakiye_borc", "alacak bakiyesi": "bakiye_alacak"}
+
+
+def _parse_mizan(sheet, out: Parsed):
+    """Luca mizanı: HESAP KODU | HESAP ADI | (döviz) | BORÇ | ALACAK | BORÇ BAKİYESİ | ALACAK BAKİYESİ.
+    1-2 haneli kodlar (sınıf ve grup) toplam satırıdır; 3 haneli ve alt kodlar hesap satırı olarak alınır.
+    BORÇ/ALACAK yalnızca "Tarih Aralığı"ndaki hareketleri içerir; açılış kolonu yoktur."""
+    cols = None
+    sums = {"borc": 0, "alacak": 0, "bakiye_borc": 0, "bakiye_alacak": 0}
+    for row_no, vals in sheet.rows:
+        a = _v(vals, 0)
+        fa = fold(a)
+        if all(is_empty(v) for v in vals):
+            out.rows.append(ParsedRow(row_no, vals, "bos"))
+            continue
+        if fa == "hesap kodu":
+            cols = {MIZAN_COLS[fold(v)]: i for i, v in enumerate(vals) if fold(v) in MIZAN_COLS}
+            out.rows.append(ParsedRow(row_no, vals, "baslik"))
+            continue
+        if cols is None:
+            out.rows.append(ParsedRow(row_no, vals, "bilgi"))
+            continue
+        amounts = {k: _amt(_v(vals, i)) for k, i in cols.items()}
+        if fa.startswith("genel toplam"):
+            out.rows.append(ParsedRow(row_no, vals, "ara_toplam", note="Genel toplam"))
+            diff = [k for k in sums if amounts.get(k, 0) != sums[k]]
+            if diff:
+                out.errors.append(f"Satır {row_no}: GENEL TOPLAM satırı ana hesapların toplamıyla tutmuyor "
+                                  f"(borç {kurus_str(amounts.get('borc', 0))} / {kurus_str(sums['borc'])}, "
+                                  f"alacak {kurus_str(amounts.get('alacak', 0))} / {kurus_str(sums['alacak'])}).")
+            continue
+        code, warn = parse_account_code(a)
+        if not code:
+            out.rows.append(ParsedRow(row_no, vals, "belirsiz" if any(amounts.values()) else "bilgi"))
+            continue
+        if code.isdigit() and len(code) < 3:
+            out.rows.append(ParsedRow(row_no, vals, "ara_toplam", note=f"{'Sınıf' if len(code) == 1 else 'Grup'} toplamı {code}"))
+            continue
+        if len(code_segments(code)) == 1:
+            for k in sums:
+                sums[k] += amounts.get(k, 0)
+        out.rows.append(ParsedRow(row_no, vals, "kayit", note=warn, tb={
+            "hesap_kodu": code, "hesap_adi": None if is_empty(_v(vals, 1)) else str(_v(vals, 1)).strip(),
+            "borc": amounts.get("borc", 0), "alacak": amounts.get("alacak", 0),
+            "bakiye_borc": amounts.get("bakiye_borc", 0), "bakiye_alacak": amounts.get("bakiye_alacak", 0)}))
+    if cols is None:
+        out.errors.append("Mizan başlık satırı (HESAP KODU) bulunamadı.")

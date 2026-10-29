@@ -232,14 +232,19 @@ def _confirm_profile(session: Session, batch: ImportBatch) -> ImportBatch:
     period = session.get(Period, batch.period_id)
     counts: dict[str, int] = {}
     out_of_period = 0
+    tb_lines: list[TrialBalanceLine] = []
     for pr in parsed.rows:
         raw = RawRow(client_id=batch.client_id, batch_id=batch.id, sheet=sheet.name, row_no=pr.row_no,
                      cells=[_json_safe(v) for v in pr.values], row_class=pr.cls, note=pr.note)
         session.add(raw)
         counts[pr.cls] = counts.get(pr.cls, 0) + 1
-        if pr.record is None and pr.opening is None:
+        if pr.record is None and pr.opening is None and pr.tb is None:
             continue
         session.flush()
+        if pr.tb:
+            ln = TrialBalanceLine(client_id=batch.client_id, batch_id=batch.id, raw_row_id=raw.id, **pr.tb)
+            session.add(ln)
+            tb_lines.append(ln)
         if pr.record:
             r = pr.record
             if period and not (period.baslangic <= r["tarih"] <= period.bitis):
@@ -253,10 +258,23 @@ def _confirm_profile(session: Session, batch: ImportBatch) -> ImportBatch:
             session.add(OpeningBalance(client_id=batch.client_id, batch_id=batch.id, raw_row_id=raw.id,
                                        hesap_kodu=o["hesap_kodu"], borc=o["borc"], alacak=o["alacak"]))
     warnings = list(parsed.warnings)
+    info = dict(parsed.info)
+    if tb_lines:
+        _set_hierarchy(tb_lines, warnings)
+        rng, donem = info.get("tarih_araligi"), info.get("donem")
+        # Tarih aralığı dönem başından başlamıyorsa mizan devirleri içermez: bakiyeler yalnızca aralıktaki
+        # hareketlerin farkıdır, gerçek dönem sonu bakiyesi değildir.
+        if rng and donem and rng[0] > donem[0]:
+            info["bakiye_turu"] = "hareket"
+            warnings.insert(0, "Bu mizan yalnızca tarih aralığındaki hareketleri içeriyor (önceki aylardan devir yok). "
+                               "Bakiye kolonları gerçek bakiye değildir; kasa gibi bakiye kontrolleri bu mizandan yapılmaz. "
+                               "Gerçek bakiyeler için mizanı Luca'dan dönem başından itibaren alın.")
+        else:
+            info["bakiye_turu"] = "kumulatif"
     if out_of_period:
         warnings.append(f"{out_of_period} satırın tarihi dönem dışında.")
     session.flush()
-    _finalize(session, batch, len(sheet.rows), counts, warnings, parsed.errors, parsed.info)
+    _finalize(session, batch, len(sheet.rows), counts, warnings, parsed.errors, info)
     return batch
 
 

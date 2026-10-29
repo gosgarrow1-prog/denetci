@@ -5,7 +5,7 @@ from sqlalchemy import select
 from denetci import synthetic_luca
 from denetci.checks.engine import run_analysis
 from denetci.importer.load import confirm, create_draft
-from denetci.models import Finding, FindingEvidence, JournalLine, OpeningBalance, RawRow
+from denetci.models import Finding, FindingEvidence, JournalLine, OpeningBalance, RawRow, TrialBalanceLine
 
 
 def _import(session, c, p, files):
@@ -100,3 +100,45 @@ def test_luca_new_version_supersedes(session, client_period, data_root):
     assert second["yevmiye"].version == 2 and second["yevmiye"].supersedes_id == first["yevmiye"].id
     run = run_analysis(session, c, p)
     assert run.source_batches["yevmiye"] == second["yevmiye"].id
+
+
+def test_luca_mizan_movement_only(session, client_period, data_root):
+    """Tarih aralığı dönem başından başlamayan Luca mizanı: bakiyeler gerçek bakiye değildir."""
+    c, p = client_period
+    b = _import(session, c, p, synthetic_luca.generate(data_root / "luca_m", hatali=True, mizan=True))
+    mz = b["mizan"]
+    assert mz.summary["bakiye_turu"] == "hareket"
+    assert "devir yok" in mz.summary["uyarilar"][0]
+    tl = list(session.scalars(select(TrialBalanceLine).where(TrialBalanceLine.batch_id == mz.id)))
+    # Sınıf (1) ve grup (10) satırları hesap olarak alınmaz.
+    assert all(len(t.hesap_kodu) >= 3 for t in tl)
+    leaves = [t for t in tl if t.is_leaf]
+    assert leaves and all(len(t.hesap_kodu.split(".")) == 3 for t in leaves)
+    run = run_analysis(session, c, p)
+    status = {r["id"]: r["status"] for r in run.rule_results}
+    assert status["K-01"] == status["K-03"] == status["K-04"] == "gecti"
+    found = {(f.rule_id, f.hesap_kodu) for f in session.scalars(select(Finding).where(Finding.run_id == run.id))}
+    assert {h for r, h in found if r == "K-05"} == {"102.01.001", "102.02.001", "770.02.001"}
+    # Kasa bakiyesi hareket mizanından değil, nakli yekün içeren kebirden kontrol edilir.
+    assert ("K-09", "100") in found
+
+
+def test_luca_mizan_movement_only_without_ledger(session, client_period, data_root):
+    c, p = client_period
+    files = synthetic_luca.generate(data_root / "luca_m2", mizan=True)
+    _import(session, c, p, {"mizan": files["mizan"]})
+    run = run_analysis(session, c, p)
+    k09 = next(r for r in run.rule_results if r["id"] == "K-09")
+    assert k09["status"] == "calistirilamadi" and "hareket" in k09["message"]
+
+
+def test_luca_mizan_cumulative(session, client_period, data_root):
+    c, p = client_period
+    files = synthetic_luca.generate(data_root / "luca_mk", hatali=True, mizan=True, kumulatif=True)
+    b = _import(session, c, p, {"mizan": files["mizan"]})
+    assert b["mizan"].summary["bakiye_turu"] == "kumulatif"
+    run = run_analysis(session, c, p)
+    status = {r["id"]: r["status"] for r in run.rule_results}
+    assert status["K-01"] == status["K-03"] == "gecti"
+    k09 = list(session.scalars(select(Finding).where(Finding.run_id == run.id, Finding.rule_id == "K-09")))
+    assert [f.hesap_kodu for f in k09] == ["100.01.001"] and k09[0].amount == 48_250_00

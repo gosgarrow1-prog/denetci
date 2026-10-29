@@ -39,7 +39,9 @@ def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRu
         if batches[d]:
             ctx.openings[d] = list(session.scalars(select(OpeningBalance).where(
                 OpeningBalance.client_id == client.id, OpeningBalance.batch_id == batches[d].id)))
-    for d in ("yevmiye", "kebir", "muavin"):
+    if mizan_b and mizan_b.summary.get("bakiye_turu") == "hareket":
+        ctx.mizan_hareket = True
+    for d in ("mizan", "yevmiye", "kebir", "muavin"):
         b = batches[d]
         if b:
             rng = b.summary.get("tarih_araligi") or b.summary.get("kayit_tarihleri")

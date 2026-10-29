@@ -8,7 +8,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://clau
 
 - **Giriş:** Kayıt ekranı yok. Parola ve telefondaki doğrulayıcı uygulamanın 6 haneli koduyla giriş yapılır (MFA). Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez.
 - **Mükellef ve dönem:** Mükellef ve dönem tanımlanabilir.
-- **Luca dosyaları:** Luca'nın Excel çıktısı olarak alınan **yevmiye defteri, defteri kebir ve muavin** kolon eşleştirmesi gerekmeden tanınır. Yevmiyede yalnızca yaprak hesap satırları kayıt olarak alınır; ana ve ara seviye satırları toplamdır. Her fişin TOPLAM satırı ve kebirdeki her grubun Toplam satırı okunan kayıtlarla karşılaştırılır; tutmazsa aktarım hata gösterir. Kebir ve muavindeki "Nakli Yekün" önceki dönemden gelen tutar olarak ayrıca saklanır.
+- **Luca dosyaları:** Luca'nın Excel çıktısı olarak alınan **mizan, yevmiye defteri, defteri kebir ve muavin** kolon eşleştirmesi gerekmeden tanınır. Yevmiyede yalnızca yaprak hesap satırları kayıt olarak alınır; ana ve ara seviye satırları toplamdır. Her fişin TOPLAM satırı ve kebirdeki her grubun Toplam satırı okunan kayıtlarla karşılaştırılır; tutmazsa aktarım hata gösterir. Kebir ve muavindeki "Nakli Yekün" önceki dönemden gelen tutar olarak ayrıca saklanır. Mizanın "Tarih Aralığı" dönem başından başlamıyorsa (ör. yalnızca Eylül), mizan devir içermez; bakiye kolonları gerçek bakiye sayılmaz ve uygulama bunu aktarımda uyarır.
 - **Diğer dosyalar:** Mizan ve yevmiye `.xlsx` veya `.csv` olarak da yüklenebilir. Belge türü ve kolonlar otomatik önerilir. Önizlemede ara toplam, nakli yekün ve tekrar eden başlık satırları ayıklanır. Onaylamadan hiçbir şey aktarılmaz.
 - **Veri okuma:** Türkçe sayı ve tarih biçimleri okunur. Hesap kodları metin olarak tutulduğu için baştaki sıfırlar korunur. Tutarlar kuruş cinsinden tam sayı olarak saklanır, kayan nokta hatası oluşmaz.
 - **Sürümler:** Aynı dosya ikinci kez yüklenirse reddedilir. Yeni sürüm yüklendiğinde eski sürüm ve eski analizler saklanır.
@@ -25,9 +25,9 @@ Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://clau
 - **Veri durumu:** Analiz sonucu "analize uygun", "kısmen uygun" veya "kritik veri sorunu var" olarak gösterilir. Eksik belge varsa ilgili kontrol "çalıştırılamadı" olarak işaretlenir.
 - **Bulgular:** Her bulgudan orijinal dosyanın sayfa ve satırına inilebilir. Bulgulara durum (yeni, inceleniyor, açıklandı) ve not eklenebilir; bunlar kaynak veriyi değiştirmez.
 
-Henüz yapılmayanlar: Luca mizan biçimi (örnek bekleniyor), PDF ve Word dosyalarının okunması, finansal özet, KDV ve geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
+Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, finansal özet, KDV ve geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
 
-> Luca yevmiye, kebir ve muavin okuyucuları 29.10.2026'da Luca'dan alınmış gerçek örneklerle denendi. Testlerde ve DEMO'da yalnızca bu düzeni taklit eden **sentetik** dosyalar kullanılır; gerçek mükellef dosyaları depoya konmaz.
+> Luca mizan, yevmiye, kebir ve muavin okuyucuları 29.10.2026'da Luca'dan alınmış gerçek örneklerle denendi. Testlerde ve DEMO'da yalnızca bu düzeni taklit eden **sentetik** dosyalar kullanılır; gerçek mükellef dosyaları depoya konmaz.
 
 ## Windows'ta kurulum
 
