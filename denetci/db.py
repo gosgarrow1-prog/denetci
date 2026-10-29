@@ -32,10 +32,28 @@ def SessionLocal():
     return _Session()
 
 
+# Var olan veritabanlarına sonradan eklenen kolonlar (basit, yalnızca ekleme yapan geçiş).
+_ADDED_COLUMNS = {
+    "import_batches": {"profile": "VARCHAR(32)"},
+    "analysis_runs": {"source_batches": "JSON"},
+    "journal_lines": {"madde_no": "VARCHAR(32)", "fis_tipi": "VARCHAR(32)", "evrak_no": "VARCHAR(64)"},
+}
+
+
 def init_db():
+    from sqlalchemy import inspect, text
+
     from . import models  # noqa: F401  (tabloları kaydeder)
 
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, ddl in cols.items():
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def reset_engine():

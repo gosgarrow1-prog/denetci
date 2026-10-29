@@ -37,5 +37,6 @@ tr.cls-belirsiz td { background:#fff3c4; }
 .rel { font-weight:600; } .rel-uygun { color:var(--ok); } .rel-kismen { color:var(--high); } .rel-kritik { color:var(--crit); }
 .rel-banner { border:1px solid var(--line); border-left-width:6px; padding:10px 14px; background:var(--card); border-radius:6px; }
 .rel-banner.rel-kritik { border-left-color:var(--crit); } .rel-banner.rel-kismen { border-left-color:var(--high); } .rel-banner.rel-uygun { border-left-color:var(--ok); }
-.st-bulgu { color:var(--high); font-weight:600; } .st-gecti { color:var(--ok); } .st-calistirilamadi { color:var(--muted); }
+.st-bulgu { color:var(--high); font-weight:600; } .st-gecti { color:var(--ok); } .st-calistirilamadi { color:var(--muted); } .st-uygulanmadi { color:var(--muted); }
 .evidence { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:8px 12px; margin:8px 0; }
+.ok { color:var(--ok); font-weight:600; }

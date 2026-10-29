@@ -73,6 +73,8 @@ class ImportBatch(Base):
     source_file_id: Mapped[int] = mapped_column(ForeignKey("source_files.id"))
     doc_type: Mapped[str | None] = mapped_column(String(16))  # mizan, yevmiye
     status: Mapped[str] = mapped_column(String(16), default="taslak")  # taslak, onaylandi, iptal
+    # Tanınan program biçimi (ör. luca_yevmiye). Boşsa genel kolon eşleme kullanılır.
+    profile: Mapped[str | None] = mapped_column(String(32))
     sheet: Mapped[str | None] = mapped_column(String(128))
     header_row: Mapped[int | None] = mapped_column(Integer)
     mapping: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -96,7 +98,8 @@ class RawRow(Base):
 
 
 class JournalLine(Base):
-    """Yevmiye satırı."""
+    """Kayıt düzeyi satır. Yevmiye, defteri kebir ve muavinden gelen satırlar burada tutulur;
+    hangi belgeden geldiği batch'in doc_type alanından anlaşılır. Belgeler birbirine eklenmez."""
 
     __tablename__ = "journal_lines"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -104,10 +107,26 @@ class JournalLine(Base):
     batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id"), index=True)
     raw_row_id: Mapped[int] = mapped_column(ForeignKey("raw_rows.id"))
     fis_no: Mapped[str] = mapped_column(String(64))
+    madde_no: Mapped[str | None] = mapped_column(String(32))
+    fis_tipi: Mapped[str | None] = mapped_column(String(32))
+    evrak_no: Mapped[str | None] = mapped_column(String(64))
     tarih: Mapped[date] = mapped_column(Date)
     hesap_kodu: Mapped[str] = mapped_column(String(64), index=True)
     hesap_adi: Mapped[str | None] = mapped_column(String(256))
     aciklama: Mapped[str | None] = mapped_column(Text)
+    borc: Mapped[int] = mapped_column(Integer, default=0)
+    alacak: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class OpeningBalance(Base):
+    """Kebir/muavindeki "Nakli Yekün": seçilen tarih aralığından önceki birikmiş borç/alacak."""
+
+    __tablename__ = "opening_balances"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("import_batches.id"), index=True)
+    raw_row_id: Mapped[int] = mapped_column(ForeignKey("raw_rows.id"))
+    hesap_kodu: Mapped[str] = mapped_column(String(64))
     borc: Mapped[int] = mapped_column(Integer, default=0)
     alacak: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -143,6 +162,8 @@ class AnalysisRun(Base):
     engine_version: Mapped[str] = mapped_column(String(16))
     reliability: Mapped[str] = mapped_column(String(16))  # uygun, kismen, kritik
     rule_results: Mapped[list] = mapped_column(JSON, default=list)
+    # Analizde kullanılan tüm belge sürümleri: {"yevmiye": batch_id, "kebir": batch_id, ...}
+    source_batches: Mapped[dict | None] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

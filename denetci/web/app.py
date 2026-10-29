@@ -17,6 +17,7 @@ from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..checks.rules import ALL_RULES
 from ..config import data_dir
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
+from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..models import (AnalysisRun, AuditLog, Client, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
                       SourceFile, User)
@@ -27,6 +28,15 @@ templates = Jinja2Templates(directory=str(HERE / "templates"))
 templates.env.filters["tl"] = kurus_str
 templates.env.globals["RELIABILITY_LABELS"] = RELIABILITY_LABELS
 templates.env.globals["DOC_LABELS"] = DOC_LABELS
+templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
+templates.env.globals["ROW_CLASS_LABELS"] = {
+    "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
+    "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
+    "acilis": "↦ nakli yekün"}
+templates.env.globals["SUMMARY_LABELS"] = {
+    "kayit": "Aktarılan kayıt", "ara_toplam": "Ayıklanan ara toplam", "baslik": "Başlık", "bilgi": "Bilgi satırı",
+    "bos": "Boş", "belirsiz": "Belirsiz (alınmadı)", "hatali": "Hatalı (alınmadı)",
+    "ust_hesap": "Üst hesap satırı (toplanmadı)", "grup": "Hesap grubu başlığı", "acilis": "Nakli yekün (önceki dönem)"}
 
 STATUS_LABELS = {"yeni": "Yeni", "inceleniyor": "İnceleniyor", "aciklandi": "Açıklandı"}
 templates.env.globals["STATUS_LABELS"] = STATUS_LABELS
@@ -302,7 +312,8 @@ def create_app() -> FastAPI:
         if prev:
             now_fps = {f.fingerprint for f in findings}
             gone = [f for f in s.scalars(select(Finding).where(Finding.run_id == prev.id)) if f.fingerprint not in now_fps]
-        batches = {k: s.get(ImportBatch, v) for k, v in (("mizan", run.mizan_batch_id), ("yevmiye", run.yevmiye_batch_id)) if v}
+        src = run.source_batches or {"mizan": run.mizan_batch_id, "yevmiye": run.yevmiye_batch_id}
+        batches = {k: owned(s, ImportBatch, v, cid) for k, v in src.items() if v}
         files = {k: s.get(SourceFile, b.source_file_id) for k, b in batches.items()}
         rules = {r.id: r for r, _ in ALL_RULES}
         return render(request, "run.html", c=c, p=p, run=run, findings=findings, cases=cases, gone=gone,

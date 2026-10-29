@@ -91,7 +91,7 @@ REQUIRED = {
     "mizan": ["hesap_kodu", "borc", "alacak"],
     "yevmiye": ["fis_no", "tarih", "hesap_kodu", "borc", "alacak"],
 }
-DOC_LABELS = {"mizan": "Mizan", "yevmiye": "Yevmiye defteri"}
+DOC_LABELS = {"mizan": "Mizan", "yevmiye": "Yevmiye defteri", "kebir": "Defteri kebir", "muavin": "Muavin defter"}
 
 _SYNONYM_TO_FIELD = {syn: f for f, (_, syns) in FIELD_DEFS.items() for syn in syns}
 

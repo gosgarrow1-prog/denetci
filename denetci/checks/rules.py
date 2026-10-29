@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from ..config import TOLERANS_KURUS, YUKSEK_ESIK_AKTIF_ORAN, YUKSEK_ESIK_TUTAR_KURUS
-from ..parsing import kurus_str
+from ..parsing import code_segments, kurus_str
 
 
 @dataclass(frozen=True)
@@ -63,6 +63,13 @@ class Context:
     mizan: list | None  # TrialBalanceLine listesi
     yevmiye: list | None  # JournalLine listesi
     tolerance: int = TOLERANS_KURUS
+    kebir: list | None = None  # JournalLine listesi (defteri kebirden)
+    muavin: list | None = None  # JournalLine listesi (muavinden)
+    openings: dict = field(default_factory=dict)  # {"kebir": [OpeningBalance], "muavin": [...]}
+    ranges: dict = field(default_factory=dict)  # belge -> (ilk tarih, son tarih)
+    # Aralığı belgenin kendi başlığında yazan belgeler (ör. Luca "Tarih Aralığı").
+    # Diğerlerinde aralık yalnızca kayıt tarihlerinden çıkarılır ve kapsam için kanıt sayılmaz.
+    declared: set = field(default_factory=set)
 
     @property
     def leaves(self):
@@ -84,10 +91,13 @@ ARITMETIK = "Aritmetik zorunluluk (çift taraflı kayıt)."
 D0 = date(2026, 1, 1)
 
 
+DOC_NAMES = {"mizan": "mizan", "yevmiye": "yevmiye defteri", "kebir": "defteri kebir", "muavin": "muavin defter"}
+
+
 def _missing(ctx: Context, rule: Rule) -> str | None:
-    need = [r for r in rule.required if (r == "mizan" and not ctx.mizan) or (r == "yevmiye" and not ctx.yevmiye)]
+    need = [r for r in rule.required if not getattr(ctx, r)]
     if need:
-        names = {"mizan": "mizan", "yevmiye": "yevmiye defteri"}
+        names = DOC_NAMES
         return "Çalıştırılamadı: " + ", ".join(names[n] for n in need) + " yüklenmemiş."
     return None
 
@@ -137,17 +147,19 @@ def k02(ctx: Context) -> Result:
         return Result(K02, "calistirilamadi", m)
     groups = defaultdict(list)
     for ln in ctx.yevmiye:
-        groups[ln.fis_no].append(ln)
+        # Luca'da yevmiye madde numarası fişi tekil olarak tanımlar.
+        groups[f"Madde {ln.madde_no}" if ln.madde_no else ln.fis_no].append(ln)
     drafts = []
     for fis, lines in groups.items():
         b = sum(ln.borc for ln in lines)
         a = sum(ln.alacak for ln in lines)
         if abs(b - a) > ctx.tolerance:
-            drafts.append(Draft(f"Fiş {fis} denk değil", "Kritik", None, b - a, f"fis:{fis}",
-                                f"Fiş {fis} ({lines[0].tarih:%d.%m.%Y}) borç toplamı {kurus_str(b)} TL, alacak toplamı {kurus_str(a)} TL. Fark {kurus_str(b - a)} TL.",
+            label = fis if fis.startswith("Madde") else f"Fiş {fis}"
+            drafts.append(Draft(f"{label} denk değil", "Kritik", None, b - a, f"fis:{fis}",
+                                f"{label} ({lines[0].tarih:%d.%m.%Y}) borç toplamı {kurus_str(b)} TL, alacak toplamı {kurus_str(a)} TL. Fark {kurus_str(b - a)} TL.",
                                 "Aritmetik olarak kesin. Fişin bir satırı eksik aktarılmış veya tutar yanlış girilmiş olabilir.",
                                 "Fişi Luca'da açıp satırlarını karşılaştırın.",
-                                [Evidence(ln.raw_row_id, f"Fiş {fis} satırı, hesap {ln.hesap_kodu}") for ln in lines]))
+                                [Evidence(ln.raw_row_id, f"{label} satırı, hesap {ln.hesap_kodu}") for ln in lines]))
     if drafts:
         return Result(K02, "bulgu", f"{len(drafts)} fiş denk değil.", drafts)
     return Result(K02, "gecti", f"{len(groups)} fişin tamamı denk.")
@@ -266,9 +278,43 @@ K09 = Rule("K-09", "1.0", "Negatif kasa",
            "Hatalı hesap eşlemesi, döviz kasasında kur farkı, veri kesim zamanı.", D0, "Yüksek")
 
 
+def _running_negative(lines, opening: int):
+    """Satırları tarih sırasıyla izler; bakiyeyi ilk kez eksiye düşüren satırı döner."""
+    running = opening
+    for j in sorted(lines, key=lambda j: (j.tarih, j.madde_no or "", j.fis_no)):
+        before = running
+        running += j.borc - j.alacak
+        if running < 0 <= before:
+            return j, before
+    return None, None
+
+
 def k09(ctx: Context) -> Result:
-    if (m := _missing(ctx, K09)):
-        return Result(K09, "calistirilamadi", m)
+    if ctx.mizan:
+        return _k09_mizan(ctx)
+    for doc in ("kebir", "muavin"):
+        if getattr(ctx, doc):
+            return _k09_ledger(ctx, doc)
+    return Result(K09, "calistirilamadi", "Çalıştırılamadı: mizan, defteri kebir veya muavin yüklenmemiş.")
+
+
+def _k09_draft(ctx, code, name, bakiye, when, ev, source):
+    return Draft(f"{code} {name or 'Kasa'} alacak bakiyesi veriyor", ctx.rule_severity(bakiye), code, -bakiye, code,
+                 f"{source} göre dönem sonunda {code} hesabı {kurus_str(-bakiye)} TL alacak bakiyesi veriyor.{when}",
+                 "Bakiye aritmetik olarak kesin. Nedeni belirsiz: veri, ödemenin gerçekten kasadan yapılıp yapılmadığını göstermiyor.",
+                 "Eksiye düşüren ödemenin belgesini ve aynı günün banka hareketlerini kontrol edin; öncesindeki kasa tahsilatlarının kaydedilip kaydedilmediğine bakın. Gerekli belgeler: ödeme belgesi, banka ekstresi, kasa defteri.",
+                 ev)
+
+
+def _when(j, before):
+    if not j:
+        return ""
+    no = f"{j.madde_no} numaralı yevmiye maddesi" if j.madde_no else f"{j.fis_no} numaralı fiş"
+    return (f" Bakiye ilk kez {j.tarih:%d.%m.%Y} tarihli {no} ile eksiye düştü "
+            f"(önceki bakiye {kurus_str(before)} TL, bu satırda alacak {kurus_str(j.alacak)} TL).")
+
+
+def _k09_mizan(ctx: Context) -> Result:
     kasa = [ln for ln in ctx.leaves if ln.hesap_kodu.startswith("100")]
     if not kasa:
         return Result(K09, "gecti", "Mizanda 100 Kasa hesabı yok.")
@@ -279,27 +325,143 @@ def k09(ctx: Context) -> Result:
         if bakiye >= 0:
             continue
         ev = [Evidence(ln.raw_row_id, f"Mizan satırı {ln.hesap_kodu}")]
-        when = ""
+        j, before = (None, None)
         if ctx.yevmiye:
-            running = (ln.acilis_borc or 0) - (ln.acilis_alacak or 0)
-            lines = sorted((j for j in ctx.yevmiye if j.hesap_kodu == ln.hesap_kodu), key=lambda j: (j.tarih, j.fis_no))
-            for j in lines:
-                before = running
-                running += j.borc - j.alacak
-                if running < 0 <= before:
-                    when = (f" Bakiye ilk kez {j.tarih:%d.%m.%Y} tarihli {j.fis_no} numaralı fişle eksiye düştü "
-                            f"(önceki bakiye {kurus_str(before)} TL, bu satırda alacak {kurus_str(j.alacak)} TL).")
-                    ev.append(Evidence(j.raw_row_id, f"Bakiyeyi eksiye düşüren satır: fiş {j.fis_no}"))
-                    break
-        drafts.append(Draft(f"{ln.hesap_kodu} {ln.hesap_adi or 'Kasa'} alacak bakiyesi veriyor", ctx.rule_severity(bakiye), ln.hesap_kodu,
-                            -bakiye, ln.hesap_kodu,
-                            f"Dönem sonunda {ln.hesap_kodu} hesabı {kurus_str(-bakiye)} TL alacak bakiyesi veriyor.{when}",
-                            "Bakiye aritmetik olarak kesin. Nedeni belirsiz: veri, ödemenin gerçekten kasadan yapılıp yapılmadığını göstermiyor.",
-                            "Eksiye düşüren ödemenin belgesini ve aynı günün banka hareketlerini kontrol edin; öncesindeki kasa tahsilatlarının kaydedilip kaydedilmediğine bakın. Gerekli belgeler: ödeme belgesi, banka ekstresi, kasa defteri.",
-                            ev))
+            j, before = _running_negative([x for x in ctx.yevmiye if x.hesap_kodu == ln.hesap_kodu],
+                                          (ln.acilis_borc or 0) - (ln.acilis_alacak or 0))
+            if j:
+                ev.append(Evidence(j.raw_row_id, f"Bakiyeyi eksiye düşüren satır: {j.madde_no or j.fis_no}"))
+        drafts.append(_k09_draft(ctx, ln.hesap_kodu, ln.hesap_adi, bakiye, _when(j, before), ev, "Mizana"))
     if drafts:
         return Result(K09, "bulgu", f"{len(drafts)} kasa hesabı alacak bakiyesi veriyor.", drafts)
     return Result(K09, "gecti", "Kasa hesaplarında alacak bakiyesi yok.")
 
 
-ALL_RULES = [(K01, k01), (K02, k02), (K03, k03), (K04, k04), (K05, k05), (K09, k09)]
+def _k09_ledger(ctx: Context, doc: str) -> Result:
+    lines = [j for j in getattr(ctx, doc) if j.hesap_kodu.startswith("100")]
+    opens = [o for o in ctx.openings.get(doc, []) if o.hesap_kodu.startswith("100")]
+    if not lines and not opens:
+        return Result(K09, "gecti", f"{DOC_NAMES[doc].capitalize()} içinde 100 Kasa hesabı yok.")
+    # Kebirde açılış ana hesap (100), satırlar alt hesap düzeyindedir; ana hesap düzeyinde bakılır.
+    key = (lambda c: c[:3]) if doc == "kebir" else (lambda c: c)
+    groups = defaultdict(list)
+    for j in lines:
+        groups[key(j.hesap_kodu)].append(j)
+    opening = defaultdict(int)
+    open_rows = {}
+    for o in opens:
+        opening[key(o.hesap_kodu)] += o.borc - o.alacak
+        open_rows[key(o.hesap_kodu)] = o
+    drafts = []
+    for code in sorted(set(groups) | set(opening)):
+        bakiye = opening[code] + sum(j.borc - j.alacak for j in groups[code])
+        if bakiye >= 0:
+            continue
+        ev = [Evidence(open_rows[code].raw_row_id, f"Nakli yekün {code}")] if code in open_rows else []
+        j, before = _running_negative(groups[code], opening[code])
+        if j:
+            ev.append(Evidence(j.raw_row_id, f"Bakiyeyi eksiye düşüren satır: {j.madde_no or j.fis_no}"))
+        name = next((x.hesap_adi for x in groups[code] if x.hesap_adi), None)
+        drafts.append(_k09_draft(ctx, code, name, bakiye, _when(j, before), ev, DOC_NAMES[doc].capitalize() + "e"))
+    if drafts:
+        return Result(K09, "bulgu", f"{len(drafts)} kasa hesabı alacak bakiyesi veriyor ({DOC_NAMES[doc]}).", drafts)
+    return Result(K09, "gecti", f"Kasa hesaplarında alacak bakiyesi yok ({DOC_NAMES[doc]}, nakli yekün dahil).")
+
+
+# ---- K-00 Belge kapsamı -----------------------------------------------------
+
+K00 = Rule("K-00", "1.0", "Belge kapsamı",
+           "Yüklenen her kayıt belgesinin tarih aralığı analiz dönemini kapsamalı. Kısmi belgeyle yapılan karşılaştırmalar eksik kalır.",
+           "A", ("THP_VUK",), (), "Veri bütünlüğü.", True,
+           "Dönem içinde hiç hareketi olmayan günler aralığı kısa gösterebilir; Luca'daki 'Tarih Aralığı' bilgisi varsa o kullanılır.",
+           D0, "Yüksek")
+
+
+def k00(ctx: Context) -> Result:
+    declared = {d: r for d, r in ctx.ranges.items() if d in ctx.declared}
+    if not declared:
+        return Result(K00, "uygulanmadi", "Uygulanmadı: belgelerde tarih aralığı bilgisi yok; kapsam kayıt tarihlerinden kesin anlaşılamaz.")
+    drafts = []
+    for doc, (start, end) in sorted(declared.items()):
+        if start <= ctx.period_start and end >= ctx.period_end:
+            continue
+        drafts.append(Draft(f"{DOC_NAMES[doc].capitalize()} dönemin tamamını kapsamıyor", "Yüksek", None, None, f"kapsam:{doc}",
+                            f"{DOC_NAMES[doc].capitalize()} {start:%d.%m.%Y} – {end:%d.%m.%Y} aralığını içeriyor; analiz dönemi "
+                            f"{ctx.period_start:%d.%m.%Y} – {ctx.period_end:%d.%m.%Y}.",
+                            "Tarih aralığı kesin. Bu belgeyle yapılan mutabakat ve bakiye kontrolleri dönemin yalnızca bir kısmını yansıtır.",
+                            "Belgeyi Luca'dan dönemin tamamı için yeniden alın veya dönemi belgeye göre daraltın."))
+    if drafts:
+        return Result(K00, "bulgu", f"{len(drafts)} belge dönemi tam kapsamıyor.", drafts)
+    return Result(K00, "gecti", "Tüm belgeler dönemi kapsıyor.")
+
+
+# ---- K-05K / K-05M Yevmiye ile kebir ve muavin mutabakatı -------------------
+
+K05K = Rule("K-05K", "1.0", "Yevmiye–kebir mutabakatı",
+            "Ana hesap bazında, ortak tarih aralığında yevmiye borç/alacak toplamı defteri kebirdeki hareketlere eşit olmalı.",
+            "A", ("THP_VUK",), ("yevmiye", "kebir"), ARITMETIK, True,
+            "Kebirdeki nakli yekün (önceki aylar) karşılaştırmaya girmez. Hiçbir belge otomatik doğru kabul edilmez.", D0, "Yüksek")
+K05M = Rule("K-05M", "1.0", "Yevmiye–muavin mutabakatı",
+            "Muavindeki her hesap için, ortak tarih aralığında yevmiye borç/alacak toplamı muavin hareketlerine eşit olmalı.",
+            "A", ("THP_VUK",), ("yevmiye", "muavin"), ARITMETIK, True,
+            "Muavin yalnızca seçilen hesapları içerebilir; yalnızca muavinde bulunan hesaplar karşılaştırılır.", D0, "Yüksek")
+
+
+def _overlap(ctx, a, b):
+    ra, rb = ctx.ranges.get(a), ctx.ranges.get(b)
+    if not ra or not rb:
+        return None
+    start, end = max(ra[0], rb[0]), min(ra[1], rb[1])
+    return (start, end) if start <= end else None
+
+
+def _ledger_compare(ctx, rule, other: str, key, only_other_accounts: bool) -> Result:
+    if (m := _missing(ctx, rule)):
+        # Kebir ve muavin isteğe bağlı belgeler; yüklenmemeleri veri güvenilirliğini düşürmez.
+        return Result(rule, "uygulanmadi", m.replace("Çalıştırılamadı", "Uygulanmadı"))
+    win = _overlap(ctx, "yevmiye", other)
+    if not win:
+        return Result(rule, "calistirilamadi", "Çalıştırılamadı: belgelerin ortak tarih aralığı yok.")
+    inside = lambda j: win[0] <= j.tarih <= win[1]
+    yb, ya, ob, oa = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(int)
+    yrows, orows = defaultdict(list), defaultdict(list)
+    for j in filter(inside, ctx.yevmiye):
+        k = key(j.hesap_kodu)
+        yb[k] += j.borc
+        ya[k] += j.alacak
+        yrows[k].append(j)
+    for j in filter(inside, getattr(ctx, other)):
+        k = key(j.hesap_kodu)
+        ob[k] += j.borc
+        oa[k] += j.alacak
+        orows[k].append(j)
+    accounts = set(orows) | {k for o in ctx.openings.get(other, []) for k in [key(o.hesap_kodu)]} if only_other_accounts \
+        else set(yrows) | set(orows)
+    name = DOC_NAMES[other]
+    drafts = []
+    for k in sorted(accounts):
+        fb, fa = yb[k] - ob[k], ya[k] - oa[k]
+        if abs(fb) <= ctx.tolerance and abs(fa) <= ctx.tolerance:
+            continue
+        ev = [Evidence(j.raw_row_id, f"{name.capitalize()} {j.tarih:%d.%m.%Y} {j.madde_no or j.fis_no}") for j in orows[k][:25]]
+        ev += [Evidence(j.raw_row_id, f"Yevmiye madde {j.madde_no or j.fis_no}, {j.tarih:%d.%m.%Y}") for j in yrows[k][:25]]
+        drafts.append(Draft(f"{k} yevmiye ile {name} arasında fark", "Yüksek", k, fb or fa, f"{other}:{k}",
+                            f"{win[0]:%d.%m.%Y} – {win[1]:%d.%m.%Y} aralığında {k}: yevmiye borç {kurus_str(yb[k])} / alacak {kurus_str(ya[k])} TL; "
+                            f"{name} borç {kurus_str(ob[k])} / alacak {kurus_str(oa[k])} TL. Fark borçta {kurus_str(fb)}, alacakta {kurus_str(fa)} TL.",
+                            "Fark aritmetik olarak kesin; hangi belgenin doğru olduğu bilinmiyor. Olası nedenler: belgelerin farklı zamanlarda alınması, eksik veya fazla kayıt.",
+                            "İki belgeyi Luca'dan aynı anda yeniden alın; farkı oluşturan maddeleri kanıt satırlarından inceleyin.", ev))
+    if drafts:
+        return Result(rule, "bulgu", f"{len(drafts)} hesapta yevmiye ile {name} uyuşmuyor.", drafts)
+    return Result(rule, "gecti", f"{len(accounts)} hesabın tamamında yevmiye ve {name} uyuşuyor "
+                                 f"({win[0]:%d.%m.%Y} – {win[1]:%d.%m.%Y}).")
+
+
+def k05k(ctx: Context) -> Result:
+    return _ledger_compare(ctx, K05K, "kebir", lambda c: code_segments(c)[0], only_other_accounts=False)
+
+
+def k05m(ctx: Context) -> Result:
+    return _ledger_compare(ctx, K05M, "muavin", lambda c: c, only_other_accounts=True)
+
+
+ALL_RULES = [(K00, k00), (K01, k01), (K02, k02), (K03, k03), (K04, k04), (K05, k05), (K05K, k05k), (K05M, k05m), (K09, k09)]

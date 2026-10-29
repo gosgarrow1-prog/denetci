@@ -1,11 +1,13 @@
 """Analiz çalıştırma: son onaylı mizan ve yevmiye sürümleriyle kuralları çalıştırır, sonucu saklar."""
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import ENGINE_VERSION, RULESET_VERSION
 from ..importer.load import latest_batch
-from ..models import AnalysisRun, Client, Finding, FindingCase, FindingEvidence, JournalLine, Period, TrialBalanceLine
+from ..models import AnalysisRun, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
 from .rules import ALL_RULES, Context
 
 RELIABILITY_LABELS = {
@@ -20,21 +22,37 @@ class NoData(ValueError):
 
 
 def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRun:
-    mizan_b = latest_batch(session, client.id, period.id, "mizan")
-    yev_b = latest_batch(session, client.id, period.id, "yevmiye")
-    if not mizan_b and not yev_b:
-        raise NoData("Bu dönem için onaylanmış mizan veya yevmiye yok.")
+    batches = {d: latest_batch(session, client.id, period.id, d) for d in ("mizan", "yevmiye", "kebir", "muavin")}
+    if not any(batches.values()):
+        raise NoData("Bu dönem için onaylanmış belge yok.")
+    mizan_b, yev_b = batches["mizan"], batches["yevmiye"]
     mizan = list(session.scalars(select(TrialBalanceLine).where(
         TrialBalanceLine.client_id == client.id, TrialBalanceLine.batch_id == mizan_b.id))) if mizan_b else None
-    yev = list(session.scalars(select(JournalLine).where(
-        JournalLine.client_id == client.id, JournalLine.batch_id == yev_b.id))) if yev_b else None
 
-    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, yev)
+    def lines(b):
+        return list(session.scalars(select(JournalLine).where(JournalLine.client_id == client.id,
+                                                               JournalLine.batch_id == b.id))) if b else None
+
+    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, lines(yev_b),
+                  kebir=lines(batches["kebir"]), muavin=lines(batches["muavin"]))
+    for d in ("kebir", "muavin"):
+        if batches[d]:
+            ctx.openings[d] = list(session.scalars(select(OpeningBalance).where(
+                OpeningBalance.client_id == client.id, OpeningBalance.batch_id == batches[d].id)))
+    for d in ("yevmiye", "kebir", "muavin"):
+        b = batches[d]
+        if b:
+            rng = b.summary.get("tarih_araligi") or b.summary.get("kayit_tarihleri")
+            if b.summary.get("tarih_araligi"):
+                ctx.declared.add(d)
+            if rng:
+                ctx.ranges[d] = (date.fromisoformat(rng[0]), date.fromisoformat(rng[1]))
     results = [fn(ctx) for rule, fn in ALL_RULES if client.cerceve in rule.frameworks]
 
     run = AnalysisRun(client_id=client.id, period_id=period.id, mizan_batch_id=mizan_b.id if mizan_b else None,
                       yevmiye_batch_id=yev_b.id if yev_b else None, ruleset_version=RULESET_VERSION,
-                      engine_version=ENGINE_VERSION, reliability=_reliability(results))
+                      engine_version=ENGINE_VERSION, reliability=_reliability(results),
+                      source_batches={d: b.id for d, b in batches.items() if b})
     run.rule_results = [{"id": r.rule.id, "version": r.rule.version, "title": r.rule.title, "status": r.status,
                          "message": r.message, "kind": r.rule.kind, "basis": r.rule.basis,
                          "basis_verified": r.rule.basis_verified, "count": len(r.drafts)} for r in results]
@@ -62,8 +80,9 @@ def _reliability(results) -> str:
     by_id = {r.rule.id: r for r in results}
     if any(by_id.get(i) and by_id[i].status == "bulgu" for i in ("K-01", "K-02")):
         return "kritik"
+    # Belge türü hiç yüklenmediği için çalışmayan kontroller de "kısmen" sayılır.
     if any(r.status == "calistirilamadi" for r in results):
         return "kismen"
-    if any(by_id.get(i) and by_id[i].status == "bulgu" for i in ("K-03", "K-04", "K-05")):
+    if any(by_id.get(i) and by_id[i].status == "bulgu" for i in ("K-00", "K-03", "K-04", "K-05", "K-05K", "K-05M")):
         return "kismen"
     return "uygun"

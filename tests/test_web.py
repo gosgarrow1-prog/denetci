@@ -117,3 +117,29 @@ def test_client_isolation(app_client, files_hatali):
     for url in (f"/mukellef/{b_id}/bulgu/{f_id}", f"/mukellef/{b_id}/donem/{pa_id}",
                 f"/mukellef/{b_id}/aktarim/{batch_id}", f"/mukellef/{b_id}/analiz/{run_id}"):
         assert app_client.get(url).status_code == 404, url
+
+
+def test_luca_upload_without_mapping(app_client, data_root):
+    from denetci import synthetic_luca
+
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": "DEMO Luca"}, follow_redirects=False)
+    cid = int(r.headers["location"].rsplit("/", 1)[1])
+    r = tc.post(f"/mukellef/{cid}/donem", data={"csrf": tok, "baslangic": "2026-07-01", "bitis": "2026-09-30", "tur": "uc_aylik"},
+                follow_redirects=False)
+    pid = int(r.headers["location"].rsplit("/", 1)[1])
+    for kind, path in synthetic_luca.generate(data_root / "luca_web", hatali=True).items():
+        r = tc.post(f"/mukellef/{cid}/donem/{pid}/yukle", data={"csrf": tok},
+                    files={"dosya": (path.name, path.read_bytes())}, follow_redirects=False)
+        bpath = r.headers["location"]
+        page = tc.get(bpath).text
+        assert "biçimi tanındı" in page and "map_" not in page
+        r = tc.post(bpath + "/onayla", data={"csrf": tok, "doc_type": kind}, follow_redirects=False)
+        assert r.status_code == 303
+        assert "Aktarılan kayıt" in tc.get(bpath).text
+    r = tc.post(f"/mukellef/{cid}/donem/{pid}/analiz", data={"csrf": tok}, follow_redirects=False)
+    page = tc.get(r.headers["location"]).text
+    assert "Defteri kebir" in page and "Muavin defter" in page
+    assert "Yevmiye–kebir mutabakatı" in page and "Kasa" in page

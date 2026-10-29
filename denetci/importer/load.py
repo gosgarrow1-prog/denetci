@@ -9,8 +9,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import IZINLI_UZANTILAR, MAX_YUKLEME_BAYT, data_dir
-from ..models import Client, ImportBatch, JournalLine, Period, RawRow, SourceFile, TrialBalanceLine
+from ..models import Client, ImportBatch, JournalLine, OpeningBalance, Period, RawRow, SourceFile, TrialBalanceLine
 from ..parsing import ParseError, code_segments, detect_number_format, is_empty, parse_account_code, parse_amount, parse_date
+from . import luca
 from .tables import DOC_FIELDS, REQUIRED, Sheet, UnsupportedFile, classify_row, detect, read_tables
 
 
@@ -61,9 +62,14 @@ def create_draft(session: Session, client: Client, period: Period, filename: str
         raise ImportError_(str(exc)) from exc
     except Exception as exc:  # bozuk dosya
         raise ImportError_("Dosya okunamadı. Bozuk olabilir veya desteklenmeyen bir biçimde olabilir.") from exc
-    det = detect(sheets)
     batch = ImportBatch(client_id=client.id, period_id=period.id, source_file_id=sf.id, status="taslak")
-    if det:
+    sniffed = luca.sniff(sheets)
+    det = None if sniffed else detect(sheets)
+    if sniffed:
+        batch.profile, batch.sheet = sniffed[0], sniffed[1].name
+        batch.doc_type = luca.PROFILE_DOC[sniffed[0]]
+        batch.mapping = {}
+    elif det:
         batch.sheet = det.sheet
         batch.header_row = det.header_row
         batch.mapping = det.mapping
@@ -92,6 +98,9 @@ def load_sheet(session: Session, batch: ImportBatch) -> Sheet:
 def preview(session: Session, batch: ImportBatch, limit: int = 40) -> list[dict]:
     """Önizleme: satır, sınıf ve okunan değerler. Veritabanına yazmaz."""
     sheet = load_sheet(session, batch)
+    if batch.profile:
+        parsed = luca.parse(batch.profile, sheet)
+        return [{"row_no": r.row_no, "cells": [_json_safe(v) for v in r.values], "cls": r.cls} for r in parsed.rows[:limit]]
     out = []
     for row_no, values in sheet.rows:
         if batch.header_row and row_no <= batch.header_row:
@@ -111,6 +120,8 @@ def confirm(session: Session, batch: ImportBatch, doc_type: str, mapping: dict[s
         return batch
     if batch.status != "taslak":
         raise ImportError_("Bu aktarım iptal edilmiş.")
+    if batch.profile:
+        return _confirm_profile(session, batch)
     if doc_type not in DOC_FIELDS:
         raise ImportError_("Belge türü seçilmeli.")
     missing = [f for f in REQUIRED[doc_type] if f not in mapping]
@@ -193,15 +204,59 @@ def confirm(session: Session, batch: ImportBatch, doc_type: str, mapping: dict[s
     if out_of_period:
         warnings.append(f"{out_of_period} yevmiye satırının tarihi dönem dışında.")
 
+    _finalize(session, batch, len(sheet.rows), counts, warnings, errors, {})
+    return batch
+
+
+def _finalize(session, batch, n_rows, counts, warnings, errors, info):
     prev = session.scalar(select(ImportBatch).where(
         ImportBatch.client_id == batch.client_id, ImportBatch.period_id == batch.period_id,
-        ImportBatch.doc_type == doc_type, ImportBatch.status == "onaylandi").order_by(ImportBatch.version.desc()))
+        ImportBatch.doc_type == batch.doc_type, ImportBatch.status == "onaylandi").order_by(ImportBatch.version.desc()))
     batch.version = (prev.version + 1) if prev else 1
     batch.supersedes_id = prev.id if prev else None
     batch.status = "onaylandi"
-    batch.summary = {"satir_sayisi": len(sheet.rows), "sayilar": counts, "uyarilar": warnings[:200],
-                     "hatalar": errors[:200], "uyari_sayisi": len(warnings), "hata_sayisi": len(errors)}
+    dates = session.execute(select(func.min(JournalLine.tarih), func.max(JournalLine.tarih))
+                            .where(JournalLine.batch_id == batch.id)).one()
+    summary = {"satir_sayisi": n_rows, "sayilar": counts, "uyarilar": warnings[:200], "hatalar": errors[:200],
+               "uyari_sayisi": len(warnings), "hata_sayisi": len(errors), **info}
+    if dates[0]:
+        summary["kayit_tarihleri"] = [dates[0].isoformat(), dates[1].isoformat()]
+    batch.summary = summary
     session.flush()
+
+
+def _confirm_profile(session: Session, batch: ImportBatch) -> ImportBatch:
+    """Tanınan program biçimi (Luca) ile aktarım."""
+    sheet = load_sheet(session, batch)
+    parsed = luca.parse(batch.profile, sheet)
+    period = session.get(Period, batch.period_id)
+    counts: dict[str, int] = {}
+    out_of_period = 0
+    for pr in parsed.rows:
+        raw = RawRow(client_id=batch.client_id, batch_id=batch.id, sheet=sheet.name, row_no=pr.row_no,
+                     cells=[_json_safe(v) for v in pr.values], row_class=pr.cls, note=pr.note)
+        session.add(raw)
+        counts[pr.cls] = counts.get(pr.cls, 0) + 1
+        if pr.record is None and pr.opening is None:
+            continue
+        session.flush()
+        if pr.record:
+            r = pr.record
+            if period and not (period.baslangic <= r["tarih"] <= period.bitis):
+                out_of_period += 1
+            session.add(JournalLine(client_id=batch.client_id, batch_id=batch.id, raw_row_id=raw.id, fis_no=r["fis_no"],
+                                    madde_no=r.get("madde_no"), fis_tipi=r.get("fis_tipi"), evrak_no=r.get("evrak_no"),
+                                    tarih=r["tarih"], hesap_kodu=r["hesap_kodu"], hesap_adi=r.get("hesap_adi"),
+                                    aciklama=r.get("aciklama"), borc=r["borc"], alacak=r["alacak"]))
+        if pr.opening:
+            o = pr.opening
+            session.add(OpeningBalance(client_id=batch.client_id, batch_id=batch.id, raw_row_id=raw.id,
+                                       hesap_kodu=o["hesap_kodu"], borc=o["borc"], alacak=o["alacak"]))
+    warnings = list(parsed.warnings)
+    if out_of_period:
+        warnings.append(f"{out_of_period} satırın tarihi dönem dışında.")
+    session.flush()
+    _finalize(session, batch, len(sheet.rows), counts, warnings, parsed.errors, parsed.info)
     return batch
 
 
