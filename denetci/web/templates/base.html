@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Denetçi{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">Denetçi</a>
+  {% if c is defined and c %}
+  <nav class="crumb"><a href="/mukellef/{{ c.id }}">{{ c.unvan }}</a>{% block crumb %}{% endblock %}</nav>
+  {% endif %}
+  {% if request.session.get('uid') %}
+  <form method="post" action="/cikis" class="logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Çıkış</button></form>
+  {% endif %}
+</header>
+{% if c is defined and c and c.is_demo %}
+<div class="demo">DEMO — SENTETİK VERİ. Bu mükellef ve tüm tutarlar uydurmadır.</div>
+{% endif %}
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

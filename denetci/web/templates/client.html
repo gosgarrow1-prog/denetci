@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ c.unvan }}</h1>
+<p class="muted">{{ c.sirket_turu or 'Şirket türü girilmedi' }} · {{ c.faaliyet or 'Faaliyet alanı girilmedi' }} · Çerçeve: Tekdüzen/VUK · Para birimi: {{ c.para_birimi }}</p>
+<h2>Dönemler</h2>
+<table class="grid">
+<thead><tr><th>Dönem</th><th>Tür</th><th>Kapanış</th><th>Enflasyon düzeltmesi</th></tr></thead>
+<tbody>
+{% for p in periods %}
+<tr><td><a href="/mukellef/{{ c.id }}/donem/{{ p.id }}">{{ p.baslangic.strftime('%d.%m.%Y') }} – {{ p.bitis.strftime('%d.%m.%Y') }}</a></td>
+<td>{{ {'aylik':'Aylık','uc_aylik':'Üç aylık','yillik':'Yıllık','ara':'Ara dönem'}[p.tur] }}</td>
+<td>{{ 'Kapanış öncesi' if p.kapanis_durumu == 'oncesi' else 'Kapanış sonrası' }}</td>
+<td>{{ {'var':'Var','yok':'Yok','bilinmiyor':'Bilinmiyor'}[p.enflasyon_duzeltmesi] }}</td></tr>
+{% else %}
+<tr><td colspan="4">Henüz dönem yok.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+<section class="card">
+<h2>Yeni dönem</h2>
+<form method="post" action="/mukellef/{{ c.id }}/donem" class="row">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Başlangıç <input type="date" name="baslangic" required></label>
+  <label>Bitiş <input type="date" name="bitis" required></label>
+  <label>Tür <select name="tur"><option value="aylik">Aylık</option><option value="uc_aylik" selected>Üç aylık</option><option value="yillik">Yıllık</option><option value="ara">Ara dönem</option></select></label>
+  <label>Kapanış <select name="kapanis_durumu"><option value="oncesi">Kapanış öncesi</option><option value="sonrasi">Kapanış sonrası</option></select></label>
+  <label>Enflasyon düzeltmesi <select name="enflasyon"><option value="bilinmiyor">Bilinmiyor</option><option value="yok">Yok</option><option value="var">Var</option></select></label>
+  <button>Ekle</button>
+</form>
+</section>
+{% endblock %}

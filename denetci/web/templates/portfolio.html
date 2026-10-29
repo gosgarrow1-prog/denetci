@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Mükellefler</h1>
+<table class="grid">
+<thead><tr><th>Mükellef</th><th>Son yükleme</th><th>Son analiz</th><th>Veri durumu</th><th class="num">Kritik/yüksek bulgu</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr>
+  <td><a href="/mukellef/{{ r.c.id }}">{{ r.c.unvan }}</a>{% if r.c.is_demo %} <span class="tag demo-tag">DEMO</span>{% endif %}</td>
+  <td>{{ r.last_upload.strftime('%d.%m.%Y %H:%M') if r.last_upload else '—' }}</td>
+  <td>{% if r.run %}<a href="/mukellef/{{ r.c.id }}/analiz/{{ r.run.id }}">{{ r.run.created_at.strftime('%d.%m.%Y %H:%M') }}</a>{% else %}—{% endif %}</td>
+  <td>{% if r.run %}<span class="rel rel-{{ r.run.reliability }}">{{ RELIABILITY_LABELS[r.run.reliability] }}</span>{% else %}Analiz yok{% endif %}</td>
+  <td class="num">{{ r.open_high if r.run else '—' }}</td>
+</tr>
+{% else %}
+<tr><td colspan="5">Henüz mükellef yok.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+
+<section class="card">
+<h2>Yeni mükellef</h2>
+<form method="post" action="/mukellef/yeni" class="row">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Unvan <input name="unvan" required></label>
+  <label>Şirket türü <input name="sirket_turu" placeholder="ör. A.Ş., Ltd. Şti."></label>
+  <label>Faaliyet alanı <input name="faaliyet"></label>
+  <button>Ekle</button>
+</form>
+<p class="muted">Hesap planı: Tekdüzen Hesap Planı / VUK. Diğer çerçeveler ileride eklenecek.</p>
+</section>
+{% endblock %}

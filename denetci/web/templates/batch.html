@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block crumb %} › <a href="/mukellef/{{ c.id }}/donem/{{ b.period_id }}">Dönem</a> › {{ sf.orig_name }}{% endblock %}
+{% block content %}
+<h1>{{ sf.orig_name }}</h1>
+<p class="muted">SHA-256: <code>{{ sf.sha256[:16] }}…</code> · {{ (sf.size / 1024)|round(1) }} KB · Sayfa: {{ b.sheet or '—' }}</p>
+
+{% if b.status == 'taslak' %}
+<section class="card">
+<h2>1. Belge türü ve kolon eşleştirme</h2>
+{% if not b.mapping %}<p class="err">Başlık satırı otomatik bulunamadı. Kolonları elle eşleştirin.</p>{% endif %}
+<form method="post" action="/mukellef/{{ c.id }}/aktarim/{{ b.id }}/onayla">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="row">
+  <label>Belge türü
+    <select name="doc_type" id="doc_type">
+      {% for k, v in DOC_LABELS.items() %}<option value="{{ k }}" {% if b.doc_type == k %}selected{% endif %}>{{ v }}</option>{% endfor %}
+    </select></label>
+  <label>Sayı biçimi
+    <select name="number_format">
+      <option value="tr" {% if b.number_format == 'tr' %}selected{% endif %}>1.234.567,89 (Türkçe)</option>
+      <option value="en" {% if b.number_format == 'en' %}selected{% endif %}>1,234,567.89</option>
+    </select></label>
+  <span class="muted">Başlık satırı: {{ b.header_row or '—' }}</span>
+  </div>
+  {% for dt, fields in DOC_FIELDS.items() %}
+  <fieldset class="mapping" data-doc="{{ dt }}" {% if b.doc_type and b.doc_type != dt %}hidden{% endif %}>
+    <legend>{{ DOC_LABELS[dt] }} kolonları</legend>
+    {% for f in fields %}
+    <label>{{ FIELD_DEFS[f][0] }}{% if f in REQUIRED[dt] %} *{% endif %}
+      <select name="map_{{ f }}">
+        <option value="">— yok —</option>
+        {% for i in range(ncols) %}
+        <option value="{{ i }}" {% if b.mapping.get(f) == i %}selected{% endif %}>{{ i + 1 }}. kolon{% if header and i < header|length and header[i] %}: {{ header[i] }}{% endif %}</option>
+        {% endfor %}
+      </select></label>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <p class="muted">* zorunlu. Görünmeyen belge türünün eşlemesi dikkate alınmaz.</p>
+  <h2>2. Önizleme (ilk {{ rows|length }} satır)</h2>
+  <p class="muted">Yalnızca "kayıt" satırları aktarılır. Ara toplam, nakli yekün, tekrar eden başlık ve bilgi satırları ayıklanır.</p>
+  <div class="scroll">
+  <table class="grid small">
+    <thead><tr><th>Satır</th><th>Sınıf</th>{% for i in range(ncols) %}<th>{{ i + 1 }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr class="cls-{{ r.cls }}"><td>{{ r.row_no }}</td><td><span class="tag">{{ {'kayit':'✓ kayıt','ara_toplam':'Σ ara toplam','baslik':'≡ başlık','bilgi':'i bilgi','bos':'boş','belirsiz':'? belirsiz'}[r.cls] }}</span></td>
+    {% for i in range(ncols) %}<td>{{ r.cells[i] if i < r.cells|length and r.cells[i] is not none else '' }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="row">
+  <button>3. Onayla ve aktar</button>
+  </div>
+</form>
+<form method="post" action="/mukellef/{{ c.id }}/aktarim/{{ b.id }}/iptal"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Vazgeç</button></form>
+</section>
+<script>
+document.getElementById('doc_type').addEventListener('change', e => {
+  document.querySelectorAll('fieldset.mapping').forEach(f => f.hidden = f.dataset.doc !== e.target.value);
+});
+</script>
+{% else %}
+<section class="card">
+<h2>İçe aktarma sonucu</h2>
+<p>Durum: <strong>{{ {'onaylandi':'Aktarıldı','iptal':'İptal edildi'}[b.status] }}</strong>{% if b.status == 'onaylandi' %} · {{ DOC_LABELS[b.doc_type] }} · sürüm {{ b.version }}{% if b.supersedes_id %} (önceki sürüm korunuyor){% endif %}{% endif %}</p>
+{% if b.summary %}
+<table class="grid narrowt">
+<tbody>
+<tr><th>Okunan satır</th><td class="num">{{ b.summary.satir_sayisi }}</td></tr>
+{% for k, label in [('kayit','Aktarılan kayıt'),('ara_toplam','Ayıklanan ara toplam'),('baslik','Başlık'),('bilgi','Bilgi satırı'),('bos','Boş'),('belirsiz','Belirsiz (alınmadı)'),('hatali','Hatalı (alınmadı)')] %}
+<tr><th>{{ label }}</th><td class="num">{{ b.summary.sayilar[k] }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% if b.summary.hatalar %}<h3>Hatalar ({{ b.summary.hata_sayisi }})</h3><ul>{% for h in b.summary.hatalar %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
+{% if b.summary.uyarilar %}<h3>Uyarılar ({{ b.summary.uyari_sayisi }})</h3><ul>{% for h in b.summary.uyarilar %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
+{% if not b.summary.hatalar and not b.summary.uyarilar %}<p>Hata veya uyarı yok.</p>{% endif %}
+{% endif %}
+<p><a href="/mukellef/{{ c.id }}/donem/{{ b.period_id }}">Döneme dön</a></p>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block crumb %} › <a href="/mukellef/{{ c.id }}/donem/{{ p.id }}">Dönem</a> › Analiz #{{ run.id }}{% endblock %}
+{% block content %}
+<h1>Analiz #{{ run.id }}</h1>
+<div class="rel-banner rel-{{ run.reliability }}">
+  <strong>{{ RELIABILITY_LABELS[run.reliability] }}</strong>
+  {% if run.reliability == 'kritik' %} — Mizan veya fiş denkliği bozuk. Bu veriyle finansal analiz yapılmamalı; önce aşağıdaki kritik bulguları çözün.
+  {% elif run.reliability == 'kismen' %} — Bazı kontroller çalıştırılamadı veya belgeler arasında fark var. Sonuçları bu sınırla okuyun.
+  {% else %} — Temel tutarlılık kontrolleri geçti.{% endif %}
+</div>
+<p class="muted">Dayanak: {% for k, b in batches.items() %}{{ DOC_LABELS[k] }} “{{ files[k].orig_name }}” sürüm {{ b.version }}{% if not loop.last %}, {% endif %}{% endfor %} · kural seti v{{ run.ruleset_version }} · motor v{{ run.engine_version }} · {{ run.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+
+<h2>Kontroller</h2>
+<table class="grid">
+<thead><tr><th>Kural</th><th>Tür</th><th>Sonuç</th><th>Açıklama</th></tr></thead>
+<tbody>
+{% for r in run.rule_results %}
+<tr><td><strong>{{ r.id }}</strong> {{ r.title }}{% if not r.basis_verified %} <span class="tag warn" title="Dayanak henüz kullanıcı tarafından doğrulanmadı">dayanak doğrulanmadı</span>{% endif %}</td>
+<td>{{ r.kind }}</td>
+<td><span class="st st-{{ r.status }}">{{ {'gecti':'✓ Geçti','bulgu':'! Bulgu','calistirilamadi':'– Çalıştırılamadı'}[r.status] }}</span></td>
+<td>{{ r.message }}</td></tr>
+{% endfor %}
+</tbody>
+</table>
+
+<h2>Bulgular ({{ findings|length }})</h2>
+<table class="grid">
+<thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th>Tür</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead>
+<tbody>
+{% for f in findings %}
+<tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+<td><a href="/mukellef/{{ c.id }}/bulgu/{{ f.id }}">{{ f.title }}</a></td>
+<td>{{ f.rule_id }}</td><td title="{{ KIND_LABELS[f.kind] }}">{{ f.kind }}</td>
+<td class="num">{{ f.amount|tl }}</td>
+<td>{{ STATUS_LABELS[cases[f.fingerprint].status] if f.fingerprint in cases else 'Yeni' }}</td></tr>
+{% else %}
+<tr><td colspan="6">Bulgu yok.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+<p class="muted">Tür: A = aritmetik/veri tutarsızlığı · K = kurala dayalı olası uygunsuzluk · I = istatistiksel anomali · D = ek belge veya mesleki değerlendirme.</p>
+
+{% if gone %}
+<h2>Önceki analizde olup bu analizde görülmeyenler</h2>
+<ul>{% for f in gone %}<li>{{ f.rule_id }} · {{ f.title }} — yeni veride görülmedi</li>{% endfor %}</ul>
+{% endif %}
+{% endblock %}

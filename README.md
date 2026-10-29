@@ -1,0 +1,73 @@
+# Denetçi — Muhasebe kontrol modülü
+
+Mali müşavirlik bürosu için hazırlanan özel bir uygulama. Mükelleflerin Luca'dan alınan mizan ve yevmiye dosyalarını okur, doğrular ve bulguları kaynak kayıtlarıyla birlikte gösterir. **Kendi bilgisayarınızda çalışır; veriler bilgisayarınızdan çıkmaz.**
+
+Durum: **Aşama 0 (çalışan iskelet).** Ürün planı: <https://claude.ai/artifact/STx2i6GbryR1XBUJbzykQw>
+
+## Neler yapıyor
+
+- **Giriş:** Kayıt ekranı yok. Parola ve telefondaki doğrulayıcı uygulamanın 6 haneli koduyla giriş yapılır (MFA). Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez.
+- **Mükellef ve dönem:** Mükellef ve dönem tanımlanabilir.
+- **Dosya yükleme:** Mizan ve yevmiye `.xlsx` veya `.csv` olarak yüklenir. Belge türü ve kolonlar otomatik önerilir. Önizlemede ara toplam, nakli yekün ve tekrar eden başlık satırları ayıklanır. Onaylamadan hiçbir şey aktarılmaz.
+- **Veri okuma:** Türkçe sayı ve tarih biçimleri okunur. Hesap kodları metin olarak tutulduğu için baştaki sıfırlar korunur. Tutarlar kuruş cinsinden tam sayı olarak saklanır, kayan nokta hatası oluşmaz.
+- **Sürümler:** Aynı dosya ikinci kez yüklenirse reddedilir. Yeni sürüm yüklendiğinde eski sürüm ve eski analizler saklanır.
+- **Kontroller:** Şu 6 kontrol çalışır:
+  - K-01 mizan denkliği
+  - K-02 fiş denkliği
+  - K-03 açılış + hareket = kapanış
+  - K-04 ana/alt hesap tutarlılığı
+  - K-05 yevmiye–mizan mutabakatı
+  - K-09 negatif kasa
+- **Veri durumu:** Analiz sonucu "analize uygun", "kısmen uygun" veya "kritik veri sorunu var" olarak gösterilir. Eksik belge varsa ilgili kontrol "çalıştırılamadı" olarak işaretlenir.
+- **Bulgular:** Her bulgudan orijinal dosyanın sayfa ve satırına inilebilir. Bulgulara durum (yeni, inceleniyor, açıklandı) ve not eklenebilir; bunlar kaynak veriyi değiştirmez.
+
+Henüz yapılmayanlar: gerçek Luca dosyalarıyla doğrulama, finansal özet, KDV ve geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
+
+> DEMO dosyaları, Luca düzenini *taklit etmeye çalışan* sentetik dosyalardır. Gerçek Luca çıktısıyla henüz denenmedi.
+
+## Windows'ta kurulum
+
+1. [python.org](https://www.python.org/downloads/) adresinden Python 3.11 veya üstünü kurun. Kurulumda **"Add python.exe to PATH"** kutusunu işaretleyin.
+2. Bu depoyu indirin: GitHub'da **Code → Download ZIP** ile indirip bir klasöre açın.
+3. O klasörün adres çubuğuna `cmd` yazıp Enter'a basın. Açılan pencerede şunları çalıştırın:
+
+```
+py -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+py -m denetci kullanici-ekle burak
+```
+
+4. Son komut sizden bir parola ister (en az 12 karakter) ve ekranda bir **anahtar** gösterir. Telefonunuzdaki Google Authenticator veya Microsoft Authenticator uygulamasını açın, "anahtarı elle gir" seçeneğiyle bu anahtarı ekleyin.
+5. İsteğe bağlı olarak sentetik demo verisini oluşturun: `py -m denetci demo`
+6. Uygulamayı başlatın: `py -m denetci calistir`. Ardından tarayıcıda <http://127.0.0.1:8000> adresini açın.
+
+Sonraki kullanımlarda aynı klasörde şu iki komut yeterli: `.venv\Scripts\activate` ve ardından `py -m denetci calistir`.
+
+## Veriler ve yedek
+
+Tüm veriler (veritabanı ve yüklenen orijinal dosyalar) `C:\Users\<kullanıcı>\DenetciVeri` klasöründe durur. **Yedek almak için uygulama kapalıyken bu klasörü harici bir diske kopyalayın.** Bu klasör hiçbir zaman GitHub'a gönderilmez.
+
+Farklı bir klasör kullanmak isterseniz uygulamayı başlatmadan önce şu komutu çalıştırın: `set DENETCI_VERI=D:\Denetci`
+
+## Geliştirme
+
+```
+pip install -r requirements-dev.txt
+py -m pytest
+```
+
+Testler bilinen sonuçlu sentetik verilerle şunları doğrular:
+
+- Hatalı setteki 8 bilinen hatanın hepsi bulunuyor, temiz sette hiç bulgu çıkmıyor.
+- Ara toplamlar çift sayılmıyor.
+- Kanıt satırı, orijinal dosyadaki satırla birebir eşleşiyor.
+- Aynı dosya tekrar yüklenemiyor.
+- Bir mükellefin adresiyle başka bir mükellefin verisine erişilemiyor.
+- Giriş, MFA ve form güvenliği (CSRF) çalışıyor.
+
+## Teknik notlar
+
+- **Altyapı:** Python, FastAPI, SQLite (SQLAlchemy) ve sunucu tarafında üretilen HTML. Kurulumu kolaylaştırmak için Node.js veya Docker gerekmiyor. İleride sunucuya taşınırken veritabanı PostgreSQL'e geçirilebilir.
+- **Mükellef yalıtımı:** Her tabloda `client_id` var ve tüm adresler mükellef bazında doğrulanıyor.
+- **Kurallar:** `denetci/checks/rules.py` dosyasında. Her kuralda kimlik, sürüm, dayanak, dayanağın doğrulanma durumu ve istisnalar yer alıyor. Kurallar bir çerçeve (`frameworks`) etiketi taşıyor; böylece ileride BOBİ FRS gibi başka çerçeveler eklenebilecek. Dayanaklar siz doğrulayana kadar "doğrulanmadı" olarak işaretli.

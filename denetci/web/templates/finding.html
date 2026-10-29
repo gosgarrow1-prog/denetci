@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block crumb %} › <a href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Analiz #{{ run.id }}</a> › {{ f.rule_id }}{% endblock %}
+{% block content %}
+<h1>{{ f.title }}</h1>
+<table class="grid narrowt">
+<tbody>
+<tr><th>Önem</th><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td></tr>
+<tr><th>Tür</th><td>{{ KIND_LABELS[f.kind] }}</td></tr>
+<tr><th>Kural</th><td>{{ f.rule_id }} {{ rule.title if rule }} · sürüm {{ f.rule_version }}</td></tr>
+<tr><th>Dayanak</th><td>{{ rule.basis if rule }}{% if rule and not rule.basis_verified %} <span class="tag warn">doğrulanmadı</span>{% endif %}</td></tr>
+<tr><th>Tutar</th><td>{{ f.amount|tl }} TL</td></tr>
+<tr><th>Hesap</th><td>{{ f.hesap_kodu or '—' }}</td></tr>
+</tbody>
+</table>
+
+<h2>Tespit</h2><p>{{ f.explanation }}</p>
+<h2>Kesinlik</h2><p>{{ f.certainty }}</p>
+<h2>Önerilen inceleme adımı</h2><p>{{ f.next_step }}</p>
+{% if rule %}<p class="muted">Bilinen istisnalar: {{ rule.exceptions }}</p>{% endif %}
+
+<h2>Kaynak kayıtlar ({{ evidence|length }})</h2>
+{% for e in evidence %}
+<div class="evidence">
+  <div><strong>{{ e.ev.label }}</strong> — {{ e.sf.orig_name }} · sayfa “{{ e.raw.sheet }}” · satır {{ e.raw.row_no }}{% if e.raw.note %} · <em>{{ e.raw.note }}</em>{% endif %}</div>
+  <div class="scroll">
+  <table class="grid small">
+    {% if e.header %}<thead><tr>{% for h in e.header %}<th>{{ h if h is not none else '' }}</th>{% endfor %}</tr></thead>{% endif %}
+    <tbody><tr>{% for v in e.raw.cells %}<td>{{ v if v is not none else '' }}</td>{% endfor %}</tr></tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+<p>Bu bulgu tek bir kayda değil, dosyanın toplamlarına dayanıyor.</p>
+{% endfor %}
+
+<section class="card">
+<h2>Takip</h2>
+<p class="muted">Durum değiştirmek kaynak veriyi değiştirmez. Not ve durum, bu bulgu sonraki analizlerde de görülürse korunur.</p>
+<form method="post" action="/mukellef/{{ c.id }}/bulgu/{{ f.id }}/durum">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <label>Durum <select name="durum">{% for k, v in STATUS_LABELS.items() %}<option value="{{ k }}" {% if case and case.status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Not <textarea name="not" rows="3">{{ case.note if case and case.note else '' }}</textarea></label>
+  <button>Kaydet</button>
+</form>
+</section>
+{% endblock %}
