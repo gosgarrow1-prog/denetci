@@ -2,11 +2,15 @@
 
 Mali müşavirlik bürosu için hazırlanan özel bir uygulama. Mükelleflerin Luca'dan alınan muhasebe dosyalarını okur, doğrular ve bulguları kaynak kayıtlarıyla birlikte gösterir. **Kendi bilgisayarınızda çalışır; veriler bilgisayarınızdan çıkmaz.**
 
-Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://claude.ai/artifact/STx2i6GbryR1XBUJbzykQw>
+Durum: **Aşama 0 tamam, Luca biçimleri, KDV ön kontrolleri ve finansal panel eklendi.** Ürün planı: <https://claude.ai/artifact/STx2i6GbryR1XBUJbzykQw>
 
 ## Neler yapıyor
 
-- **Giriş:** Kayıt ekranı yok. Parola ve telefondaki doğrulayıcı uygulamanın 6 haneli koduyla giriş yapılır (MFA). Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez.
+- **Giriş:** Kayıt ekranı yok; kullanıcı adı ve parola ile girilir. Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez. Telefon kodu (MFA) varsayılan olarak kapalıdır; uygulama internete açılacaksa `set DENETCI_TELEFON_KODU=1` ile açılmalıdır.
+- **Ana ekran:** Tüm mükellefler kart olarak görünür: son analizin veri durumu ve açık bulgu sayıları. Hiç mükellef yokken **Örnek mükellefle dene (DEMO)** düğmesi sentetik bir mükellef oluşturur.
+- **Mükellef listesi:** Luca'dan alınan mükellef listesi (.xlsx/.csv) yüklenince önizleme gösterilir; onaylanınca mükellefler toplu eklenir. Aynı VKN veya unvan ikinci kez eklenmez. (Luca'nın liste düzeni henüz gerçek bir örnekle denenmedi.)
+- **Mükellef paneli:** Bulgular, gelir tablosu özeti, bilanço yapısı grafiği, temel oranlar (cari, asit-test, nakit, kaldıraç, marjlar; formülleriyle), kontroller ve yüklenen belgeler tek sayfada. Önceki dönem yüklüyse karşılaştırma gösterilir. Finansal özet bilgi amaçlıdır; kapanmamış dönemlerde dönem sonucu hesaplanarak gösterilir.
+- **Toplu yükleme:** Birden fazla dosya sürükle-bırak ile yüklenebilir. Luca dosyasındaki "Tarih Aralığı"ndan dönem kendiliğinden bulunur, analiz kendiliğinden çalışır.
 - **Mükellef ve dönem:** Mükellef ve dönem tanımlanabilir.
 - **Luca dosyaları:** Luca'nın Excel çıktısı olarak alınan **mizan, yevmiye defteri, defteri kebir ve muavin** kolon eşleştirmesi gerekmeden tanınır. Yevmiyede yalnızca yaprak hesap satırları kayıt olarak alınır; ana ve ara seviye satırları toplamdır. Her fişin TOPLAM satırı ve kebirdeki her grubun Toplam satırı okunan kayıtlarla karşılaştırılır; tutmazsa aktarım hata gösterir. Kebir ve muavindeki "Nakli Yekün" önceki dönemden gelen tutar olarak ayrıca saklanır. Mizanın "Tarih Aralığı" dönem başından başlamıyorsa (ör. yalnızca Eylül), mizan devir içermez; bakiye kolonları gerçek bakiye sayılmaz ve uygulama bunu aktarımda uyarır.
 - **Diğer dosyalar:** Mizan ve yevmiye `.xlsx` veya `.csv` olarak da yüklenebilir. Belge türü ve kolonlar otomatik önerilir. Önizlemede ara toplam, nakli yekün ve tekrar eden başlık satırları ayıklanır. Onaylamadan hiçbir şey aktarılmaz.
@@ -30,7 +34,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://clau
 - **Veri durumu:** Analiz sonucu "analize uygun", "kısmen uygun" veya "kritik veri sorunu var" olarak gösterilir. Eksik belge varsa ilgili kontrol "çalıştırılamadı" olarak işaretlenir.
 - **Bulgular:** Her bulgudan orijinal dosyanın sayfa ve satırına inilebilir. Bulgulara durum (yeni, inceleniyor, açıklandı) ve not eklenebilir; bunlar kaynak veriyi değiştirmez.
 
-Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, finansal özet, beyanname gerektiren KDV kontrolleri (K-24–K-26), geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
+Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, beyanname gerektiren KDV kontrolleri (K-24–K-26), geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
 
 > Luca mizan, yevmiye, kebir ve muavin okuyucuları 29.10.2026'da Luca'dan alınmış gerçek örneklerle denendi. Testlerde ve DEMO'da yalnızca bu düzeni taklit eden **sentetik** dosyalar kullanılır; gerçek mükellef dosyaları depoya konmaz.
 
@@ -47,7 +51,7 @@ pip install -r requirements.txt
 py -m denetci kullanici-ekle burak
 ```
 
-4. Son komut sizden bir parola ister (en az 12 karakter) ve ekranda bir **anahtar** gösterir. Telefonunuzdaki Google Authenticator veya Microsoft Authenticator uygulamasını açın, "anahtarı elle gir" seçeneğiyle bu anahtarı ekleyin.
+4. Son komut sizden bir parola ister (en az 12 karakter).
 5. İsteğe bağlı olarak sentetik demo verisini oluşturun: `py -m denetci demo`
 6. Uygulamayı başlatın: `py -m denetci calistir`. Ardından tarayıcıda <http://127.0.0.1:8000> adresini açın.
 

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head"><div><h1>Mükellef listesi</h1><div class="sub">{{ filename }} · {{ rows|length }} satır</div></div></div>
+<section class="card">
+<form method="post" action="/mukellef/liste/onayla">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <p><strong>{{ rows|selectattr('durum', 'equalto', 'yeni')|list|length }}</strong> yeni mükellef eklenecek.
+    {% set var = rows|selectattr('durum', 'equalto', 'var')|list|length %}{% if var %}{{ var }} tanesi zaten kayıtlı, atlanacak.{% endif %}</p>
+  <div class="scroll"><table class="grid">
+    <thead><tr><th>Ekle</th><th>Unvan</th><th>VKN / TCKN</th><th>Vergi dairesi</th><th>Şirket türü</th><th>Luca kodu</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr><td>{% if r.durum == 'yeni' %}<input type="checkbox" name="sec" value="{{ loop.index0 }}" checked>{% else %}<span class="tag">{{ 'kayıtlı' if r.durum == 'var' else 'tekrar' }}</span>{% endif %}</td>
+      <td>{{ r.unvan }}</td><td>{{ r.vkn or '' }}</td><td>{{ r.vergi_dairesi or '' }}</td><td>{{ r.sirket_turu or '' }}</td><td>{{ r.luca_kodu or '' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <input type="hidden" name="veri" value="{{ data }}">
+  <div class="row" style="margin-top:12px"><button>Seçilenleri ekle</button><a class="btn secondary" href="/">Vazgeç</a></div>
+</form>
+</section>
+{% endblock %}

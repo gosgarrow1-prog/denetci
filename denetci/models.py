@@ -35,6 +35,9 @@ class Client(Base):
     unvan: Mapped[str] = mapped_column(String(256))
     sirket_turu: Mapped[str | None] = mapped_column(String(64))
     faaliyet: Mapped[str | None] = mapped_column(String(256))
+    vkn: Mapped[str | None] = mapped_column(String(16), index=True)  # VKN veya TCKN
+    vergi_dairesi: Mapped[str | None] = mapped_column(String(128))
+    luca_kodu: Mapped[str | None] = mapped_column(String(64))
     para_birimi: Mapped[str] = mapped_column(String(3), default="TRY")
     # Uygulanan çerçeve. Kurallar bu etikete göre seçilir; ileride BOBİ FRS vb. eklenebilir.
     cerceve: Mapped[str] = mapped_column(String(32), default="THP_VUK")

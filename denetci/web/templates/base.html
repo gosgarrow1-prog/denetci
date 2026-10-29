@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Denetçi{% endblock %}</title>
+<title>{% block title %}{% if c is defined and c %}{{ c.unvan }} · {% endif %}Denetçi{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="/">Denetçi</a>
-  {% if c is defined and c %}
-  <nav class="crumb"><a href="/mukellef/{{ c.id }}">{{ c.unvan }}</a>{% block crumb %}{% endblock %}</nav>
-  {% endif %}
+  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">D</span>Denetçi</a>
+  <nav class="crumb">
+  {% if c is defined and c %}<a href="/">Mükellefler</a> › <a href="/mukellef/{{ c.id }}">{{ c.unvan }}</a>{% block crumb %}{% endblock %}{% endif %}
+  </nav>
   {% if request.session.get('uid') %}
   <form method="post" action="/cikis" class="logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Çıkış</button></form>
   {% endif %}
@@ -20,5 +20,17 @@
 <div class="demo">DEMO — SENTETİK VERİ. Bu mükellef ve tüm tutarlar uydurmadır.</div>
 {% endif %}
 <main>{% block content %}{% endblock %}</main>
+<script>
+// Sürükle-bırak alanı: seçilen dosya adlarını göster.
+document.querySelectorAll('.drop').forEach(function (z) {
+  var inp = z.querySelector('input[type=file]'), out = z.querySelector('.files');
+  ['dragenter', 'dragover'].forEach(function (e) { z.addEventListener(e, function () { z.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (e) { z.addEventListener(e, function () { z.classList.remove('over'); }); });
+  if (inp && out) inp.addEventListener('change', function () {
+    out.textContent = Array.from(inp.files).map(function (f) { return f.name; }).join(', ');
+    var f = z.closest('form'); if (f && f.dataset.auto) f.submit();
+  });
+});
+</script>
 </body>
 </html>

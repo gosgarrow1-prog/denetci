@@ -9,25 +9,34 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
+from itsdangerous import BadSignature, URLSafeSerializer
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import db
 from ..auth import LoginThrottle, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..checks.registry import ALL_RULES
-from ..config import data_dir, telefon_kodu
+from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..models import (AnalysisRun, AuditLog, Client, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
                       SourceFile, User)
 from ..parsing import kurus_str
+from ..finance import SINIFLAR, summarize
+from ..checks.engine import build_context
+from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
+from ..importer.tables import UnsupportedFile
+from ..importer.ingest import ingest
+from .charts import balance_bars, tl_short
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 templates.env.filters["tl"] = kurus_str
 templates.env.globals["RELIABILITY_LABELS"] = RELIABILITY_LABELS
 templates.env.globals["DOC_LABELS"] = DOC_LABELS
+templates.env.globals["SINIFLAR"] = SINIFLAR
+templates.env.globals["tl_short"] = tl_short
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
@@ -124,7 +133,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
-        return RedirectResponse("/giris", status_code=303)
+        return _redirect(None, "/giris")
 
     # ---- Giriş --------------------------------------------------------------
 
@@ -151,13 +160,13 @@ def create_app() -> FastAPI:
         request.session["uid"] = user.id
         request.session["csrf"] = secrets.token_urlsafe(24)
         audit(s, user, "giris")
-        return RedirectResponse("/", status_code=303)
+        return _redirect(s, "/")
 
     @app.post("/cikis")
     async def logout(request: Request):
         await form_checked(request)
         request.session.clear()
-        return RedirectResponse("/giris", status_code=303)
+        return _redirect(None, "/giris")
 
     # ---- Portföy ve mükellef -----------------------------------------------
 
@@ -165,15 +174,18 @@ def create_app() -> FastAPI:
     def portfolio(request: Request, user=Depends(current_user), s=Depends(get_session)):
         rows = []
         for c in s.scalars(select(Client).order_by(Client.unvan)):
-            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id).order_by(AnalysisRun.id.desc()))
-            open_high = 0
+            period = s.scalar(select(Period).where(Period.client_id == c.id).order_by(Period.bitis.desc()))
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == period.id)
+                           .order_by(AnalysisRun.id.desc())) if period else None
+            sev = {"Kritik": 0, "Yüksek": 0, "Orta": 0}
             if run:
-                open_high = s.scalar(select(func.count()).select_from(Finding).where(
-                    Finding.run_id == run.id, Finding.severity.in_(["Kritik", "Yüksek"]))) or 0
-            last_upload = s.scalar(select(func.max(ImportBatch.created_at)).where(ImportBatch.client_id == c.id))
-            rows.append({"c": c, "run": run, "open_high": open_high, "last_upload": last_upload})
-        rows.sort(key=lambda r: (-(r["open_high"]), r["c"].unvan))
-        return render(request, "portfolio.html", rows=rows)
+                for sv, n in s.execute(select(Finding.severity, func.count()).where(Finding.run_id == run.id)
+                                       .group_by(Finding.severity)):
+                    sev[sv] = n
+            rows.append({"c": c, "run": run, "period": period, "sev": sev, "open_high": sev["Kritik"] + sev["Yüksek"],
+                         "rel": run.reliability if run else None})
+        rows.sort(key=lambda r: (-r["open_high"], r["c"].is_demo, r["c"].unvan))
+        return render(request, "portfolio.html", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
 
     @app.post("/mukellef/yeni")
     async def client_create(request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -182,17 +194,146 @@ def create_app() -> FastAPI:
         if not unvan:
             raise HTTPException(400, "Unvan gerekli")
         c = Client(unvan=unvan[:256], sirket_turu=str(form.get("sirket_turu", ""))[:64] or None,
-                   faaliyet=str(form.get("faaliyet", ""))[:256] or None)
+                   faaliyet=str(form.get("faaliyet", ""))[:256] or None, vkn=str(form.get("vkn", "")).strip()[:16] or None)
         s.add(c)
         s.flush()
         audit(s, user, "mukellef_olustur", c.id)
-        return RedirectResponse(f"/mukellef/{c.id}", status_code=303)
+        return _redirect(s, f"/mukellef/{c.id}")
+
+    # ---- Mükellef listesi (Luca) --------------------------------------------
+
+    @app.post("/mukellef/liste", response_class=HTMLResponse)
+    async def client_list_upload(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        up = form.get("dosya")
+        if not up or not getattr(up, "filename", ""):
+            return _redirect(s, "/")
+        content = await up.read()
+        if len(content) > MAX_YUKLEME_BAYT:
+            return render(request, "error.html", title="Dosya çok büyük", message="Liste 20 MB'tan küçük olmalı.", back="/")
+        try:
+            rows = parse_client_list(up.filename, content)
+        except (ListError, UnsupportedFile) as exc:
+            return render(request, "error.html", title="Liste okunamadı", message=str(exc), back="/")
+        except Exception:
+            return render(request, "error.html", title="Liste okunamadı", message="Dosya açılamadı. Luca'dan .xlsx olarak yeniden alın.", back="/")
+        mark_existing(rows, list(s.scalars(select(Client))))
+        data = _signer().dumps([r.__dict__ for r in rows])
+        return render(request, "client_list.html", rows=rows, filename=up.filename, data=data)
+
+    @app.post("/mukellef/liste/onayla")
+    async def client_list_confirm(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        try:
+            rows = _signer().loads(str(form.get("veri", "")))
+        except BadSignature:
+            raise HTTPException(400, "Liste verisi bozulmuş; listeyi yeniden yükleyin.")
+        chosen = {int(v) for v in form.getlist("sec") if str(v).isdigit()}
+        existing = list(s.scalars(select(Client)))
+        added = 0
+        for i, r in enumerate(rows):
+            if i not in chosen or r["durum"] != "yeni":
+                continue
+            # Onay ile yükleme arasında eklenmiş olabilir; tekrar kontrol et.
+            if mark_existing([ClientRow(**r)], existing)[0].durum != "yeni":
+                continue
+            c = Client(unvan=r["unvan"], vkn=r["vkn"], vergi_dairesi=r["vergi_dairesi"], luca_kodu=r["luca_kodu"],
+                       sirket_turu=(r["sirket_turu"] or None) and r["sirket_turu"][:64], faaliyet=r["faaliyet"])
+            s.add(c)
+            existing.append(c)
+            added += 1
+        s.flush()
+        audit(s, user, "mukellef_listesi", None, f"{added} mükellef eklendi")
+        return _redirect(s, "/")
+
+    # ---- DEMO -------------------------------------------------------------------
+
+    @app.post("/demo")
+    async def demo(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        await form_checked(request)
+        c = s.scalar(select(Client).where(Client.is_demo.is_(True)))
+        if not c:
+            from .. import synthetic_luca
+            c = Client(unvan="DEMO — Örnek Ticaret A.Ş. (SENTETİK)", sirket_turu="A.Ş.", faaliyet="Toptan ticaret (sentetik)",
+                       is_demo=True)
+            s.add(c)
+            s.flush()
+            files = synthetic_luca.generate(data_dir() / "demo_dosyalari", hatali=True, mizan=True)
+            periods = set()
+            for path in files.values():
+                o = ingest(s, c, path.name, path.read_bytes(), None)
+                if o.period:
+                    periods.add(o.period)
+            for p in periods:
+                run_analysis(s, c, p)
+        return _redirect(s, f"/mukellef/{c.id}")
+
+    # ---- Mükellef paneli ----------------------------------------------------------
 
     @app.get("/mukellef/{cid}", response_class=HTMLResponse)
-    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()
-        periods = list(s.scalars(select(Period).where(Period.client_id == cid).order_by(Period.baslangic.desc())))
-        return render(request, "client.html", c=c, periods=periods)
+        periods = list(s.scalars(select(Period).where(Period.client_id == cid).order_by(Period.bitis.desc(), Period.baslangic)))
+        p = owned(s, Period, donem, cid) if donem else (periods[0] if periods else None)
+        flash = request.session.pop("flash", None)
+        ctx = {"c": c, "periods": periods, "p": p, "flash": flash, "has_batches": False}
+        if p:
+            batches = list(s.scalars(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.period_id == p.id,
+                                                               ImportBatch.status != "iptal").order_by(ImportBatch.id.desc())))
+            ctx.update(batches=batches, files={b.source_file_id: s.get(SourceFile, b.source_file_id) for b in batches},
+                       has_batches=bool(batches))
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == cid, AnalysisRun.period_id == p.id)
+                           .order_by(AnalysisRun.id.desc()))
+            findings = list(s.scalars(select(Finding).where(Finding.run_id == run.id))) if run else []
+            findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 9), -(abs(f.amount or 0))))
+            cases = {cs.fingerprint: cs for cs in s.scalars(select(FindingCase).where(FindingCase.client_id == cid))}
+            open_findings = [f for f in findings if f.fingerprint not in cases or cases[f.fingerprint].status != "aciklandi"]
+            sev_counts = {k: sum(1 for f in open_findings if f.severity == k) for k in ("Kritik", "Yüksek", "Orta")}
+            fctx, _ = build_context(s, c, p)
+            fin = summarize(fctx) if fctx else summarize_empty()
+            prev_fin = None
+            if fctx:
+                earlier = s.scalars(select(Period).where(Period.client_id == cid, Period.bitis < p.baslangic)
+                                    .order_by(Period.bitis.desc())).all()
+                for pp in earlier:
+                    pctx, _ = build_context(s, c, pp)
+                    if pctx:
+                        prev_fin = summarize(pctx)
+                        break
+            chart = None
+            if fin.has_balance:
+                b = fin.bilanco
+                chart = balance_bars([("Dönen varlıklar", b["1"], "--s1"), ("Duran varlıklar", b["2"], "--s2")],
+                                     [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
+                                      ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
+            ctx.update(run=run, findings=open_findings, cases=cases, sev_counts=sev_counts, fin=fin, prev_fin=prev_fin,
+                       prev_ratios={r.key: r for r in prev_fin.oranlar} if prev_fin else {}, balance_chart=chart)
+        return render(request, "client.html", **ctx)
+
+    @app.post("/mukellef/{cid}/yukle")
+    async def upload_many(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        form = await form_checked(request)
+        period = owned(s, Period, int(form["donem"]), cid) if str(form.get("donem", "")).isdigit() else None
+        outcomes, touched = [], {}
+        for up in form.getlist("dosya"):
+            if not getattr(up, "filename", ""):
+                continue
+            content = await up.read()
+            o = ingest(s, c, up.filename, content, period)
+            outcomes.append(o)
+            if o.batch:
+                audit(s, user, "dosya_yukle", cid, f"batch={o.batch.id}")
+            if o.status == "aktarildi":
+                touched[o.period.id] = o.period
+        for p in touched.values():
+            run_analysis(s, c, p)
+        request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
+        pending = next((o for o in outcomes if o.status == "esleme"), None)
+        if pending and not touched:
+            return _redirect(s, f"/mukellef/{cid}/aktarim/{pending.batch.id}")
+        target = next(iter(touched.values()), None) or (outcomes[0].period if outcomes and outcomes[0].period else period)
+        return _redirect(s, f"/mukellef/{cid}" + (f"?donem={target.id}" if target else ""))
 
     @app.post("/mukellef/{cid}/donem")
     async def period_create(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -210,7 +351,7 @@ def create_app() -> FastAPI:
                    enflasyon_duzeltmesi=str(form.get("enflasyon", "bilinmiyor")))
         s.add(p)
         s.flush()
-        return RedirectResponse(f"/mukellef/{cid}/donem/{p.id}", status_code=303)
+        return _redirect(s, f"/mukellef/{cid}/donem/{p.id}")
 
     @app.get("/mukellef/{cid}/donem/{pid}", response_class=HTMLResponse)
     def period_page(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session), hata: str | None = None):
@@ -232,7 +373,7 @@ def create_app() -> FastAPI:
         form = await form_checked(request)
         up = form.get("dosya")
         if not up or not getattr(up, "filename", ""):
-            return RedirectResponse(f"/mukellef/{cid}/donem/{pid}?hata=Dosya+seçilmedi", status_code=303)
+            return _redirect(s, f"/mukellef/{cid}/donem/{pid}?hata=Dosya+seçilmedi")
         content = await up.read()
         try:
             batch = create_draft(s, c, p, up.filename, content)
@@ -244,7 +385,7 @@ def create_app() -> FastAPI:
             s.rollback()
             return render(request, "error.html", c=c, title="Dosya alınamadı", message=str(exc), back=f"/mukellef/{cid}/donem/{pid}")
         audit(s, user, "dosya_yukle", cid, f"batch={batch.id}")
-        return RedirectResponse(f"/mukellef/{cid}/aktarim/{batch.id}", status_code=303)
+        return _redirect(s, f"/mukellef/{cid}/aktarim/{batch.id}")
 
     @app.get("/mukellef/{cid}/aktarim/{bid}", response_class=HTMLResponse)
     def batch_page(cid: int, bid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -275,7 +416,7 @@ def create_app() -> FastAPI:
             return render(request, "error.html", c=c, title="Aktarım onaylanamadı", message=str(exc),
                           back=f"/mukellef/{cid}/aktarim/{bid}")
         audit(s, user, "aktarim_onayla", cid, f"batch={bid}")
-        return RedirectResponse(f"/mukellef/{cid}/aktarim/{bid}", status_code=303)
+        return _redirect(s, f"/mukellef/{cid}/aktarim/{bid}")
 
     @app.post("/mukellef/{cid}/aktarim/{bid}/iptal")
     async def batch_cancel(cid: int, bid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -283,7 +424,7 @@ def create_app() -> FastAPI:
         await form_checked(request)
         if b.status == "taslak":
             b.status = "iptal"
-        return RedirectResponse(f"/mukellef/{cid}/donem/{b.period_id}", status_code=303)
+        return _redirect(s, f"/mukellef/{cid}/donem/{b.period_id}")
 
     # ---- Analiz ve bulgular -------------------------------------------------
 
@@ -292,12 +433,15 @@ def create_app() -> FastAPI:
         c = s.get(Client, cid) or _404()
         p = owned(s, Period, pid, cid)
         await form_checked(request)
+        form = await request.form()
         try:
             run = run_analysis(s, c, p)
         except NoData as exc:
-            return RedirectResponse(f"/mukellef/{cid}/donem/{pid}?hata={exc}", status_code=303)
+            return _redirect(s, f"/mukellef/{cid}/donem/{pid}?hata={exc}")
         audit(s, user, "analiz", cid, f"run={run.id}")
-        return RedirectResponse(f"/mukellef/{cid}/analiz/{run.id}", status_code=303)
+        if form.get("geri") == "panel":
+            return _redirect(s, f"/mukellef/{cid}?donem={pid}")
+        return _redirect(s, f"/mukellef/{cid}/analiz/{run.id}")
 
     @app.get("/mukellef/{cid}/analiz/{rid}", response_class=HTMLResponse)
     def run_page(cid: int, rid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -348,9 +492,25 @@ def create_app() -> FastAPI:
         case.status = status
         case.note = str(form.get("not", ""))[:5000] or None
         audit(s, user, "bulgu_durum", cid, f"{f.fingerprint} -> {status}")
-        return RedirectResponse(f"/mukellef/{cid}/bulgu/{fid}", status_code=303)
+        return _redirect(s, f"/mukellef/{cid}/bulgu/{fid}")
 
     return app
+
+
+def _redirect(s, url):
+    """Yönlendirmeden önce kaydet: tarayıcı yeni sayfayı istediğinde değişiklik veritabanında olmalı."""
+    if s is not None:
+        s.commit()
+    return RedirectResponse(url, status_code=303)
+
+
+def _signer():
+    return URLSafeSerializer(_secret_key(), salt="mukellef-listesi")
+
+
+def summarize_empty():
+    from ..finance import Summary
+    return Summary()
 
 
 def _404():
