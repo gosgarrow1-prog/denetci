@@ -23,11 +23,11 @@ def test_detection_and_counts(session, client_period, files_hatali):
     c, p = client_period
     b = _import_all(session, c, p, files_hatali)
     mz = b["mizan"].summary["sayilar"]
-    # 27 hesap satırı (ana + alt); sınıf toplamları ve genel toplam kayıt sayılmaz.
-    assert mz["kayit"] == 27
+    # 29 hesap satırı (ana + alt); sınıf toplamları ve genel toplam kayıt sayılmaz.
+    assert mz["kayit"] == 29
     assert mz["ara_toplam"] == 6
     yv = b["yevmiye"].summary["sayilar"]
-    assert yv["kayit"] == 33
+    assert yv["kayit"] == 36
     assert yv["ara_toplam"] == 3  # 2 nakli yekün + genel toplam
     assert yv["baslik"] == 3  # ilk başlık + 2 tekrar eden başlık
 

@@ -50,7 +50,8 @@ class Draft:
 @dataclass
 class Result:
     rule: Rule
-    status: str  # gecti, bulgu, calistirilamadi
+    # gecti, bulgu, calistirilamadi (gerekli veri yok), uygulanmadi (isteğe bağlı veri yok), bilgi (yalnızca ölçüm)
+    status: str
     message: str
     drafts: list[Draft] = field(default_factory=list)
 
@@ -72,6 +73,8 @@ class Context:
     declared: set = field(default_factory=set)
     # Mizan yalnızca bir tarih aralığının hareketlerini içeriyorsa (devir yok) bakiyeleri gerçek bakiye değildir.
     mizan_hareket: bool = False
+    # Önceki dönemlerin bağlamları (en yakından uzağa). Dönemler arası kontroller kullanır.
+    previous: list = field(default_factory=list)
 
     @property
     def leaves(self):

@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .. import db
 from ..auth import LoginThrottle, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
-from ..checks.rules import ALL_RULES
+from ..checks.registry import ALL_RULES
 from ..config import data_dir
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS

@@ -198,9 +198,9 @@ def write_mizan(path: Path, entries, kumulatif: bool = False):
 
 
 def generate(out_dir: Path, hatali: bool = False, kismi: bool = False, mizan: bool = False,
-             kumulatif: bool = False) -> dict[str, Path]:
+             kumulatif: bool = False, mahsup: bool = True) -> dict[str, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    _mizan_entries, yev_entries = build(hatali)
+    _mizan_entries, yev_entries = build(hatali, mahsup)
     yev = _numbered(yev_entries)
     # Kebir ve muavin, mizanla aynı (yalnızca yevmiyede olan Y-2026-0921 hariç) kayıtları içerir.
     # Y-2026-0920 kebirde de aynı hatalı tutarla yer alır; fark yalnızca yevmiyenin denkliğinde görülür.

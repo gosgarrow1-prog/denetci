@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from ..config import ENGINE_VERSION, RULESET_VERSION
 from ..importer.load import latest_batch
 from ..models import AnalysisRun, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
-from .rules import ALL_RULES, Context
+from .registry import ALL_RULES
+from .rules import Context
 
 RELIABILITY_LABELS = {
     "uygun": "Analize uygun",
@@ -21,11 +22,15 @@ class NoData(ValueError):
     pass
 
 
-def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRun:
+ONCEKI_DONEM_SAYISI = 3  # oran karşılaştırmalarında kullanılan önceki dönem sayısı
+
+
+def build_context(session: Session, client: Client, period: Period):
+    """Bir dönemin son onaylı belge sürümlerinden kontrol bağlamını kurar. Belge yoksa (None, {}) döner."""
     batches = {d: latest_batch(session, client.id, period.id, d) for d in ("mizan", "yevmiye", "kebir", "muavin")}
     if not any(batches.values()):
-        raise NoData("Bu dönem için onaylanmış belge yok.")
-    mizan_b, yev_b = batches["mizan"], batches["yevmiye"]
+        return None, batches
+    mizan_b = batches["mizan"]
     mizan = list(session.scalars(select(TrialBalanceLine).where(
         TrialBalanceLine.client_id == client.id, TrialBalanceLine.batch_id == mizan_b.id))) if mizan_b else None
 
@@ -33,7 +38,7 @@ def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRu
         return list(session.scalars(select(JournalLine).where(JournalLine.client_id == client.id,
                                                                JournalLine.batch_id == b.id))) if b else None
 
-    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, lines(yev_b),
+    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, lines(batches["yevmiye"]),
                   kebir=lines(batches["kebir"]), muavin=lines(batches["muavin"]))
     for d in ("kebir", "muavin"):
         if batches[d]:
@@ -49,6 +54,23 @@ def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRu
                 ctx.declared.add(d)
             if rng:
                 ctx.ranges[d] = (date.fromisoformat(rng[0]), date.fromisoformat(rng[1]))
+    return ctx, batches
+
+
+def run_analysis(session: Session, client: Client, period: Period) -> AnalysisRun:
+    ctx, batches = build_context(session, client, period)
+    if ctx is None:
+        raise NoData("Bu dönem için onaylanmış belge yok.")
+    mizan_b, yev_b = batches["mizan"], batches["yevmiye"]
+    # Aynı mükellefin önceki dönemleri (en yakından uzağa); dönemler arası kontroller için.
+    earlier = session.scalars(select(Period).where(Period.client_id == client.id, Period.bitis < period.baslangic)
+                              .order_by(Period.bitis.desc())).all()
+    for p in earlier:
+        if len(ctx.previous) >= ONCEKI_DONEM_SAYISI:
+            break
+        pctx, _ = build_context(session, client, p)
+        if pctx is not None:
+            ctx.previous.append(pctx)
     results = [fn(ctx) for rule, fn in ALL_RULES if client.cerceve in rule.frameworks]
 
     run = AnalysisRun(client_id=client.id, period_id=period.id, mizan_batch_id=mizan_b.id if mizan_b else None,

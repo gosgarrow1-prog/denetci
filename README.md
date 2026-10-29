@@ -12,7 +12,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://clau
 - **Diğer dosyalar:** Mizan ve yevmiye `.xlsx` veya `.csv` olarak da yüklenebilir. Belge türü ve kolonlar otomatik önerilir. Önizlemede ara toplam, nakli yekün ve tekrar eden başlık satırları ayıklanır. Onaylamadan hiçbir şey aktarılmaz.
 - **Veri okuma:** Türkçe sayı ve tarih biçimleri okunur. Hesap kodları metin olarak tutulduğu için baştaki sıfırlar korunur. Tutarlar kuruş cinsinden tam sayı olarak saklanır, kayan nokta hatası oluşmaz.
 - **Sürümler:** Aynı dosya ikinci kez yüklenirse reddedilir. Yeni sürüm yüklendiğinde eski sürüm ve eski analizler saklanır.
-- **Kontroller:** Şu 9 kontrol çalışır:
+- **Kontroller:** Şu 13 kontrol çalışır:
   - K-00 belge kapsamı (Luca'daki "Tarih Aralığı" dönemi kapsıyor mu)
   - K-01 mizan denkliği
   - K-02 fiş denkliği
@@ -22,10 +22,15 @@ Durum: **Aşama 0 tamam, Luca biçimleri eklendi.** Ürün planı: <https://clau
   - K-05K yevmiye–defteri kebir mutabakatı (ana hesap bazında, ortak tarih aralığında)
   - K-05M yevmiye–muavin mutabakatı (muavindeki hesaplar için)
   - K-09 negatif kasa (mizan yoksa kebir veya muavinden, nakli yekün dahil)
+  - KDV ön kontrolleri (beyan veya vergi görüşü yerine geçmez):
+    - K-21 KDV mahsup kaydı: ay sonunda 191 ve 391 birlikte bakiye veriyor mu
+    - K-22 devreden KDV sürekliliği: önceki ay sonundaki 190 bakiyesi bu ayın başına doğru devretmiş mi (önceki dönem yüklüyse)
+    - K-22D devreden KDV varken ödenecek KDV oluşmuş mu (360 altındaki KDV hesabı adından tanınır, tevkifat hariç)
+    - K-23 hesaplanan KDV / net satış oranı; önceki dönemler varsa ortalamadan hem %25 hem 10.000 TL sapma
 - **Veri durumu:** Analiz sonucu "analize uygun", "kısmen uygun" veya "kritik veri sorunu var" olarak gösterilir. Eksik belge varsa ilgili kontrol "çalıştırılamadı" olarak işaretlenir.
 - **Bulgular:** Her bulgudan orijinal dosyanın sayfa ve satırına inilebilir. Bulgulara durum (yeni, inceleniyor, açıklandı) ve not eklenebilir; bunlar kaynak veriyi değiştirmez.
 
-Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, finansal özet, KDV ve geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
+Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, finansal özet, beyanname gerektiren KDV kontrolleri (K-24–K-26), geçici vergi kontrolleri, raporlar ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
 
 > Luca mizan, yevmiye, kebir ve muavin okuyucuları 29.10.2026'da Luca'dan alınmış gerçek örneklerle denendi. Testlerde ve DEMO'da yalnızca bu düzeni taklit eden **sentetik** dosyalar kullanılır; gerçek mükellef dosyaları depoya konmaz.
 

@@ -24,6 +24,7 @@ ACCOUNTS = {
     "153": "TİCARİ MALLAR", "153.01": "Ticari Mallar",
     "191": "İNDİRİLECEK KDV", "191.01": "İndirilecek KDV %20",
     "320": "SATICILAR", "320.01": "Satıcı X Ltd. Şti.",
+    "360": "ÖDENECEK VERGİ VE FONLAR", "360.01": "Ödenecek KDV",
     "391": "HESAPLANAN KDV", "391.01": "Hesaplanan KDV %20",
     "500": "SERMAYE", "500.01": "Ödenmiş Sermaye",
     "570": "GEÇMİŞ YILLAR KARLARI", "570.01": "Geçmiş Yıllar Karları",
@@ -51,6 +52,8 @@ BASE_ENTRIES = [
 ]
 CLOSING_ENTRIES = [
     ("Y-2026-0930", date(2026, 9, 30), "Satılan malın maliyeti", [("621.01", 180_000, 0), ("153.01", 0, 180_000)]),
+    # Dönem sonu KDV mahsubu (basitlik için üç ay tek fişte): 391 = 61.000, 191 = 35.000, fark ödenecek.
+    ("Y-2026-0931", date(2026, 9, 30), "KDV mahsubu", [("391.01", 61_000, 0), ("191.01", 0, 35_000), ("360.01", 0, 26_000)]),
 ]
 ERROR_COMMON = [  # hem yevmiyede hem mizanda
     ("Y-2026-0912", date(2026, 9, 14), "Satıcıya nakit ödeme", [("320.01", 60_000, 0), ("100.01", 0, 60_000)]),
@@ -71,8 +74,9 @@ def tr_amount(tl: float) -> str:
     return f"{s},{lira % 100:02d}"
 
 
-def build(hatali: bool):
-    mizan_entries = BASE_ENTRIES + (ERROR_COMMON if hatali else []) + CLOSING_ENTRIES
+def build(hatali: bool, mahsup: bool = True):
+    closing = CLOSING_ENTRIES if mahsup else [e for e in CLOSING_ENTRIES if e[0] != "Y-2026-0931"]
+    mizan_entries = BASE_ENTRIES + (ERROR_COMMON if hatali else []) + closing
     yev_entries = list(mizan_entries) + (ERROR_YEVMIYE_ONLY if hatali else [])
     if hatali:  # Y-2026-0920 yevmiyede yanlış: alacak 9.000
         yev_entries = [(f, d, a, [(c, b, 9_000) if (f == "Y-2026-0920" and al) else (c, b, al) for c, b, al in ls])

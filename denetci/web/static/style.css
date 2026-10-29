@@ -40,3 +40,4 @@ tr.cls-belirsiz td { background:#fff3c4; }
 .st-bulgu { color:var(--high); font-weight:600; } .st-gecti { color:var(--ok); } .st-calistirilamadi { color:var(--muted); } .st-uygulanmadi { color:var(--muted); }
 .evidence { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:8px 12px; margin:8px 0; }
 .ok { color:var(--ok); font-weight:600; }
+.st-bilgi { color:var(--muted); }
