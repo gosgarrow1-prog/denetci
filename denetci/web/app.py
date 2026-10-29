@@ -15,7 +15,7 @@ from .. import db
 from ..auth import LoginThrottle, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..checks.registry import ALL_RULES
-from ..config import data_dir
+from ..config import data_dir, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
@@ -99,6 +99,7 @@ async def form_checked(request: Request) -> dict:
 def render(request: Request, name: str, **ctx):
     ctx["request"] = request
     ctx["csrf"] = csrf_token(request)
+    ctx.setdefault("telefon_kodu", telefon_kodu())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -139,11 +140,12 @@ def create_app() -> FastAPI:
             return render(request, "login.html", error="Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.")
         user = s.scalar(select(User).where(User.username == username))
         ok = user and verify_password(str(form.get("parola", "")), user.password_hash) and \
-            verify_totp(user.totp_secret, str(form.get("kod", "")))
+            (not telefon_kodu() or verify_totp(user.totp_secret, str(form.get("kod", ""))))
         if not ok:
             throttle.fail(username)
             audit(s, None, "giris_basarisiz", detail=username[:64])
-            return render(request, "login.html", error="Kullanıcı adı, parola veya doğrulama kodu hatalı.")
+            return render(request, "login.html", error="Kullanıcı adı, parola veya doğrulama kodu hatalı."
+                          if telefon_kodu() else "Kullanıcı adı veya parola hatalı.")
         throttle.reset(username)
         request.session.clear()
         request.session["uid"] = user.id

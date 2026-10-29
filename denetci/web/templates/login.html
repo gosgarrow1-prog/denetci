@@ -7,7 +7,7 @@
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Kullanıcı adı <input name="kullanici" autocomplete="username" required autofocus></label>
     <label>Parola <input name="parola" type="password" autocomplete="current-password" required></label>
-    <label>Doğrulama kodu (kimlik doğrulayıcı uygulamadaki 6 hane) <input name="kod" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" required></label>
+    {% if telefon_kodu %}<label>Doğrulama kodu (kimlik doğrulayıcı uygulamadaki 6 hane) <input name="kod" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" required></label>{% endif %}
     <button>Giriş yap</button>
   </form>
   <p class="muted">Kayıt olma yoktur. Kullanıcılar komut satırından eklenir.</p>

@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from . import db
 from .auth import hash_password, new_totp_secret, otpauth_uri
-from .config import data_dir
+from .config import data_dir, telefon_kodu
 
 
 def cmd_add_user(args):
@@ -33,6 +33,8 @@ def cmd_add_user(args):
         s.add(User(username=args.username, password_hash=hash_password(pw), totp_secret=secret))
         s.commit()
     print("\nKullanıcı eklendi.")
+    if not telefon_kodu():
+        return
     print("Telefonunuzdaki kimlik doğrulayıcı uygulamaya (Google Authenticator, Microsoft Authenticator vb.)")
     print("'anahtarı elle gir' seçeneğiyle şu anahtarı ekleyin:\n")
     print(f"    {secret}\n")

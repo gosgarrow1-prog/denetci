@@ -21,6 +21,12 @@ RULESET_VERSION = "0.2.0"
 ENGINE_VERSION = "0.1.0"
 
 
+def telefon_kodu() -> bool:
+    """Girişte telefon doğrulama kodu (TOTP) istensin mi? 29.10.2026 kararı: uygulama yalnızca bu bilgisayarda
+    (127.0.0.1) çalıştığı sürece kapalı. Sunucuya taşınırsa DENETCI_TELEFON_KODU=1 ile açılmalı."""
+    return os.environ.get("DENETCI_TELEFON_KODU", "0") == "1"
+
+
 def data_dir() -> Path:
     path = Path(os.environ.get("DENETCI_VERI", Path.home() / "DenetciVeri"))
     path.mkdir(parents=True, exist_ok=True)

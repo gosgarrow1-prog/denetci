@@ -37,11 +37,23 @@ def test_requires_login(app_client):
     assert r.status_code == 303 and r.headers["location"] == "/giris"
 
 
-def test_wrong_totp_rejected(app_client):
+def test_wrong_totp_rejected(app_client, monkeypatch):
+    monkeypatch.setenv("DENETCI_TELEFON_KODU", "1")
     tok = csrf(app_client, "/giris")
     r = app_client.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "cok-gizli-parola-123", "kod": "000000"})
     assert "hatalı" in r.text
     assert app_client.get("/", follow_redirects=False).status_code == 303
+
+
+def test_password_only_by_default(app_client):
+    assert 'name="kod"' not in app_client.get("/giris").text
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "yanlis-parola-12345"})
+    assert "Kullanıcı adı veya parola hatalı" in r.text
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "cok-gizli-parola-123"},
+                        follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
 
 
 def test_no_signup_route(app_client):
