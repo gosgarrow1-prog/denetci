@@ -323,3 +323,17 @@ def test_back_button(app_client):
     kdv = tc.get(f"/mukellef/{cid}/kdv").text
     assert 'class="back-btn" href="/mukellef/' + cid + '"' in kdv and "history.back()" in kdv
     assert 'class="back-btn" href="/"' in tc.get(f"/mukellef/{cid}").text
+
+
+def test_client_list_alphabetical(app_client):
+    from denetci.web.app import tr_sira
+    names = ["Zeytin Ltd", "Çelik AŞ", "ışık Tic", "Ilgaz", "İnci", "Cam", "Şeker", "Su", "Ölçü", "Ok", "aydın"]
+    assert sorted(names, key=tr_sira) == ["aydın", "Cam", "Çelik AŞ", "Ilgaz", "ışık Tic", "İnci", "Ok", "Ölçü", "Su",
+                                          "Şeker", "Zeytin Ltd"]
+    tc = app_client
+    login(tc)
+    for n in ("Şeker Gıda", "Ahmet Ticaret", "Çınar İnşaat", "Bora Ltd"):
+        tc.post("/mukellef/yeni", data={"csrf": csrf(tc, "/"), "unvan": n})
+    page = tc.get("/").text
+    pos = [page.index(n) for n in ("Ahmet Ticaret", "Bora Ltd", "Çınar İnşaat", "Şeker Gıda")]
+    assert pos == sorted(pos)

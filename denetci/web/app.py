@@ -154,12 +154,21 @@ def render(request: Request, name: str, **ctx):
     return templates.TemplateResponse(request, name, ctx)
 
 
+_ALFABE = "0123456789aâbcçdefgğhıiîjklmnoöprsştuûüvyzqwx"
+
+
+def tr_sira(text: str) -> tuple:
+    """Türkçe alfabe sırası için anahtar (Ç, Ğ, İ, Ö, Ş, Ü yerinde; büyük/küçük harf ayrımı yok)."""
+    t = (text or "").replace("I", "ı").replace("İ", "i").lower()
+    return tuple(_ALFABE.index(ch) if ch in _ALFABE else 100 + ord(ch) for ch in t)
+
+
 def _shell(uid: int, c, p) -> dict:
     """Sol menü ve üst çubuk için: mükellef listesi, dönemler, son analiz ve açık bulgu sayısı."""
     with db.SessionLocal() as s:
         user = s.get(User, uid)
-        sh = {"username": user.username if user else "", "clients": list(s.execute(
-            select(Client.id, Client.unvan).order_by(Client.is_demo, Client.unvan))), "c": c, "p": None, "periods": [],
+        sh = {"username": user.username if user else "", "clients": sorted(s.execute(
+            select(Client.id, Client.unvan, Client.is_demo)), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
             "run": None, "badge": 0}
         if c is None:
             return sh
@@ -385,7 +394,7 @@ def create_app() -> FastAPI:
                     sev[sv] = n
             rows.append({"c": c, "run": run, "period": period, "sev": sev, "open_high": sev["Kritik"] + sev["Yüksek"],
                          "rel": run.reliability if run else None})
-        rows.sort(key=lambda r: (-r["open_high"], r["c"].is_demo, r["c"].unvan))
+        rows.sort(key=lambda r: (r["c"].is_demo, tr_sira(r["c"].unvan)))
         return render(request, "portfolio.html", active="mukellefler", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
 
     @app.post("/mukellef/yeni")
@@ -813,7 +822,7 @@ def create_app() -> FastAPI:
         b = request.session.get("bekleyen")
         if not b or b.get("cid") != cid:
             return _redirect(s, f"/mukellef/{cid}")
-        clients = list(s.scalars(select(Client).order_by(Client.is_demo, Client.unvan)))
+        clients = sorted(s.scalars(select(Client)), key=lambda x: (x.is_demo, tr_sira(x.unvan)))
         names = {x.id: x.unvan for x in clients}
         flash = request.session.pop("flash", None)
         return render(request, "upload_check.html", c=c, items=b["items"], clients=clients, names=names, flash=flash)
