@@ -52,8 +52,16 @@ def test_multi_upload_creates_period_and_runs(app_client, data_root):
     assert page.count("kayıt aktarıldı") == 4
     with db.SessionLocal() as s:
         periods = s.scalars(select(Period).where(Period.client_id == cid)).all()
-        assert [(p.baslangic.isoformat(), p.bitis.isoformat(), p.tur) for p in periods] == [("2026-07-01", "2026-09-30", "uc_aylik")]
-        assert s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == cid))
+        got = sorted((p.baslangic.isoformat(), p.bitis.isoformat(), p.tur) for p in periods)
+        # Çeyrek yevmiyesi aylara da ayrılır.
+        assert got == [("2026-07-01", "2026-07-31", "aylik"), ("2026-07-01", "2026-09-30", "uc_aylik"),
+                       ("2026-08-01", "2026-08-31", "aylik"), ("2026-09-01", "2026-09-30", "aylik")]
+        assert len(s.scalars(select(AnalysisRun).where(AnalysisRun.client_id == cid)).all()) == 4
+        aug = next(p for p in periods if p.baslangic.month == 8)
+        from denetci.checks.engine import build_context
+        c = s.get(Client, cid)
+        ctx, _ = build_context(s, c, aug)
+        assert ctx.turetilmis and ctx.yevmiye and all(j.tarih.month == 8 for j in ctx.yevmiye)
     # Aynı dosyalar tekrar yüklenirse çoğalmaz.
     r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
                 files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=True)

@@ -28,6 +28,7 @@
 </div>
 
 {{ flash_list(flash) }}
+{% if turetilmis %}<div class="alert-row lv-bilgi"><span class="al-ic">{{ icon('info', 22) }}</span><span class="al-text">Bu dönemin kayıtları <strong>{{ turetilmis[1]|donem_adi }}</strong> yevmiyesinden ({{ turetilmis[0].orig_name }}) ayrıldı; döneme ayrıca dosya yüklemenize gerek yok.</span></div>{% endif %}
 
 {% set loaded = [] %}{% for d in ['mizan', 'yevmiye', 'kebir', 'muavin'] %}{% if latest.get(d) %}{% set _ = loaded.append({'mizan': 'mizan', 'yevmiye': 'yevmiye', 'kebir': 'defteri kebir', 'muavin': 'muavin'}[d]) %}{% endif %}{% endfor %}
 {% set onemli = alerts|selectattr('level', 'in', ['onemli', 'dikkat'])|list|length %}

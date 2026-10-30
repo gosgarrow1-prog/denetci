@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..config import ENGINE_VERSION, RULESET_VERSION
 from .. import beyannameler
 from ..importer.load import latest_batch
-from ..models import AnalysisRun, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
+from ..models import AnalysisRun, ImportBatch, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
 from .registry import ALL_RULES
 from .rules import Context
 
@@ -26,11 +26,48 @@ class NoData(ValueError):
 ONCEKI_DONEM_SAYISI = 3  # oran karşılaştırmalarında kullanılan önceki dönem sayısı
 
 
+def _range(b):
+    rng = b.summary.get("tarih_araligi") or b.summary.get("kayit_tarihleri")
+    return (date.fromisoformat(rng[0]), date.fromisoformat(rng[1])) if rng else None
+
+
+def kapsayan_yevmiye(session: Session, client: Client, start: date, end: date, yilbasindan: bool = False):
+    """Verilen aralığı kapsayan, başka bir döneme yüklenmiş en son onaylı yevmiye (ör. Ocak–Eylül yevmiyesi
+    Temmuz–Eylül çeyreğini kapsar). yilbasindan: aralık yılın 1 Ocak'ından başlamalı (bakiyeler için)."""
+    best = None
+    for b in session.scalars(select(ImportBatch).where(ImportBatch.client_id == client.id, ImportBatch.doc_type == "yevmiye",
+                                                       ImportBatch.status == "onaylandi")):
+        rng = _range(b)
+        if not rng or rng[0] > start or rng[1] < end:
+            continue
+        if yilbasindan and rng[0] != date(end.year, 1, 1):
+            continue
+        if best is None or b.id > best.id:
+            best = b
+    return best
+
+
+def _yevmiye_lines(session: Session, client: Client, b) -> list:
+    """Aynı istek içinde aynı yevmiye satırları bir kez okunur."""
+    cache = session.info.setdefault("_yevmiye_cache", {})
+    if b.id not in cache:
+        cache[b.id] = list(session.scalars(select(JournalLine).where(JournalLine.client_id == client.id,
+                                                                     JournalLine.batch_id == b.id)))
+    return cache[b.id]
+
+
 def build_context(session: Session, client: Client, period: Period):
-    """Bir dönemin son onaylı belge sürümlerinden kontrol bağlamını kurar. Belge yoksa (None, {}) döner."""
+    """Bir dönemin son onaylı belge sürümlerinden kontrol bağlamını kurar. Belge yoksa (None, {}) döner.
+
+    Döneme ayrıca dosya yüklenmemişse, dönemi kapsayan daha geniş bir yevmiye (ör. Ocak–Eylül) kullanılır: dönemin
+    kayıtları ondan ayrılır. Yılbaşından başlayan yevmiye, dönem başı ve sonu bakiyeleri için de kullanılır."""
     batches = {d: latest_batch(session, client.id, period.id, d) for d in ("mizan", "yevmiye", "kebir", "muavin")}
+    turetilmis = None
     if not any(batches.values()):
-        return None, batches
+        turetilmis = kapsayan_yevmiye(session, client, period.baslangic, period.bitis)
+        if turetilmis is None:
+            return None, batches
+        batches["yevmiye"] = turetilmis
     mizan_b = batches["mizan"]
     mizan = list(session.scalars(select(TrialBalanceLine).where(
         TrialBalanceLine.client_id == client.id, TrialBalanceLine.batch_id == mizan_b.id))) if mizan_b else None
@@ -39,8 +76,16 @@ def build_context(session: Session, client: Client, period: Period):
         return list(session.scalars(select(JournalLine).where(JournalLine.client_id == client.id,
                                                                JournalLine.batch_id == b.id))) if b else None
 
-    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, lines(batches["yevmiye"]),
+    if turetilmis is not None:
+        yev = [j for j in _yevmiye_lines(session, client, turetilmis) if period.baslangic <= j.tarih <= period.bitis]
+    else:
+        yev = lines(batches["yevmiye"])
+    ctx = Context(client.cerceve, period.baslangic, period.bitis, mizan, yev,
                   kebir=lines(batches["kebir"]), muavin=lines(batches["muavin"]))
+    ctx.turetilmis = turetilmis is not None
+    ytd = kapsayan_yevmiye(session, client, date(period.bitis.year, 1, 1), period.bitis, yilbasindan=True)
+    if ytd is not None:
+        ctx.ytd = [j for j in _yevmiye_lines(session, client, ytd) if j.tarih <= period.bitis]
     for d in ("kebir", "muavin"):
         if batches[d]:
             ctx.openings[d] = list(session.scalars(select(OpeningBalance).where(
@@ -65,6 +110,9 @@ def build_context(session: Session, client: Client, period: Period):
                 ctx.declared.add(d)
             if rng:
                 ctx.ranges[d] = (date.fromisoformat(rng[0]), date.fromisoformat(rng[1]))
+    if turetilmis is not None:
+        # Yevmiyeden ayrılan kayıtlar dönemi tam kapsar.
+        ctx.ranges["yevmiye"] = (period.baslangic, period.bitis)
     return ctx, batches
 
 

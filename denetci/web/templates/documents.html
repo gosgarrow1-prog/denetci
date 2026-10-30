@@ -8,6 +8,7 @@
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Luca'dan aldığınız dosyaları ve GİB'den indirdiğiniz beyanname PDF'lerini yükleyin; dönem dosyadan bulunur ve kontroller kendiliğinden çalışır.</p></div>
 </div>
 {{ flash_list(flash) }}
+{% if turetilmis %}<div class="alert-row lv-bilgi"><span class="al-ic">{{ icon('info', 22) }}</span><span class="al-text">Bu dönemin kayıtları <strong>{{ turetilmis[1]|donem_adi }}</strong> yevmiyesinden ({{ turetilmis[0].orig_name }}) ayrıldı; döneme ayrıca dosya yüklemenize gerek yok.</span></div>{% endif %}
 <section class="card">{% if p and p.kesin %}<p>Bu dönem kesinleştirildi; yükleme ve geri alma kapalı. Değişiklik için gösterge panelinden kilidi açın.</p>{% else %}{{ upload_zone(c, p, csrf) }}{% endif %}
   <p class="muted" style="margin-top:10px">Orijinal dosyalar değiştirilmeden saklanır. Aynı dosya ikinci kez yüklenirse alınmaz; yeni sürüm yüklenirse eskisi arşivde kalır. Dosyadaki firma unvanı seçili mükellefle uyuşmazsa aktarmadan önce sorulur. Yanlış yüklenen dosyayı aşağıdaki listeden "Geri al" ile kaldırabilirsiniz.</p>
 </section>

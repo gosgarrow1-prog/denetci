@@ -167,6 +167,7 @@ def _shell(uid: int, c, p) -> dict:
         pid = getattr(p, "id", None) or (sh["periods"][0].id if sh["periods"] else None)
         dolu = set(s.scalars(select(ImportBatch.period_id).where(ImportBatch.client_id == c.id,
                                                                  ImportBatch.status == "onaylandi")))
+        dolu |= set(s.scalars(select(AnalysisRun.period_id).where(AnalysisRun.client_id == c.id)))
         sh["donem_gruplari"] = donem_gruplari(sh["periods"], dolu, pid, _today())
         sh["p"] = next((pp for pp in sh["periods"] if pp.id == pid), None)
         if sh["p"]:
@@ -219,6 +220,42 @@ def donem_gruplari(periods, dolu: set, pid, bugun: date) -> list:
     if diger:
         groups.append(("Diğer dönemler", diger))
     return [(g, o) for g, o in groups if o]
+
+
+def alt_donemler(bas: date, bit: date) -> list[tuple[date, date]]:
+    """Bir aralığın içindeki tam aylar, tam çeyrekler ve (yılbaşından başlıyorsa) yılbaşından çeyrek sonları."""
+    out = []
+    y, m = bas.year, bas.month
+    while date(y, m, 1) <= bit:
+        s_, e_ = date(y, m, 1), _ay_sonu(y, m)
+        if s_ >= bas and e_ <= bit:
+            out.append((s_, e_))
+            if m % 3 == 0:
+                q = (date(y, m - 2, 1), e_)
+                if q[0] >= bas:
+                    out.append(q)
+                if bas == date(y, 1, 1) and m != 3:
+                    out.append((date(y, 1, 1), e_))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return [r for r in dict.fromkeys(out) if r != (bas, bit)]
+
+
+def alt_donemleri_ac(s, c, p) -> int:
+    """Birden çok ayı kapsayan yevmiye yüklenince içindeki ay, çeyrek ve yılbaşından dönemleri açıp analiz eder."""
+    from ..importer.load import latest_batch
+    if latest_batch(s, c.id, p.id, "yevmiye") is None:
+        return 0
+    n = 0
+    for bas, bit in alt_donemler(p.baslangic, p.bitis):
+        sp = find_or_create_period(s, c, bas, bit)
+        if sp.kesin:
+            continue
+        try:
+            run_analysis(s, c, sp)
+            n += 1
+        except NoData:
+            pass
+    return n
 
 
 def gv_donemi(s, c, p, create: bool):
@@ -448,6 +485,9 @@ def create_app() -> FastAPI:
             cases = {cs.fingerprint: cs for cs in s.scalars(select(FindingCase).where(FindingCase.client_id == c.id))}
             open_f = [f for f in findings if f.fingerprint not in cases or cases[f.fingerprint].status != "aciklandi"]
             ctx, latest = build_context(s, c, p)
+            yb = latest.get("yevmiye")
+            if yb is not None and yb.period_id != p.id:
+                v["turetilmis"] = (s.get(SourceFile, yb.source_file_id), s.get(Period, yb.period_id))
             v.update(run=run, findings=open_f, cases=cases, latest={k: b for k, b in latest.items() if b},
                      sev_counts={k: sum(1 for f in open_f if f.severity == k) for k in ("Kritik", "Yüksek", "Orta", "Düşük")},
                      results=run.rule_results if run else [])
@@ -706,6 +746,10 @@ def create_app() -> FastAPI:
                 touched[o.period.id] = o.period
         for p in touched.values():
             run_analysis(s, c, p)
+        alt = sum(alt_donemleri_ac(s, c, p) for p in list(touched.values()))
+        if alt:
+            outcomes.append(type("O", (), {"filename": "Dönemlere ayırma", "status": "aktarildi",
+                                           "message": f"Yevmiye {alt} alt döneme (ay, çeyrek, yılbaşından) ayrıldı ve her biri analiz edildi."})())
         if decl_added:
             _rerun_open(s, c, skip=set(touched))
         request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
@@ -763,6 +807,7 @@ def create_app() -> FastAPI:
             path.unlink(missing_ok=True)
         for tc_, tp in touched.values():
             run_analysis(s, tc_, tp)
+            alt_donemleri_ac(s, tc_, tp)
         for dc in decl_clients.values():
             _rerun_open(s, dc, skip={k[1] for k in touched if k[0] == dc.id})
         request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]

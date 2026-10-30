@@ -96,6 +96,12 @@ def ana_balances(ctx: Context):
             if j.tarih <= ctx.period_end:
                 out[j.hesap_kodu[:3]] = out.get(j.hesap_kodu[:3], 0) + j.borc - j.alacak
         return out, "defteri kebir (nakli yekün dahil)"
+    if ctx.ytd:
+        out = {}
+        for j in ctx.ytd:
+            if j.tarih <= ctx.period_end:
+                out[j.hesap_kodu[:3]] = out.get(j.hesap_kodu[:3], 0) + j.borc - j.alacak
+        return out, "yevmiye, yılbaşından (açılış fişi dahil)"
     return None, None
 
 

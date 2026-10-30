@@ -106,6 +106,10 @@ class Balance:
 
 def _kebir_balance(ctx: Context, prefix: str, until: date, before: bool) -> Balance | None:
     ana = prefix[:3]
+    if not ctx.kebir and ctx.ytd:
+        lines = [j for j in ctx.ytd if j.hesap_kodu.startswith(prefix) and (j.tarih < until if before else j.tarih <= until)]
+        ev = [Evidence(j.raw_row_id, f"Yevmiye {j.tarih:%d.%m.%Y} {j.madde_no or j.fis_no}, {j.hesap_kodu}") for j in lines[-10:]]
+        return Balance(sum(j.borc - j.alacak for j in lines), "yevmiye, yılbaşından (açılış fişi dahil)", ev)
     if not ctx.kebir or prefix != ana:
         return None  # kebirde nakli yekün ana hesap düzeyinde; alt hesaba bölünemez
     opens = [o for o in ctx.openings.get("kebir", []) if o.hesap_kodu == ana]

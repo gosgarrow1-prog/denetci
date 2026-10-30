@@ -81,6 +81,10 @@ class Context:
     # Aynı dönemin yüklenmiş beyannameleri (alanlar sözlüğü, kuruş): KDV (aylık) ve geçici vergi.
     kdv_beyan: dict | None = None
     gv_beyan: dict | None = None
+    # Dönem kayıtları daha geniş bir yevmiyeden ayrıldıysa True.
+    turetilmis: bool = False
+    # Yılbaşından dönem sonuna yevmiye satırları (açılış fişi dahil); bakiye için kebir yoksa kullanılır.
+    ytd: list | None = None
 
     @property
     def leaves(self):

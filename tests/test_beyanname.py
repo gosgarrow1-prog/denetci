@@ -216,3 +216,14 @@ def test_cost_ratio_from_declaration():
     period = SimpleNamespace(bitis=date(2026, 9, 30), baslangic=date(2026, 7, 1), gv=None)
     h = hesapla(ctx, period, SimpleNamespace(sirket_turu=None, unvan="X Ltd."), [decl])
     assert h.maliyet.ek == 900_00 and "beyannamesinin gelir tablosu" in h.maliyet.kaynak
+
+
+def test_balances_from_ytd_journal():
+    from denetci.finance import ana_balances
+    ytd = [_line("100", borc=500_00, d=date(2026, 1, 1)), _line("500", alacak=500_00, d=date(2026, 1, 1)),
+           _line("600", alacak=200_00, d=date(2026, 8, 5)), _line("100", borc=200_00, d=date(2026, 8, 5))]
+    ctx = Context("THP_VUK", date(2026, 7, 1), date(2026, 9, 30), None, None)
+    ctx.ytd = ytd
+    bal, src = ana_balances(ctx)
+    assert bal["100"] == 700_00 and bal["600"] == -200_00 and src.startswith("yevmiye")
+    assert kdv.opening(ctx, "100").net == 500_00 and kdv.closing(ctx, "100").net == 700_00
