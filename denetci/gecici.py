@@ -21,8 +21,8 @@ ALANLAR = [
     ("indirim", "Diğer indirimler (Ar-Ge, bağış vb.)", "-"),
     ("onceki_odenen", "Önceki dönemlerde hesaplanan geçici vergi", "mahsup"),
 ]
-AYLAR_DONEM = {3: "1. dönem (Ocak–Mart)", 6: "2. dönem (Nisan–Haziran)", 9: "3. dönem (Temmuz–Eylül)",
-               12: "4. dönem (Ekim–Aralık)"}
+AYLAR_DONEM = {3: "1. dönem (Ocak–Mart)", 6: "2. dönem (Ocak–Haziran)", 9: "3. dönem (Ocak–Eylül)",
+               12: "4. dönem (Ocak–Aralık)"}
 
 
 def donem_no(end: date) -> int | None:

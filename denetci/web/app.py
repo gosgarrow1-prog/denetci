@@ -206,15 +206,63 @@ def donem_gruplari(periods, dolu: set, pid, bugun: date) -> list:
 
     for y in years:
         aylar = [opt(date(y, m, 1), _ay_sonu(y, m), f"{AYLAR[m - 1]} {y}") for m in range(12, 0, -1) if date(y, m, 1) <= bugun]
-        ceyrek = [opt(date(y, 3 * q - 2, 1), _ay_sonu(y, 3 * q), f"{q}. dönem: {AYLAR[3 * q - 3]}–{AYLAR[3 * q - 1]} {y}")
+        ceyrek = [opt(date(y, 3 * q - 2, 1), _ay_sonu(y, 3 * q), f"{q}. çeyrek: {AYLAR[3 * q - 3]}–{AYLAR[3 * q - 1]} {y}")
                   for q in range(4, 0, -1) if date(y, 3 * q - 2, 1) <= bugun]
+        kumulatif = [opt(date(y, 1, 1), _ay_sonu(y, 3 * q),
+                         f"Ocak–{AYLAR[3 * q - 1]} {y} ({'yıl sonu' if q == 4 else f'{q}. geçici vergi dönemi'})")
+                     for q in range(4, 0, -1) if date(y, 3 * q - 2, 1) <= bugun]
         groups.append((f"Aylık · {y}", aylar))
-        groups.append((f"3 aylık · {y}", ceyrek))
+        groups.append((f"3 aylık (çeyrek) · {y}", ceyrek))
+        groups.append((f"Geçici vergi, yılbaşından · {y}", kumulatif))
     diger = [{"bas": pp.baslangic.isoformat(), "bit": pp.bitis.isoformat(), "ad": donem_adi(pp), "id": pp.id,
               "dolu": pp.id in dolu, "secili": pp.id == pid} for pp in periods if pp.id not in used]
     if diger:
         groups.append(("Diğer dönemler", diger))
     return [(g, o) for g, o in groups if o]
+
+
+def gv_donemi(s, c, p, create: bool):
+    """Seçili dönemin bittiği çeyrek sonuna ait yılbaşından (kümülatif) geçici vergi dönemi; çeyrek sonu değilse None."""
+    if p is None or p.bitis.month % 3 or p.bitis != _ay_sonu(p.bitis.year, p.bitis.month):
+        return None
+    start = date(p.bitis.year, 1, 1)
+    if p.baslangic == start:
+        return p
+    gp = s.scalar(select(Period).where(Period.client_id == c.id, Period.baslangic == start, Period.bitis == p.bitis))
+    if gp is None and create:
+        gp = find_or_create_period(s, c, start, p.bitis)
+    if gp is not None and not gp.gv:
+        # Daha önce çeyrek dönemine girilmiş geçici vergi bilgileri varsa kümülatif döneme taşınır.
+        old = next((pp.gv for pp in s.scalars(select(Period).where(Period.client_id == c.id, Period.bitis == p.bitis))
+                    if pp.gv), None)
+        if old and create:
+            gp.gv = dict(old)
+    return gp
+
+
+def gv_kaynak(s, c, end: date):
+    """Geçici vergi için yılbaşından bakiyeleri veren en uygun dönem: aynı tarihte biten dönemler arasından
+    önce yılbaşından başlayan, sonra diğerleri (ör. nakli yekünlü kebir içeren çeyrek). (ctx, dönem) döner."""
+    from ..finance import ana_balances
+    cands = sorted(s.scalars(select(Period).where(Period.client_id == c.id, Period.bitis == end)),
+                   key=lambda pp: pp.baslangic)
+    first = (None, None)
+    for pp in cands:
+        ctx = build_context(s, c, pp)[0]
+        if ctx is None:
+            continue
+        if ana_balances(ctx)[0] is not None:
+            return ctx, pp
+        if first[0] is None:
+            first = (ctx, pp)
+    return first
+
+
+def gv_for(s, c, p, decls):
+    """Seçili dönem için geçici vergi ön hesaplaması (kümülatif dönemin girdileriyle). (Hesap, gv dönemi, kaynak dönem)."""
+    gp = gv_donemi(s, c, p, create=False) or p
+    ctx, src = gv_kaynak(s, c, p.bitis)
+    return gv_hesapla(ctx, gp, c, decls), gp, src
 
 
 def owned(s, model, obj_id: int, client_id: int):
@@ -469,7 +517,7 @@ def create_app() -> FastAPI:
                 [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
                  ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
         v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
-        gv = gv_hesapla(build_context(s, c, p)[0], p, c, v["decls"]) if p else None
+        gv = gv_for(s, c, p, v["decls"])[0] if p else None
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], gv, p)
         return render(request, "finance.html", active="finansal", **v)
 
@@ -482,7 +530,7 @@ def create_app() -> FastAPI:
         v = _view(s, c, p, request)
         v["alerts"] = _alerts(v, c)
         v["now"] = _now()
-        v["gv"] = gv_hesapla(build_context(s, c, p)[0], p, c, v["decls"])
+        v["gv"] = gv_for(s, c, p, v["decls"])[0]
         v["GV_ALANLAR"] = GV_ALANLAR
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
         return render(request, "report.html", active="rapor", **v)
@@ -491,13 +539,21 @@ def create_app() -> FastAPI:
     def gv_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
+        gp = gv_donemi(s, c, p, create=True)
+        if gp is not None and gp.id != p.id:
+            return _redirect(s, f"/mukellef/{cid}/gecici-vergi?donem={gp.id}")
         v = _view(s, c, p, request)
+        ctx, src = gv_kaynak(s, c, p.bitis) if p else (None, None)
         a = next(x for x in v["analyses"] if x.key == "gecici")
-        ctx = build_context(s, c, p)[0] if p else None
+        results, findings = v["results"], v["findings"]
+        if src is not None and src.id != p.id:
+            sv = _view(s, c, src, request)
+            a = next(x for x in sv["analyses"] if x.key == "gecici")
+            results, findings = sv["results"], sv["findings"]
         v.update(analysis=a, gv=gv_hesapla(ctx, p, c, v["decls"]) if p else None, GV_ALANLAR=GV_ALANLAR, GV_PARAM=GECICI_VERGI,
-                 GV_DONEM=GV_DONEM_ADI, GV_MALIYET=GV_MALIYET,
-                 a_results=[r for r in v["results"] if r["id"] in a.rules],
-                 a_findings=[f for f in v["findings"] if f.rule_id in a.rules])
+                 GV_DONEM=GV_DONEM_ADI, GV_MALIYET=GV_MALIYET, gv_src=src,
+                 a_results=[r for r in results if r["id"] in a.rules],
+                 a_findings=[f for f in findings if f.rule_id in a.rules])
         return render(request, "gecici.html", active="gecici", **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/gecici-vergi")

@@ -20,7 +20,7 @@
 {% if gv.donem_no %}
 <section class="summary">
   <span class="sum-ic">{{ icon('calendar', 28) }}</span>
-  <div class="sum-text"><span class="eyebrow">{{ p.bitis.year }} {{ GV_DONEM[p.bitis.month] }}</span>
+  <div class="sum-text"><span class="eyebrow">{{ p.bitis.year }} {{ GV_DONEM[p.bitis.month] }} · hesaplama 01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} kümülatif</span>
     <p>Beyan ve ödeme için son gün (parametre tablosuna göre): <strong>{{ gv.beyan.strftime('%d.%m.%Y') }}</strong>.</p></div>
 </section>
 {% else %}
@@ -30,7 +30,7 @@
 
 <div class="two">
   <section class="card">
-    <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}</span>{% endif %}</div>
+    <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}{% if gv_src and gv_src.id != p.id %} ({{ gv_src|donem_adi }} dosyalarından){% endif %}</span>{% endif %}</div>
     {% if gv.ticari_kar is not none %}
     <table class="grid">
       <tbody>

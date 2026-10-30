@@ -195,7 +195,7 @@ def test_gecici_vergi_page_and_inputs(app_client):
     r = tc.post("/demo", data={"csrf": tok}, follow_redirects=False)
     loc = r.headers["location"]
     page = tc.get(loc + "/gecici-vergi").text
-    assert "3. dönem (Temmuz–Eylül)" in page and "17.11.2026" in page and "Tahmini geçici vergi matrahı" in page
+    assert "3. dönem (Ocak–Eylül)" in page and "17.11.2026" in page and "Tahmini geçici vergi matrahı" in page
     assert "K-27" in page
     with db.SessionLocal() as s:
         p = s.scalars(select(Period)).first()
@@ -223,8 +223,9 @@ def test_period_selector_groups_months_and_quarters(app_client):
     tok = csrf(tc, "/")
     loc = tc.post("/demo", data={"csrf": tok}, follow_redirects=False).headers["location"]
     page = tc.get(loc).text
-    assert '<optgroup label="Aylık · 2026">' in page and '<optgroup label="3 aylık · 2026">' in page
-    assert "3. dönem: Temmuz–Eylül 2026 ●" in page  # DEMO dosyaları bu dönemde
+    assert '<optgroup label="Aylık · 2026">' in page and '<optgroup label="3 aylık (çeyrek) · 2026">' in page
+    assert '<optgroup label="Geçici vergi, yılbaşından · 2026">' in page and "Ocak–Eylül 2026 (3. geçici vergi dönemi)" in page
+    assert "3. çeyrek: Temmuz–Eylül 2026 ●" in page  # DEMO dosyaları bu dönemde
     cid = int(loc.rsplit("/", 1)[1].split("?")[0])
     r = tc.get(f"/mukellef/{cid}/donem-sec?bas=2026-08-01&bit=2026-08-31&geri=/mukellef/{cid}/kdv", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"].startswith(f"/mukellef/{cid}/kdv?donem=")
@@ -261,3 +262,26 @@ def test_recommendation_rules():
               "Ortaklardan alacak bakiyesi var", "Dönem zararla sonuçlanıyor", "Brüt kâr marjı önceki döneme göre düştü"):
         assert b in basliklar, b
     assert build(None) == []
+
+
+def test_gecici_vergi_uses_cumulative_period(app_client):
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    tc.post("/demo", data={"csrf": tok})
+    with db.SessionLocal() as s:
+        q3 = s.scalars(select(Period)).first()
+        cid, qid = q3.client_id, q3.id
+    r = tc.get(f"/mukellef/{cid}/gecici-vergi?donem={qid}", follow_redirects=False)
+    assert r.status_code == 303
+    gid = int(r.headers["location"].split("donem=")[1])
+    with db.SessionLocal() as s:
+        g = s.get(Period, gid)
+        assert (g.baslangic.isoformat(), g.bitis.isoformat()) == ("2026-01-01", "2026-09-30")
+    page = tc.get(r.headers["location"]).text
+    assert "Temmuz–Eylül 2026 dosyalarından" in page and "Tahmini geçici vergi matrahı" in page and "K-27" in page
+    tc.post(f"/mukellef/{cid}/donem/{gid}/gecici-vergi",
+            data={"csrf": tok, "kkeg": "1.234,00", "istisna": "", "gecmis_zarar": "", "indirim": "", "onceki_odenen": "",
+                  "tur": "kurum", "oran": "", "maliyet": "yok"})
+    # Çeyrek döneminin raporu kümülatif dönemin girdilerini kullanır.
+    assert "Kanunen kabul edilmeyen giderler (KKEG)" in tc.get(f"/mukellef/{cid}/rapor?donem={qid}").text
