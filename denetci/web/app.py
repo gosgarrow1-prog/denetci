@@ -32,7 +32,7 @@ from ..importer.beyanname import donem_adi as beyan_donem_adi
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
 from .. import beyannameler
 from ..analyses import build as build_analyses, kdv_amounts
-from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, hesapla as gv_hesapla
+from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET_YONTEMLERI as GV_MALIYET, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
 from .charts import balance_bars, tl_short
 
@@ -452,7 +452,7 @@ def create_app() -> FastAPI:
         a = next(x for x in v["analyses"] if x.key == "gecici")
         ctx = build_context(s, c, p)[0] if p else None
         v.update(analysis=a, gv=gv_hesapla(ctx, p, c, v["decls"]) if p else None, GV_ALANLAR=GV_ALANLAR, GV_PARAM=GECICI_VERGI,
-                 GV_DONEM=GV_DONEM_ADI,
+                 GV_DONEM=GV_DONEM_ADI, GV_MALIYET=GV_MALIYET,
                  a_results=[r for r in v["results"] if r["id"] in a.rules],
                  a_findings=[f for f in v["findings"] if f.rule_id in a.rules])
         return render(request, "gecici.html", active="gecici", **v)
@@ -479,6 +479,20 @@ def create_app() -> FastAPI:
         tur = str(form.get("tur", ""))
         if tur in ("kurum", "sahis"):
             gv["tur"] = tur
+        yontem = str(form.get("maliyet", "otomatik"))
+        gv["maliyet"] = yontem if yontem in GV_MALIYET else "otomatik"
+        bko = str(form.get("brut_kar_orani", "")).replace("%", "").replace(",", ".").strip()
+        if bko:
+            try:
+                gv["brut_kar_orani"] = float(bko) / 100
+            except ValueError:
+                bad.append("Brüt kâr oranı")
+        stok = str(form.get("donem_sonu_stok", "")).replace("₺", "").replace("TL", "").strip()
+        if stok:
+            try:
+                gv["donem_sonu_stok"] = parse_amount(stok, "tr")
+            except ParseError:
+                bad.append("Dönem sonu stok")
         oran_raw = str(form.get("oran", "")).replace("%", "").replace(",", ".").strip()
         if oran_raw:
             try:

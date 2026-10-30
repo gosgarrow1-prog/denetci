@@ -106,6 +106,7 @@
   <h2>6. Geçici vergi ön hesaplaması</h2>
   <table class="grid small"><tbody>
     <tr><td>Ticari kâr (01.01 – {{ p.bitis.strftime('%d.%m.%Y') }})</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+    {% if gv.maliyet and gv.maliyet.ek %}<tr><td>− Tahmini satış maliyeti (kaydı yapılmamış; {{ gv.maliyet.kaynak }})</td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>{% endif %}
     {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' and gv.girdiler[key] %}<tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>{% endif %}{% endfor %}
     <tr class="subtotal"><td>Tahmini matrah</td><td class="num">{{ gv.matrah|tl }}</td></tr>
     {% if gv.hesaplanan is not none %}<tr><td>Hesaplanan geçici vergi (oran %{{ '%.0f'|format(gv.oran * 100) }})</td><td class="num">{{ gv.hesaplanan|tl }}</td></tr>

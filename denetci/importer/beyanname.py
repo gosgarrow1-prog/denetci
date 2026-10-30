@@ -51,6 +51,7 @@ GV_ALANLAR = {
     "odenmesi_gereken": "Ödenmesi Gereken Geçici Vergi",
     "sonraki_devreden": "Sonraki Döneme Devreden Hesaplanan Geçici Vergi",
     "net_satis": "C.Net Satışlar",
+    "smm": "D. Satışların Maliyeti (-)",
     "donem_kari": "Dönem Karı veya Zararı",
 }
 

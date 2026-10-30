@@ -34,7 +34,13 @@
     {% if gv.ticari_kar is not none %}
     <table class="grid">
       <tbody>
+        {% if gv.maliyet and gv.maliyet.ek %}
+        <tr><td>Defterdeki kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+        <tr><td>− Tahmini satış maliyeti (kaydı yapılmamış)<div class="muted">{{ gv.maliyet.kaynak }}{% if gv.maliyet.oran is not none %} · brüt kâr oranı %{{ '%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') }}{% endif %}</div></td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>
+        <tr class="subtotal"><td>Tahmini ticari kâr</td><td class="num">{{ gv.tahmini_kar|tl }}</td></tr>
+        {% else %}
         <tr class="subtotal"><td>Ticari kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+        {% endif %}
         {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' %}
         <tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>
         {% endif %}{% endfor %}
@@ -63,6 +69,14 @@
       {% for key, label, sign in GV_ALANLAR %}
       <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="{{ (gv.girdiler[key]|tl ~ ' (beyannameden)') if key == 'onceki_odenen' and gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' else '0,00' }}" value="{{ saved[key]|tl if saved.get(key) else '' }}" {{ 'disabled' if p.kesin }}></label>
       {% endfor %}
+      <label>Satış maliyeti kaydı yapılmadıysa
+        <select name="maliyet" {{ 'disabled' if p.kesin }}>
+          {% for k, v in GV_MALIYET.items() %}<option value="{{ k }}" {{ 'selected' if (saved.get('maliyet') or 'otomatik') == k }}>{{ v }}</option>{% endfor %}
+        </select></label>
+      <div class="row">
+        <label>Brüt kâr oranı (%) <input name="brut_kar_orani" inputmode="decimal" placeholder="{{ ('%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') ~ ' (otomatik)') if gv.maliyet and gv.maliyet.oran is not none and not saved.get('brut_kar_orani') else 'ör. 24' }}" value="{{ ('%.2f'|format(saved.brut_kar_orani * 100)|replace('.', ',')) if saved.get('brut_kar_orani') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
+        <label>Dönem sonu stok, 153 (TL) <input name="donem_sonu_stok" inputmode="decimal" placeholder="sayım veya tahmin" value="{{ saved.donem_sonu_stok|tl if saved.get('donem_sonu_stok') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
+      </div>
       <div class="row">
         <label>Mükellef türü
           <select name="tur" {{ 'disabled' if p.kesin }}>

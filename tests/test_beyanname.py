@@ -180,3 +180,39 @@ def test_partial_yansitma_is_counted_once():
     assert any("yansıtılmamış" in n for n in notes) and any("710-730" in n for n in notes)
     # Yalnızca 63 kullanan firmada değişiklik yok.
     assert income_statement({"600": 1000, "630": -100})[1]["donem_kari"] == 900
+
+
+def _gv_case(gv=None, decls=()):
+    from denetci.gecici import hesapla
+    kebir = [_line("600", alacak=1000_00, d=date(2026, 3, 1)), _line("621", borc=700_00, d=date(2026, 5, 1)),
+             _line("153", alacak=700_00, d=date(2026, 5, 1)), _line("153", borc=2000_00, d=date(2026, 2, 1)),
+             _line("600", alacak=500_00, d=date(2026, 8, 1))]
+    ctx = Context("THP_VUK", date(2026, 7, 1), date(2026, 9, 30), None, None, kebir=kebir)
+    period = SimpleNamespace(bitis=date(2026, 9, 30), baslangic=date(2026, 7, 1), gv=gv)
+    client = SimpleNamespace(sirket_turu=None, unvan="Örnek Ltd. Şti.")
+    return hesapla(ctx, period, client, decls)
+
+
+def test_missing_cost_is_estimated():
+    h = _gv_case()
+    assert h.ticari_kar == 800_00 and h.maliyet.eksik
+    # Önceki ayların brüt kâr oranı %30 -> hedef maliyet 1.050, kayıtlı 700, ek 350.
+    assert h.maliyet.ek == 350_00 and h.tahmini_kar == 450_00 and h.matrah == 450_00
+    assert "önceki ayları" in h.maliyet.kaynak
+    h = _gv_case({"maliyet": "oran", "brut_kar_orani": 0.2})
+    assert h.maliyet.ek == 500_00  # 1.500 × 0,8 − 700
+    h = _gv_case({"maliyet": "stok", "donem_sonu_stok": 900_00})
+    assert h.maliyet.ek == 400_00  # 153 bakiyesi 1.300 − stok 900
+    h = _gv_case({"maliyet": "yok"})
+    assert h.maliyet.ek == 0 and h.matrah == 800_00
+
+
+def test_cost_ratio_from_declaration():
+    from denetci.gecici import maliyet_tahmini  # noqa: F401
+    decl = SimpleNamespace(tur="gecici", yil=2026, ay=6, alanlar={"net_satis": 1000_00, "smm": 600_00})
+    from denetci.gecici import hesapla
+    kebir = [_line("600", alacak=1500_00, d=date(2026, 8, 1))]
+    ctx = Context("THP_VUK", date(2026, 7, 1), date(2026, 9, 30), None, None, kebir=kebir)
+    period = SimpleNamespace(bitis=date(2026, 9, 30), baslangic=date(2026, 7, 1), gv=None)
+    h = hesapla(ctx, period, SimpleNamespace(sirket_turu=None, unvan="X Ltd."), [decl])
+    assert h.maliyet.ek == 900_00 and "beyannamesinin gelir tablosu" in h.maliyet.kaynak
