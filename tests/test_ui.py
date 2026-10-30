@@ -312,3 +312,14 @@ def test_assistant_guides_to_documents(app_client):
     r = tc.get(f"/mukellef/{cid}/asistan?gorev=kdv&bas=2026-09-01&bit=2026-09-30", follow_redirects=False)
     page = tc.get(r.headers["location"]).text
     assert "yevmiyesinden" in page and "KDV Ön Kontrol" in page and "kontrol edildi" in page
+
+
+def test_back_button(app_client):
+    tc = app_client
+    login(tc)
+    assert "back-btn" not in tc.get("/").text  # ana sayfada gerek yok
+    loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    cid = re.search(r"/mukellef/(\d+)", loc).group(1)
+    kdv = tc.get(f"/mukellef/{cid}/kdv").text
+    assert 'class="back-btn" href="/mukellef/' + cid + '"' in kdv and "history.back()" in kdv
+    assert 'class="back-btn" href="/"' in tc.get(f"/mukellef/{cid}").text
