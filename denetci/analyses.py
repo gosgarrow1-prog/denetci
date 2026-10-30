@@ -63,7 +63,7 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
     ayin_beyani = aylik and beyannameler.bul(decls, "kdv", period.bitis.year, period.bitis.month) is not None
     k = Analysis("kdv", "KDV Ön Kontrol", KDV_RULES, link="kdv")
     k.needs = [
-        Need("Dönem mizanı veya defteri kebir", has_mizan or has_kebir,
+        Need("Dönem mizanı, defteri kebir veya yılbaşından yevmiye", has_mizan or has_kebir or bool(ctx and ctx.ytd),
              "191, 391, 190 ve 360 hesaplarının bakiyeleri buradan okunur."),
         Need("Yevmiye defteri", has_yev, "Ay içindeki KDV hareketleri ve mahsup fişi için.", optional=True),
         Need("Önceki ayın devreden KDV'si", devreden_girildi or prev_adjacent,

@@ -34,6 +34,7 @@ from .. import beyannameler
 from ..analyses import build as build_analyses, kdv_amounts
 from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET_YONTEMLERI as GV_MALIYET, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
+from ..asistan import GOREV as ASISTAN_GOREV, GOREVLER as ASISTAN_GOREVLER, nasil as asistan_nasil, secenekler as asistan_secenekler, uygun as asistan_uygun
 from ..oneriler import ONCELIK_ADI, build as oneriler_build
 from .charts import balance_bars, tl_short
 
@@ -220,6 +221,16 @@ def donem_gruplari(periods, dolu: set, pid, bugun: date) -> list:
     if diger:
         groups.append(("Diğer dönemler", diger))
     return [(g, o) for g, o in groups if o]
+
+
+def _ilk_analiz(s, c, p):
+    """Dönem başka bir dosyadan (ör. geniş yevmiye) veri alabiliyorsa ve henüz analiz yoksa analizi çalıştırır."""
+    if p.kesin or s.scalar(select(AnalysisRun.id).where(AnalysisRun.period_id == p.id).limit(1)):
+        return
+    try:
+        run_analysis(s, c, p)
+    except NoData:
+        pass
 
 
 def alt_donemler(bas: date, bit: date) -> list[tuple[date, date]]:
@@ -530,11 +541,27 @@ def create_app() -> FastAPI:
         return out
 
     @app.get("/mukellef/{cid}", response_class=HTMLResponse)
-    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
+                    asistan: str | None = None, sec: int = 0):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
         v = _view(s, c, p, request)
         v["alerts"] = _alerts(v, c)
+        g = ASISTAN_GOREV.get(asistan or "")
+        av = {"gorev": g, "gorevler": ASISTAN_GOREVLER, "uygun": False}
+        if g:
+            av["uygun"] = asistan_uygun(g, p) and not sec
+            if av["uygun"]:
+                analyses = v["analyses"]
+                if g.key == "gecici":
+                    _, src = gv_kaynak(s, c, p.bitis)
+                    if src is not None and src.id != p.id:
+                        analyses = _view(s, c, src, request)["analyses"]
+                av["analizler"] = [a for a in analyses if a.key in g.analizler]
+                av["nasil"] = asistan_nasil(g, p)
+            else:
+                av["secenekler"] = asistan_secenekler(g, _today())
+        v["asistan"] = av
         return render(request, "client.html", active="panel", **v)
 
     @app.get("/mukellef/{cid}/belgeler", response_class=HTMLResponse)
@@ -647,6 +674,21 @@ def create_app() -> FastAPI:
         request.session["flash"] = [{"filename": "Geçici vergi", "status": "aktarildi", "message": "Bilgiler kaydedildi, hesaplama güncellendi."}]
         return _redirect(s, back)
 
+    @app.get("/mukellef/{cid}/asistan")
+    def asistan_donem(cid: int, gorev: str, bas: str, bit: str, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        if gorev not in ASISTAN_GOREV:
+            _404()
+        try:
+            b, e = date.fromisoformat(bas), date.fromisoformat(bit)
+        except ValueError:
+            raise HTTPException(400, "Tarihler geçersiz")
+        if e < b or (e - b).days > 400:
+            raise HTTPException(400, "Dönem geçersiz")
+        p = find_or_create_period(s, c, b, e)
+        _ilk_analiz(s, c, p)
+        return _redirect(s, f"/mukellef/{cid}?donem={p.id}&asistan={gorev}#asistan")
+
     @app.get("/mukellef/{cid}/donem-sec")
     def period_select(cid: int, bas: str, bit: str, geri: str = "", user=Depends(current_user), s=Depends(get_session)):
         """Seçicideki henüz olmayan bir ay veya 3 aylık dönemi açar (boş dönem oluşturur) ve o sayfaya döner."""
@@ -658,6 +700,7 @@ def create_app() -> FastAPI:
         if e < b or (e - b).days > 400:
             raise HTTPException(400, "Dönem geçersiz")
         p = find_or_create_period(s, c, b, e)
+        _ilk_analiz(s, c, p)
         base = geri if geri.startswith(f"/mukellef/{cid}") and "?" not in geri and "//" not in geri else f"/mukellef/{cid}"
         return _redirect(s, f"{base}?donem={p.id}")
 

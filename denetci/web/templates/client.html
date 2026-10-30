@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
 {% from "_ui.html" import flash_list, analysis_card, alert_row, rule_row, upload_zone %}
+{% from "_asistan.html" import asistan_kart %}
 {% macro delta(cur, prev) -%}
 {%- if prev is not none and cur is not none and prev != 0 -%}
 {%- set d = (cur - prev) / (prev|abs) * 100 -%}
@@ -29,6 +30,8 @@
 
 {{ flash_list(flash) }}
 {% if turetilmis %}<div class="alert-row lv-bilgi"><span class="al-ic">{{ icon('info', 22) }}</span><span class="al-text">Bu dönemin kayıtları <strong>{{ turetilmis[1]|donem_adi }}</strong> yevmiyesinden ({{ turetilmis[0].orig_name }}) ayrıldı; döneme ayrıca dosya yüklemenize gerek yok.</span></div>{% endif %}
+
+{{ asistan_kart(asistan, c, p, csrf) }}
 
 {% set loaded = [] %}{% for d in ['mizan', 'yevmiye', 'kebir', 'muavin'] %}{% if latest.get(d) %}{% set _ = loaded.append({'mizan': 'mizan', 'yevmiye': 'yevmiye', 'kebir': 'defteri kebir', 'muavin': 'muavin'}[d]) %}{% endif %}{% endfor %}
 {% set onemli = alerts|selectattr('level', 'in', ['onemli', 'dikkat'])|list|length %}

@@ -293,3 +293,22 @@ def test_gecici_vergi_uses_cumulative_period(app_client):
                   "tur": "kurum", "oran": "", "maliyet": "yok"})
     # Çeyrek döneminin raporu kümülatif dönemin girdilerini kullanır.
     assert "Kanunen kabul edilmeyen giderler (KKEG)" in tc.get(f"/mukellef/{cid}/rapor?donem={qid}").text
+
+
+def test_assistant_guides_to_documents(app_client):
+    tc = app_client
+    login(tc)
+    loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    cid = int(loc.rsplit("/", 1)[1].split("?")[0])
+    page = tc.get(f"/mukellef/{cid}").text
+    assert "Denetçi Asistan" in page and "ne yapmak istiyorsunuz" in page and "asistan=gecici" in page
+    page = tc.get(f"/mukellef/{cid}?asistan=gecici").text
+    assert "Hangi geçici vergi dönemi?" in page and "2026 / 3. dönem (Ocak–Eylül)" in page
+    r = tc.get(f"/mukellef/{cid}/asistan?gorev=gecici&bas=2026-01-01&bit=2026-09-30", follow_redirects=False)
+    assert "asistan=gecici" in r.headers["location"]
+    page = tc.get(r.headers["location"]).text
+    assert "Nasıl alınır?" in page and "01.01.2026 – 30.09.2026" in page and "Analizi aç" in page
+    # Aylık KDV: Eylül, çeyrek yevmiyesinden ayrılır ve analiz edilir.
+    r = tc.get(f"/mukellef/{cid}/asistan?gorev=kdv&bas=2026-09-01&bit=2026-09-30", follow_redirects=False)
+    page = tc.get(r.headers["location"]).text
+    assert "yevmiyesinden" in page and "KDV Ön Kontrol" in page and "kontrol edildi" in page

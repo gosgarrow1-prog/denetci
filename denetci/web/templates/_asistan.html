@@ -1,0 +1,53 @@
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import need_row, status_pill, upload_zone %}
+{% macro asistan_kart(av, c, p, csrf) -%}
+{% set g = av.gorev %}
+<section class="bot" id="asistan">
+  <div class="bot-avatar">{{ icon('bot', 30) }}</div>
+  <div class="bot-body">
+    <div class="bot-name">Denetçi Asistan</div>
+    {% if not g %}
+      <p class="bot-say">Merhaba! <strong>{{ c.unvan }}</strong> için ne yapmak istiyorsunuz? Seçiminize göre hangi belgeleri yüklemeniz gerektiğini söyleyeyim.</p>
+      <div class="bot-opts">
+        {% for x in av.gorevler %}
+        <a class="bot-opt" href="/mukellef/{{ c.id }}?{% if p %}donem={{ p.id }}&amp;{% endif %}asistan={{ x.key }}#asistan">
+          <strong>{{ x.baslik }}</strong><span>{{ x.aciklama }}</span></a>
+        {% endfor %}
+      </div>
+    {% elif not av.uygun %}
+      <p class="bot-me">{{ g.baslik }}</p>
+      <p class="bot-say">{{ g.soru }}</p>
+      {% for grp, opts in av.secenekler %}
+      <div class="bot-grp">{{ grp }}</div>
+      <div class="bot-chips">
+        {% for b, e, ad in opts %}<a class="bot-chip" href="/mukellef/{{ c.id }}/asistan?gorev={{ g.key }}&amp;bas={{ b.isoformat() }}&amp;bit={{ e.isoformat() }}">{{ ad }}</a>{% endfor %}
+      </div>
+      {% endfor %}
+      <a class="bot-back" href="/mukellef/{{ c.id }}{% if p %}?donem={{ p.id }}{% endif %}#asistan">← Başka bir iş seç</a>
+    {% else %}
+      <p class="bot-me">{{ g.baslik }} · {{ p|donem_adi }}</p>
+      {% set eksik = [] %}{% for a in av.analizler %}{% for n in a.missing %}{% set _ = eksik.append(n) %}{% endfor %}{% endfor %}
+      <p class="bot-say">{% if eksik %}Bu iş için <strong>{{ eksik|length }} belge eksik</strong>. Aşağıdaki listeden takip edebilirsiniz; yükledikçe işaretler yeşile döner.
+        {% else %}Gereken belgeler tamam. Analizi açabilirsiniz.{% endif %}</p>
+      <div class="bot-grid">
+        <div>
+          {% for a in av.analizler %}
+          <div class="bot-need-head">{{ a.title }} {{ status_pill(a) }}</div>
+          <ul class="needs">{% for n in a.needs %}{{ need_row(n) }}{% endfor %}</ul>
+          {% endfor %}
+        </div>
+        <div>
+          <div class="bot-need-head">Nasıl alınır?</div>
+          <ol class="bot-steps">{% for t in av.nasil %}<li>{{ t }}</li>{% endfor %}</ol>
+        </div>
+      </div>
+      {% if not p.kesin %}<div class="bot-upload">{{ upload_zone(c, p, csrf) }}</div>{% endif %}
+      <div class="bot-actions">
+        <a class="btn primary" href="/mukellef/{{ c.id }}/{{ g.link }}?donem={{ p.id }}">{{ 'Raporu aç' if g.key == 'kapanis' else 'Analizi aç' }} {{ icon('arrow', 16) }}</a>
+        <a class="btn" href="/mukellef/{{ c.id }}?donem={{ p.id }}&amp;asistan={{ g.key }}&amp;sec=1#asistan">Dönemi değiştir</a>
+        <a class="bot-back" href="/mukellef/{{ c.id }}?donem={{ p.id }}#asistan">← Başka bir iş seç</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{%- endmacro %}
