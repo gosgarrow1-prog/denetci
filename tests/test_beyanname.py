@@ -168,3 +168,15 @@ def test_k28_passes_when_profit_matches():
     ctx.gv_beyan = parse(gecici_pdf(ticari_kar=390_000_00)).alanlar
     r = gecici_rules.k28(ctx)
     assert r.status == "bulgu" and r.drafts[0].amount == 10_000_00
+
+
+def test_partial_yansitma_is_counted_once():
+    from denetci.finance import income_statement
+    # 6 ay yansıtılmış (750 borç 100, 751 alacak 60, 630 borç 60), son 3 ayın 40'ı 750'de kalmış.
+    net = {"600": 1000, "750": -100, "751": 60, "630": -60, "780": -10, "740": -5, "741": 0, "710": -30}
+    _, kal, notes = income_statement(net)
+    assert kal["faaliyet_kar"] == 1000 - 5 - 100
+    assert kal["donem_kari"] == 1000 - 5 - 100 - 10
+    assert any("yansıtılmamış" in n for n in notes) and any("710-730" in n for n in notes)
+    # Yalnızca 63 kullanan firmada değişiklik yok.
+    assert income_statement({"600": 1000, "630": -100})[1]["donem_kari"] == 900

@@ -11,6 +11,7 @@ Hesaplama kuralları:
 from dataclasses import dataclass, field
 
 from .checks.kdv import movements
+from .parsing import kurus_str
 from .checks.rules import Context
 
 GRUPLAR = {
@@ -114,15 +115,28 @@ def income_statement(net: dict):
     indirim = -cr(("610", "611", "612"))
     net_satis = brut - indirim
     smm = -cr(("620", "621", "622", "623"))
-    fg = -cr(("630", "631", "632"))
-    fin = -cr(("660", "661"))
-    fg7, fin7 = -cr(("750", "760", "770")), -cr(("780",))
-    if fg == 0 and fg7:
-        fg = fg7
-        notes.append("Faaliyet giderleri 7 sınıfından (750-770) alındı; 63 grubuna yansıtma yapılmamış.")
-    if fin == 0 and fin7:
-        fin = fin7
-        notes.append("Finansman giderleri 780 hesabından alındı; 660'a yansıtma yapılmamış.")
+    # 7/A: 7'li hesaplarda kalan net tutar (ör. 750 borç − 751 alacak) henüz 6'lı hesaplara yansıtılmamış kısımdır.
+    # Yansıtma dönemin bir kısmında yapılmışsa yalnızca kalan kısım eklenir; böylece çift sayılmaz.
+    fg63, fg7 = -cr(("630", "631", "632")), -cr(("750", "751", "760", "761", "770", "771"))
+    fin66, fin7 = -cr(("660", "661")), -cr(("780", "781"))
+    hizmet7 = -cr(("740", "741"))
+    uretim7 = -cr(("710", "711", "720", "721", "730", "731"))
+    fg, fin = fg63 + fg7, fin66 + fin7
+    if fg7:
+        notes.append(("Faaliyet giderleri 7 sınıfından (750-770) alındı; 63 grubuna yansıtma yapılmamış." if not fg63 else
+                      f"Faaliyet giderlerinin {kurus_str(fg7)} TL'si 63 grubuna yansıtılmamış (750-770'te kalmış); "
+                      "kâra bu tutar da gider olarak eklendi."))
+    if fin7:
+        notes.append(("Finansman giderleri 780 hesabından alındı; 660'a yansıtma yapılmamış." if not fin66 else
+                      f"Finansman giderlerinin {kurus_str(fin7)} TL'si 660'a yansıtılmamış (780'de kalmış); kâra eklendi."))
+    if hizmet7:
+        smm += hizmet7
+        notes.append(f"Hizmet üretim maliyetinin {kurus_str(hizmet7)} TL'si 622'ye yansıtılmamış (740'ta kalmış); "
+                     "satışların maliyetine eklendi.")
+    if uretim7:
+        notes.append(f"Üretim maliyet hesaplarında (710-730) {kurus_str(uretim7)} TL yansıtılmamış tutar var. Bu tutar "
+                     "stoklara (151-152) ve satılan mamul maliyetine (620) aktarılmadığı için kâra dahil edilmedi; "
+                     "kâr olduğundan yüksek görünebilir.")
     diger_gelir = cr(("64",))
     diger_gider = -cr(("65",))
     olagandisi = cr(("67",)) + cr(("68",))
