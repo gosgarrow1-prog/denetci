@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, need_row, status_pill, rule_row, alert_row %}
+{% macro pct(x) -%}%{{ ('%.1f'|format(x * 100)).replace('.0', '').replace('.', ',') }}{%- endmacro %}
+{% block content %}
+{% set a = analysis %}{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('calendar', 24) }}</span>
+  <div class="ph-text"><h1>Geçici Vergi</h1>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Yılbaşından dönem sonuna ticari kâr, tahmini matrah ve vergi; dönem sonu kayıt kontrolleri. Ön hesaplamadır, beyan yerine geçmez.</p></div>
+  <div class="ph-actions">{{ status_pill(a) }}</div>
+</div>
+{{ flash_list(flash) }}
+
+{% if not p %}
+<section class="card"><p>Önce bu mükellef için Luca dosyalarını yükleyin.</p>
+  <a class="btn primary" href="/mukellef/{{ c.id }}/belgeler">{{ icon('upload', 16) }}Dosya yükle</a></section>
+{% else %}
+
+{% if gv.donem_no %}
+<section class="summary">
+  <span class="sum-ic">{{ icon('calendar', 28) }}</span>
+  <div class="sum-text"><span class="eyebrow">{{ p.bitis.year }} {{ GV_DONEM[p.bitis.month] }}</span>
+    <p>Beyan ve ödeme için son gün (parametre tablosuna göre): <strong>{{ gv.beyan.strftime('%d.%m.%Y') }}</strong>.</p></div>
+</section>
+{% else %}
+<div class="alert-row lv-bilgi"><span class="al-ic">{{ icon('info', 22) }}</span>
+  <span class="al-text">Seçili dönem bir geçici vergi dönem sonu (Mart, Haziran, Eylül) değil. Hesaplama yine de yılbaşından {{ p.bitis.strftime('%d.%m.%Y') }} tarihine kadar bilgi amaçlı yapılır.</span></div>
+{% endif %}
+
+<div class="two">
+  <section class="card">
+    <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}</span>{% endif %}</div>
+    {% if gv.ticari_kar is not none %}
+    <table class="grid">
+      <tbody>
+        <tr class="subtotal"><td>Ticari kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+        {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' %}
+        <tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>
+        {% endif %}{% endfor %}
+        <tr class="subtotal"><td>Tahmini geçici vergi matrahı</td><td class="num">{{ gv.matrah|tl }}</td></tr>
+        <tr><td>Oran ({{ 'kurum kazancı' if gv.tur == 'kurum' else 'gelir vergisi mükellefi' }}{% if gv.oran_girildi %}, elle girildi{% endif %})</td>
+          <td class="num">{{ pct(gv.oran) if gv.oran is not none else '—' }}</td></tr>
+        <tr><td>Hesaplanan geçici vergi</td><td class="num">{{ gv.hesaplanan|tl if gv.hesaplanan is not none else '—' }}</td></tr>
+        <tr><td>− Önceki dönemlerde hesaplanan geçici vergi</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
+        <tr class="total"><td>Ödenecek geçici vergi (tahmini)</td><td class="num">{{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</td></tr>
+      </tbody>
+    </table>
+    {% if gv.pesin_193 %}<p class="muted">Bilgi: 193 Peşin ödenen vergiler bakiyesi {{ gv.pesin_193|tl }} TL (stopajlar dahil olabilir).</p>{% endif %}
+    {% else %}
+    <ul class="needs">{% for n in a.needs[:1] %}{{ need_row(n) }}{% endfor %}</ul>
+    <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a>
+    {% endif %}
+    {% if gv.notlar %}<ul class="notes">{% for n in gv.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+  </section>
+
+  <section class="card">
+    <div class="block-head"><h2>Düzeltmeler</h2><span class="muted">Tutarlar TL, yılbaşından kümülatif</span></div>
+    {% set saved = p.gv or {} %}
+    <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gecici-vergi" class="form-stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for key, label, sign in GV_ALANLAR %}
+      <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="0,00" value="{{ saved[key]|tl if saved.get(key) else '' }}" {{ 'disabled' if p.kesin }}></label>
+      {% endfor %}
+      <div class="row">
+        <label>Mükellef türü
+          <select name="tur" {{ 'disabled' if p.kesin }}>
+            <option value="kurum" {{ 'selected' if gv.tur == 'kurum' }}>Kurum (A.Ş., Ltd. Şti. …)</option>
+            <option value="sahis" {{ 'selected' if gv.tur == 'sahis' }}>Gelir vergisi mükellefi (şahıs)</option>
+          </select></label>
+        <label>Oran (boşsa parametre tablosundan) <input name="oran" inputmode="decimal" placeholder="ör. 25" value="{{ (saved.oran * 100)|round(2) if saved.get('oran') else '' }}" {{ 'disabled' if p.kesin }}></label>
+      </div>
+      {% if p.kesin %}<p class="muted">Dönem kesinleştirildiği için değiştirilemez.</p>{% else %}<div><button class="btn primary">Kaydet ve hesapla</button></div>{% endif %}
+    </form>
+    <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'si. {{ GV_PARAM.dayanak }}</p>
+  </section>
+</div>
+
+<section class="block">
+  <div class="block-head"><h2>Dönem sonu kontrolleri</h2><span class="muted">{{ a_findings|length }} açık bulgu</span></div>
+  {% if a_findings %}
+  <div class="alerts">
+  {% for f in a_findings %}{{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title, 'detail': f.explanation, 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
+  </div>
+  {% endif %}
+  {% if a_results %}
+  <section class="card"><div class="chks">{% for r in a_results %}{{ rule_row(r) }}{% endfor %}</div></section>
+  {% elif not run %}<p class="muted">Belgeler yüklenince kontroller çalışır.</p>
+  {% else %}<p class="muted">Bu kontroller son analizde yoktu; panelden "Kontrolleri yenile" ile çalıştırın.</p>{% endif %}
+</section>
+
+{% if gv.gelir_tablosu %}
+<section class="card">
+  <details><summary>Yılbaşından gelir tablosu (geçici vergi kârının ayrıntısı)</summary>
+  <table class="grid small" style="margin-top:10px"><tbody>
+    {% for ln in gv.gelir_tablosu %}{% if ln.value or ln.kind != 'kalem' %}
+    <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td></tr>
+    {% endif %}{% endfor %}
+  </tbody></table></details>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -106,6 +106,47 @@ def _div(a, b):
     return a / b if b else None
 
 
+def income_statement(net: dict):
+    """Gelir tablosu: net = ana hesap -> tutar (alacak yönü +). (satırlar, kalemler, notlar) döner."""
+    notes = []
+    cr = lambda p: _sum(net, p)  # noqa: E731
+    brut = cr(("600", "601", "602"))
+    indirim = -cr(("610", "611", "612"))
+    net_satis = brut - indirim
+    smm = -cr(("620", "621", "622", "623"))
+    fg = -cr(("630", "631", "632"))
+    fin = -cr(("660", "661"))
+    fg7, fin7 = -cr(("750", "760", "770")), -cr(("780",))
+    if fg == 0 and fg7:
+        fg = fg7
+        notes.append("Faaliyet giderleri 7 sınıfından (750-770) alındı; 63 grubuna yansıtma yapılmamış.")
+    if fin == 0 and fin7:
+        fin = fin7
+        notes.append("Finansman giderleri 780 hesabından alındı; 660'a yansıtma yapılmamış.")
+    diger_gelir = cr(("64",))
+    diger_gider = -cr(("65",))
+    olagandisi = cr(("67",)) + cr(("68",))
+    brut_kar = net_satis - smm
+    faaliyet_kar = brut_kar - fg
+    olagan = faaliyet_kar + diger_gelir - diger_gider - fin
+    donem = olagan + olagandisi
+    if any(net.get(k) for k in ("690", "692")):
+        notes.append("690/692 kapanış kayıtları var; gelir tablosu kapanış kayıtları nedeniyle eksik görünebilir.")
+    lines = [
+        Line("Brüt satışlar", brut), Line("Satış indirimleri", -indirim),
+        Line("Net satışlar", net_satis, "ara_toplam"), Line("Satışların maliyeti", -smm),
+        Line("Brüt satış kârı", brut_kar, "ara_toplam"), Line("Faaliyet giderleri", -fg),
+        Line("Faaliyet kârı", faaliyet_kar, "ara_toplam"),
+        Line("Diğer faaliyet gelirleri", diger_gelir), Line("Diğer faaliyet giderleri", -diger_gider),
+        Line("Finansman giderleri", -fin), Line("Olağan kâr", olagan, "ara_toplam"),
+        Line("Olağandışı gelir ve giderler (net)", olagandisi), Line("Dönem kârı (vergi öncesi)", donem, "toplam"),
+    ]
+    if smm == 0 and net_satis > 0:
+        notes.append("Satışların maliyeti kaydı yok; brüt kâr satışların tamamı gibi görünür "
+                     "(maliyet kaydı dönem sonunda yapılıyor olabilir).")
+    return lines, {"net_satis": net_satis, "brut_kar": brut_kar, "faaliyet_kar": faaliyet_kar, "donem_kari": donem}, notes
+
+
 def summarize(ctx: Context) -> Summary:
     s = Summary()
     bal, src = ana_balances(ctx)
@@ -142,42 +183,10 @@ def summarize(ctx: Context) -> Summary:
         net = {}
         for k in set(m.borc) | set(m.alacak):
             net[k[:3]] = net.get(k[:3], 0) + m.alacak.get(k, 0) - m.borc.get(k, 0)  # alacak (gelir) yönü +
-        cr = lambda p: _sum(net, p)  # noqa: E731
-        brut = cr(("600", "601", "602"))
-        indirim = -cr(("610", "611", "612"))
-        net_satis = brut - indirim
-        smm = -cr(("620", "621", "622", "623"))
-        fg = -cr(("630", "631", "632"))
-        fin = -cr(("660", "661"))
-        fg7, fin7 = -cr(("750", "760", "770")), -cr(("780",))
-        if fg == 0 and fg7:
-            fg = fg7
-            s.notlar.append("Faaliyet giderleri 7 sınıfından (750-770) alındı; 63 grubuna yansıtma yapılmamış.")
-        if fin == 0 and fin7:
-            fin = fin7
-            s.notlar.append("Finansman giderleri 780 hesabından alındı; 660'a yansıtma yapılmamış.")
-        diger_gelir = cr(("64",))
-        diger_gider = -cr(("65",))
-        olagandisi = cr(("67",)) + cr(("68",))
-        brut_kar = net_satis - smm
-        faaliyet_kar = brut_kar - fg
-        olagan = faaliyet_kar + diger_gelir - diger_gider - fin
-        donem = olagan + olagandisi
-        if any(net.get(k) for k in ("690", "692")):
-            s.notlar.append("Dönemde 690/692 kapanış kayıtları var; gelir tablosu kapanış kayıtları nedeniyle eksik görünebilir.")
-        s.gelir_tablosu = [
-            Line("Brüt satışlar", brut), Line("Satış indirimleri", -indirim),
-            Line("Net satışlar", net_satis, "ara_toplam"), Line("Satışların maliyeti", -smm),
-            Line("Brüt satış kârı", brut_kar, "ara_toplam"), Line("Faaliyet giderleri", -fg),
-            Line("Faaliyet kârı", faaliyet_kar, "ara_toplam"),
-            Line("Diğer faaliyet gelirleri", diger_gelir), Line("Diğer faaliyet giderleri", -diger_gider),
-            Line("Finansman giderleri", -fin), Line("Olağan kâr", olagan, "ara_toplam"),
-            Line("Olağandışı gelir ve giderler (net)", olagandisi), Line("Dönem kârı (vergi öncesi)", donem, "toplam"),
-        ]
-        s.kalemler.update({"net_satis": net_satis, "brut_kar": brut_kar, "faaliyet_kar": faaliyet_kar, "donem_kari": donem})
-        if smm == 0 and net_satis > 0:
-            s.notlar.append("Dönemde satışların maliyeti kaydı yok; brüt kâr satışların tamamı gibi görünür "
-                            "(maliyet kaydı dönem sonunda yapılıyor olabilir).")
+        lines, kal, notes = income_statement(net)
+        s.gelir_tablosu = lines
+        s.kalemler.update(kal)
+        s.notlar += notes
 
     k = s.kalemler
     if s.has_balance:

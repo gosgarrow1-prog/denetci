@@ -52,7 +52,7 @@
 <div class="chk">
   <span class="code">{{ r.id }}</span>
   <span class="chk-t">{{ r.title }}<span class="chk-m">{{ r.message }}</span></span>
-  <span class="st-pill {{ {'gecti': 'green', 'bulgu': 'red', 'calistirilamadi': 'amber', 'uygulanmadi': 'gray', 'bilgi': 'blue'}[r.status] }}">{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Belge yok', 'bilgi': 'Bilgi'}[r.status] }}</span>
+  <span class="st-pill {{ {'gecti': 'green', 'bulgu': 'red', 'calistirilamadi': 'amber', 'uygulanmadi': 'gray', 'bilgi': 'blue'}[r.status] }}">{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Uygulanmadı', 'bilgi': 'Bilgi'}[r.status] }}</span>
 </div>
 {%- endmacro %}
 

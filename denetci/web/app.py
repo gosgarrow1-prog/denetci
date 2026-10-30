@@ -30,6 +30,8 @@ from ..importer.tables import UnsupportedFile
 from ..importer.ingest import ingest, peek
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
 from ..analyses import build as build_analyses, kdv_amounts
+from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, hesapla as gv_hesapla
+from ..parametreler import GECICI_VERGI
 from .charts import balance_bars, tl_short
 
 HERE = Path(__file__).parent
@@ -433,12 +435,64 @@ def create_app() -> FastAPI:
         v = _view(s, c, p, request)
         v["alerts"] = _alerts(v, c)
         v["now"] = _now()
+        v["gv"] = gv_hesapla(build_context(s, c, p)[0], p, c)
+        v["GV_ALANLAR"] = GV_ALANLAR
         return render(request, "report.html", active="rapor", **v)
+
+    @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)
+    def gv_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        a = next(x for x in v["analyses"] if x.key == "gecici")
+        ctx = build_context(s, c, p)[0] if p else None
+        v.update(analysis=a, gv=gv_hesapla(ctx, p, c) if p else None, GV_ALANLAR=GV_ALANLAR, GV_PARAM=GECICI_VERGI,
+                 GV_DONEM=GV_DONEM_ADI,
+                 a_results=[r for r in v["results"] if r["id"] in a.rules],
+                 a_findings=[f for f in v["findings"] if f.rule_id in a.rules])
+        return render(request, "gecici.html", active="gecici", **v)
+
+    @app.post("/mukellef/{cid}/donem/{pid}/gecici-vergi")
+    async def gv_save(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        owned(s, Period, pid, cid)
+        p = s.get(Period, pid)
+        form = await form_checked(request)
+        back = f"/mukellef/{cid}/gecici-vergi?donem={pid}"
+        if (r := _guard(request, p, cid, back)):
+            return r
+        gv, bad = {"kaydedildi": True}, []
+        for key, label, _ in GV_ALANLAR:
+            raw = str(form.get(key, "")).replace("₺", "").replace("TL", "").strip()
+            try:
+                val = parse_amount(raw, "tr") if raw else 0
+            except ParseError:
+                val = None
+            if val is None or val < 0:
+                bad.append(label)
+            else:
+                gv[key] = val
+        tur = str(form.get("tur", ""))
+        if tur in ("kurum", "sahis"):
+            gv["tur"] = tur
+        oran_raw = str(form.get("oran", "")).replace("%", "").replace(",", ".").strip()
+        if oran_raw:
+            try:
+                o = float(oran_raw)
+                gv["oran"] = o / 100 if o > 1 else o
+            except ValueError:
+                bad.append("Oran")
+        if bad:
+            request.session["flash"] = [{"filename": "Geçici vergi", "status": "hata", "message": "Okunamayan tutar: " + ", ".join(bad)}]
+            return _redirect(s, back)
+        p.gv = gv
+        audit(s, user, "gecici_vergi_girdi", cid, f"period={pid}")
+        request.session["flash"] = [{"filename": "Geçici vergi", "status": "aktarildi", "message": "Bilgiler kaydedildi, hesaplama güncellendi."}]
+        return _redirect(s, back)
 
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
-        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "gecici-vergi": "gecici"}
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat"}
         if key not in keys:
             _404()
         c = s.get(Client, cid) or _404()

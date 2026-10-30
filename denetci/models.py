@@ -62,6 +62,8 @@ class Period(Base):
     kesin_kullanici: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kesin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     notlar: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Geçici vergi girdileri (kuruş): kkeg, istisna, gecmis_zarar, indirim, onceki_odenen; oran ve tür (kurum/sahis).
+    gv: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     @property
     def kesin(self) -> bool:

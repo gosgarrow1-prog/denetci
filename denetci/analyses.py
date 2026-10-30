@@ -40,6 +40,7 @@ class Analysis:
 
 
 KDV_RULES = ("K-21", "K-22", "K-22D", "K-23")
+GECICI_RULES = ("K-27", "K-29")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
 
@@ -88,12 +89,20 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              optional=True),
     ]
 
-    # --- Geçici vergi (henüz yok) ---
-    g = Analysis("gecici", "Geçici Vergi", (), yakinda=True, link="gecici-vergi")
+    # --- Geçici vergi ---
+    from .gecici import donem_no
+    g = Analysis("gecici", "Geçici Vergi", GECICI_RULES, link="gecici-vergi")
+    gv = (period.gv or {}) if period is not None else {}
     g.needs = [
-        Need("Yılbaşından dönem sonuna kümülatif mizan", False),
-        Need("Önceki geçici vergi beyannamesi", False),
-        Need("Defteri kebir", has_kebir),
+        Need("Yılbaşından dönem sonuna bakiyeler", bool(fin and fin.has_balance),
+             "Ocak'tan dönem sonuna kümülatif mizan veya defteri kebir (nakli yekün dahil)."),
+        Need("Geçici vergi dönem sonu", period is not None and donem_no(period.bitis) is not None,
+             "Mart, Haziran veya Eylül sonuyla biten dönemin dosyalarını yükleyin."),
+        Need("KKEG, istisna ve indirimler", bool(gv.get("kaydedildi")),
+             "Geçici Vergi sayfasında girin; girilmezse sıfır kabul edilir.", optional=True),
+        Need("Önceki dönemlerde hesaplanan geçici vergi", bool(gv.get("onceki_odenen")) or
+             (period is not None and donem_no(period.bitis) == 1),
+             "Mahsup için önceki geçici vergi beyannamelerindeki tutar.", optional=True),
     ]
     return [k, m, f, g]
 

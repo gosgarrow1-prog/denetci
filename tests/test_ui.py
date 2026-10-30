@@ -186,3 +186,32 @@ def test_undo_clear_finalize_report(app_client, data_root):
         assert not s.scalars(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.status != "iptal")).all()
         assert not s.scalars(select(AnalysisRun).where(AnalysisRun.period_id == pid)).all()
     assert tc.get(f"/mukellef/{cid}?donem={pid}").status_code == 200
+
+
+def test_gecici_vergi_page_and_inputs(app_client):
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    r = tc.post("/demo", data={"csrf": tok}, follow_redirects=False)
+    loc = r.headers["location"]
+    page = tc.get(loc + "/gecici-vergi").text
+    assert "3. dönem (Temmuz–Eylül)" in page and "17.11.2026" in page and "Tahmini geçici vergi matrahı" in page
+    assert "K-27" in page
+    with db.SessionLocal() as s:
+        p = s.scalars(select(Period)).first()
+        cid = p.client_id
+    r = tc.post(f"/mukellef/{cid}/donem/{p.id}/gecici-vergi",
+                data={"csrf": tok, "kkeg": "10.000,00", "istisna": "", "gecmis_zarar": "", "indirim": "", "onceki_odenen": "5.000,00",
+                      "tur": "kurum", "oran": ""}, follow_redirects=True)
+    assert "Bilgiler kaydedildi" in r.text and "10.000,00" in r.text
+    from denetci.gecici import hesapla
+    from denetci.checks.engine import build_context
+    with db.SessionLocal() as s:
+        p = s.get(Period, p.id)
+        c = s.get(Client, cid)
+        h = hesapla(build_context(s, c, p)[0], p, c)
+    assert h.matrah == h.ticari_kar + 1_000_000 and h.oran == 0.25
+    assert h.hesaplanan == round(h.matrah * 0.25) and h.odenecek == max(h.hesaplanan - 500_000, 0)
+    r = tc.post(f"/mukellef/{cid}/donem/{p.id}/gecici-vergi", data={"csrf": tok, "kkeg": "abc"}, follow_redirects=True)
+    assert "Okunamayan tutar" in r.text
+    assert "Geçici vergi ön hesaplaması" in tc.get(f"/mukellef/{cid}/rapor?donem={p.id}").text

@@ -99,8 +99,21 @@
   {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
   {% endif %}
 
+  {% if gv and gv.ticari_kar is not none %}
+  <h2>6. Geçici vergi ön hesaplaması</h2>
+  <table class="grid small"><tbody>
+    <tr><td>Ticari kâr (01.01 – {{ p.bitis.strftime('%d.%m.%Y') }})</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+    {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' and gv.girdiler[key] %}<tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>{% endif %}{% endfor %}
+    <tr class="subtotal"><td>Tahmini matrah</td><td class="num">{{ gv.matrah|tl }}</td></tr>
+    {% if gv.hesaplanan is not none %}<tr><td>Hesaplanan geçici vergi (oran %{{ '%.0f'|format(gv.oran * 100) }})</td><td class="num">{{ gv.hesaplanan|tl }}</td></tr>
+    <tr><td>− Önceki dönemlerde hesaplanan</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
+    <tr class="total"><td>Ödenecek (tahmini)</td><td class="num">{{ gv.odenecek|tl }}</td></tr>{% endif %}
+  </tbody></table>
+  <p class="muted">Ön hesaplamadır, beyan değildir. Oranlar parametre tablosundan alınır ve doğrulanmalıdır.</p>
+  {% endif %}
+
   {% if p.notlar %}
-  <h2>6. Çalışma notu</h2>
+  <h2>7. Çalışma notu</h2>
   <p class="r-pre">{{ p.notlar }}</p>
   {% endif %}
 
