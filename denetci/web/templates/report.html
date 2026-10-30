@@ -34,7 +34,26 @@
     {{ findings|length }} açık bulgu var{% set eksik = alerts|selectattr('action', 'equalto', 'Tamamla')|list %}{% if eksik %}, {{ eksik|length }} analiz için belge eksik{% endif %}.</p>
   {% else %}<p>Bu dönem için analiz yapılmadı.</p>{% endif %}
 
-  <h2>2. Kullanılan belgeler</h2>
+  <h2>2. Değerlendirme ve öneriler</h2>
+  {% macro oneri_tablo(items) -%}
+  <table class="grid small r-oneri"><thead><tr><th>Öncelik</th><th>Konu</th><th>Öneri</th></tr></thead><tbody>
+  {% for o in items %}
+    <tr><td><span class="lv-{{ {'yuksek': 'onemli', 'orta': 'dikkat'}.get(o.oncelik, 'bilgi') }}"><span class="lv-pill">{{ ONCELIK_ADI[o.oncelik] }}</span></span></td>
+      <td>{{ o.alan }}</td>
+      <td><strong>{{ o.baslik }}</strong><div>{{ o.metin }}</div>{% if o.dayanak %}<div class="muted">Dayanak: {{ o.dayanak }}</div>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {%- endmacro %}
+  {% set sirket = oneriler|selectattr('grup', 'equalto', 'sirket')|list %}
+  {% set kayit = oneriler|selectattr('grup', 'equalto', 'kayit')|list %}
+  <h3>Şirkete yönelik</h3>
+  {% if sirket %}{{ oneri_tablo(sirket) }}{% else %}<p>Mevcut verilerle finansal yapı, kârlılık ve vergi açısından öne çıkan bir konu yok.</p>{% endif %}
+  <h3>Muhasebe kayıtlarında yapılacaklar</h3>
+  {% if kayit %}{{ oneri_tablo(kayit) }}{% if findings|length > 5 %}<p class="muted">En önemli 5 bulgu gösterildi; tamamı 4. bölümde ({{ findings|length }} bulgu).</p>{% endif %}
+  {% else %}<p>Açık bulgu yok.</p>{% endif %}
+  <p class="muted">Öneriler yüklenen kayıtlardan kurallarla üretildi. Oran eşikleri genel yaklaşımdır ve sektöre göre değişir; mesleki değerlendirmeyle birlikte kullanın.</p>
+
+  <h2>3. Kullanılan belgeler</h2>
   <table class="grid small"><thead><tr><th>Belge</th><th>Dosya</th><th>Sürüm</th><th class="num">Kayıt</th></tr></thead><tbody>
   {% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
     {% set b = latest.get(d) %}
@@ -47,7 +66,7 @@
   {% set rdecls = rdecls|selectattr('ay', 'le', p.bitis.month)|list %}
   {% if rdecls %}<p class="muted">Yüklenen beyannameler (bu yıl, dönem sonuna kadar): {% for d in rdecls %}{{ 'KDV' if d.tur == 'kdv' else 'Geçici vergi' }} {{ beyan_donem(d.tur, d.yil, d.ay) }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 
-  <h2>3. Bulgular</h2>
+  <h2>4. Bulgular</h2>
   {% if findings %}
   <table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
   {% for f in findings %}
@@ -63,7 +82,7 @@
   {% if eksik %}<h3>Eksik belgeler</h3><ul>{% for al in eksik %}<li>{{ al.text }}</li>{% endfor %}</ul>{% endif %}
 
   {% if run %}
-  <h2>4. Kontrol sonuçları</h2>
+  <h2>5. Kontrol sonuçları</h2>
   <table class="grid small"><thead><tr><th>Kural</th><th>Sonuç</th><th>Açıklama</th></tr></thead><tbody>
   {% for r in results %}
     <tr><td><strong>{{ r.id }}</strong> {{ r.title }}</td>
@@ -74,7 +93,7 @@
   {% endif %}
 
   {% if fin and (fin.has_income or fin.has_balance) %}
-  <h2>5. Finansal özet</h2>
+  <h2>6. Finansal özet</h2>
   <div class="r-two">
     {% if fin.has_income %}
     <table class="grid small"><thead><tr><th>Gelir tablosu</th><th class="num">TL</th></tr></thead><tbody>
@@ -103,7 +122,7 @@
   {% endif %}
 
   {% if gv and gv.ticari_kar is not none %}
-  <h2>6. Geçici vergi ön hesaplaması</h2>
+  <h2>7. Geçici vergi ön hesaplaması</h2>
   <table class="grid small"><tbody>
     <tr><td>Ticari kâr (01.01 – {{ p.bitis.strftime('%d.%m.%Y') }})</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
     {% if gv.maliyet and gv.maliyet.ek %}<tr><td>− Tahmini satış maliyeti (kaydı yapılmamış; {{ gv.maliyet.kaynak }})</td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>{% endif %}
@@ -117,7 +136,7 @@
   {% endif %}
 
   {% if p.notlar %}
-  <h2>7. Çalışma notu</h2>
+  <h2>8. Çalışma notu</h2>
   <p class="r-pre">{{ p.notlar }}</p>
   {% endif %}
 

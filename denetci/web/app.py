@@ -34,6 +34,7 @@ from .. import beyannameler
 from ..analyses import build as build_analyses, kdv_amounts
 from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET_YONTEMLERI as GV_MALIYET, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
+from ..oneriler import ONCELIK_ADI, build as oneriler_build
 from .charts import balance_bars, tl_short
 
 HERE = Path(__file__).parent
@@ -75,6 +76,7 @@ templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
+templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
     "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
@@ -467,6 +469,8 @@ def create_app() -> FastAPI:
                 [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
                  ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
         v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
+        gv = gv_hesapla(build_context(s, c, p)[0], p, c, v["decls"]) if p else None
+        v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], gv, p)
         return render(request, "finance.html", active="finansal", **v)
 
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
@@ -480,6 +484,7 @@ def create_app() -> FastAPI:
         v["now"] = _now()
         v["gv"] = gv_hesapla(build_context(s, c, p)[0], p, c, v["decls"])
         v["GV_ALANLAR"] = GV_ALANLAR
+        v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
         return render(request, "report.html", active="rapor", **v)
 
     @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)

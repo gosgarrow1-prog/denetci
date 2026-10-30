@@ -82,5 +82,22 @@
   {% else %}<p class="muted">Bilanço için dönem sonu bakiyesi gerekli: yılbaşından alınmış mizan veya defteri kebir yükleyin.</p>{% endif %}
   {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
 </section>
+
+<section class="block" id="oneriler">
+  <div class="block-head"><h2>Değerlendirme ve Öneriler</h2><a class="more" href="/mukellef/{{ c.id }}/rapor{{ q }}">Dönem raporunda gör →</a></div>
+  {% if oneriler|selectattr('grup', 'equalto', 'sirket')|list %}
+  <div class="alerts">
+  {% for o in oneriler if o.grup == 'sirket' %}{% set lv = {'yuksek': 'onemli', 'orta': 'dikkat'}.get(o.oncelik, 'bilgi') %}
+    <div class="alert-row lv-{{ lv }}">
+      <span class="al-ic">{{ icon({'onemli': 'alert', 'dikkat': 'warn', 'bilgi': 'info'}[lv], 22) }}</span>
+      <span class="lv-pill">{{ ONCELIK_ADI[o.oncelik] }}</span>
+      <span class="al-text">{{ o.baslik }} <span class="muted">· {{ o.alan }}</span>
+        <span class="al-detail">{{ o.metin }}</span></span>
+    </div>
+  {% endfor %}
+  </div>
+  <p class="muted" style="margin-top:8px">Öneriler kayıtlardan kurallarla üretilir; oran eşikleri genel yaklaşımdır ve sektöre göre değişir. Muhasebe kayıtlarında yapılacaklar dönem raporunda.</p>
+  {% else %}<p class="muted">Mevcut verilerle finansal yapı, kârlılık ve vergi açısından öne çıkan bir konu yok.</p>{% endif %}
+</section>
 {% endif %}
 {% endblock %}

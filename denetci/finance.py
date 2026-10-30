@@ -181,7 +181,9 @@ def summarize(ctx: Context) -> Summary:
         s.kalemler.update({"hazir_degerler": _sum(bal, "10"), "stoklar": _sum(bal, "15"),
                            "ticari_alacaklar": _sum(bal, ("12", "22")), "ticari_borclar": -_sum(bal, ("32", "42")),
                            "mali_borclar": -_sum(bal, ("30", "40")), "donen": donen, "kvyk": kvyk,
-                           "yabanci_kaynak": kvyk + uvyk, "ozkaynak": ozk + sonuc})
+                           "yabanci_kaynak": kvyk + uvyk, "ozkaynak": ozk + sonuc,
+                           "kasa": _sum(bal, "100"), "ortaklardan_alacak": _sum(bal, ("131", "231")),
+                           "sermaye": -_sum(bal, "50"), "devreden_kdv": _sum(bal, "190")})
         if abs(s.aktif - s.pasif) > 100:
             s.notlar.append(f"Aktif ile pasif arasında {_tl(s.aktif - s.pasif)} TL fark var; nazım hesaplar dışında "
                             "eksik hesap olabilir.")

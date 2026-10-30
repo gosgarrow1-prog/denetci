@@ -235,3 +235,29 @@ def test_period_selector_groups_months_and_quarters(app_client):
     r = tc.get(f"/mukellef/{cid}/donem-sec?bas=2026-08-01&bit=2026-08-31&geri=https://ornek.com", follow_redirects=False)
     assert r.headers["location"] == f"/mukellef/{cid}?donem={p.id}"
     assert "Ağustos 2026" in tc.get(r.headers["location"]).text
+
+
+def test_report_and_finance_show_recommendations(app_client):
+    tc = app_client
+    login(tc)
+    loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    cid = int(loc.rsplit("/", 1)[1].split("?")[0])
+    rep = tc.get(f"/mukellef/{cid}/rapor").text
+    assert "2. Değerlendirme ve öneriler" in rep and "Dayanak:" in rep
+    assert "Değerlendirme ve Öneriler" in tc.get(f"/mukellef/{cid}/finansal").text
+
+
+def test_recommendation_rules():
+    from types import SimpleNamespace
+    from denetci.finance import Ratio
+    from denetci.oneriler import build
+    fin = SimpleNamespace(has_balance=True, has_income=True, aktif=1000_00, flows_window=None, gelir_tablosu=[],
+                          oranlar=[Ratio("cari", "", 0.8, ""), Ratio("brut_marj", "", 0.2, "")],
+                          kalemler={"ozkaynak": -5_00, "kasa": 200_00, "ortaklardan_alacak": 50_00, "net_satis": 100_00,
+                                    "donem_kari": -1_00, "kvyk": 10, "devreden_kdv": 0})
+    prev = SimpleNamespace(oranlar=[Ratio("brut_marj", "", 0.3, "")])
+    basliklar = [o.baslik for o in build(fin, prev)]
+    for b in ("Kısa vadeli borçlar dönen varlıklardan fazla", "Özkaynak eksiye düşmüş", "Kasa bakiyesi yüksek",
+              "Ortaklardan alacak bakiyesi var", "Dönem zararla sonuçlanıyor", "Brüt kâr marjı önceki döneme göre düştü"):
+        assert b in basliklar, b
+    assert build(None) == []
