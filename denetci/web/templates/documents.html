@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, analysis_card, upload_zone %}
+{% block content %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('upload', 24) }}</span>
+  <div class="ph-text"><h1>Belgeler ve Yükleme</h1>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Luca'dan aldığınız dosyaları yükleyin; dönem dosyadan bulunur ve kontroller kendiliğinden çalışır.</p></div>
+</div>
+{{ flash_list(flash) }}
+<section class="card">{{ upload_zone(c, p, csrf) }}
+  <p class="muted" style="margin-top:10px">Orijinal dosyalar değiştirilmeden saklanır. Aynı dosya ikinci kez yüklenirse alınmaz; yeni sürüm yüklenirse eskisi arşivde kalır.</p>
+</section>
+
+<section class="block">
+  <div class="block-head"><h2>Analizlerin İhtiyaç Duyduğu Belgeler</h2></div>
+  <div class="a-grid">{% for a in analyses %}{{ analysis_card(a, c, p) }}{% endfor %}</div>
+</section>
+
+<section class="card">
+  <div class="block-head"><h2>{% if p %}{{ p|donem_adi }} dönemine yüklenen dosyalar{% else %}Yüklenen dosyalar{% endif %}</h2></div>
+  {% if batches %}
+  <div class="scroll"><table class="grid">
+    <thead><tr><th>Belge</th><th>Dosya</th><th>Biçim</th><th class="num">Kayıt</th><th>Durum</th></tr></thead>
+    <tbody>
+    {% for b in batches %}
+    <tr><td><a href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">{{ DOC_LABELS.get(b.doc_type, 'Belirlenmedi') }}</a></td>
+      <td>{{ files[b.source_file_id].orig_name }}<div class="muted">{{ b.created_at.strftime('%d.%m.%Y %H:%M') if b.created_at else '' }}</div></td>
+      <td>{{ PROFILE_LABELS.get(b.profile, 'Kolon eşleştirme') if b.profile else 'Kolon eşleştirme' }}</td>
+      <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b.status == 'onaylandi' else '' }}</td>
+      <td>{% if b.status == 'onaylandi' %}<span class="st-pill green">Aktarıldı · sürüm {{ b.version }}</span>
+        {% elif b.status == 'taslak' %}<a class="st-pill amber" href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">Eşleştirme bekliyor</a>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">Bu dönem için henüz dosya yok.</p>{% endif %}
+</section>
+{% endblock %}

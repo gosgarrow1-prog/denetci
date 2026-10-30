@@ -1,180 +1,122 @@
 {% extends "base.html" %}
-{% macro delta(cur, prev, pct=False) -%}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, analysis_card, alert_row, rule_row, upload_zone %}
+{% macro delta(cur, prev) -%}
 {%- if prev is not none and cur is not none and prev != 0 -%}
 {%- set d = (cur - prev) / (prev|abs) * 100 -%}
-<span class="{{ 'delta-up' if d >= 0 else 'delta-down' }}">{{ '▲' if d >= 0 else '▼' }} %{{ '%.1f'|format(d|abs)|replace('.', ',') }}</span> önceki döneme göre
+<span class="{{ 'up' if d >= 0 else 'down' }}">{{ '▲' if d >= 0 else '▼' }} %{{ '%.0f'|format(d|abs) }} önceki döneme göre</span>
 {%- endif -%}
 {%- endmacro %}
-{% macro ratio(r) -%}
-{%- if r.value is none -%}—{%- elif r.fmt == 'pct' -%}%{{ '%.1f'|format(r.value * 100)|replace('.', ',') }}{%- else -%}{{ '%.2f'|format(r.value)|replace('.', ',') }}{%- endif -%}
-{%- endmacro %}
 {% block content %}
+{% set q = ('?donem=' ~ p.id) if p else '' %}
 <div class="page-head">
-  <div>
-    <h1>{{ c.unvan }}</h1>
-    <div class="sub">{{ c.sirket_turu or 'Şirket türü girilmedi' }}{% if c.vkn %} · VKN/TCKN {{ c.vkn }}{% endif %}{% if c.vergi_dairesi %} · {{ c.vergi_dairesi }} V.D.{% endif %} · Tekdüzen/VUK</div>
+  <span class="ph-ic">{{ icon('panel', 24) }}</span>
+  <div class="ph-text">
+    <h1>Gösterge Paneli</h1>
+    <p>{{ c.unvan }}{% if p %} için {{ p|donem_adi }} kontrolleri, KDV durumu ve finansal özet tek bakışta.{% else %} için henüz belge yüklenmedi.{% endif %}</p>
   </div>
-  {% if p and has_batches %}
-  <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/analiz"><input type="hidden" name="csrf" value="{{ csrf }}">
-    <input type="hidden" name="geri" value="panel"><button class="secondary">↻ Analizi yenile</button></form>
-  {% endif %}
+  <div class="ph-actions">
+    {% if p and batches %}
+    <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/analiz"><input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="geri" value="panel"><button class="btn">{{ icon('refresh') }}Kontrolleri yenile</button></form>
+    {% endif %}
+    <a class="btn primary" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload') }}Luca dosyası yükle</a>
+  </div>
 </div>
 
-{% if flash %}<ul class="flash">{% for f in flash %}<li class="{{ f.status }}"><strong>{{ f.filename }}</strong> — {{ f.message }}</li>{% endfor %}</ul>{% endif %}
+{{ flash_list(flash) }}
 
-{% if periods %}
-<nav class="tabs" aria-label="Dönemler">
-  {% for pp in periods %}<a href="/mukellef/{{ c.id }}?donem={{ pp.id }}" class="{{ 'on' if p and pp.id == p.id }}">{{ pp.baslangic.strftime('%d.%m.%Y') }} – {{ pp.bitis.strftime('%d.%m.%Y') }}</a>{% endfor %}
-</nav>
+{% set loaded = [] %}{% for d in ['mizan', 'yevmiye', 'kebir', 'muavin'] %}{% if latest.get(d) %}{% set _ = loaded.append({'mizan': 'mizan', 'yevmiye': 'yevmiye', 'kebir': 'defteri kebir', 'muavin': 'muavin'}[d]) %}{% endif %}{% endfor %}
+{% set onemli = alerts|selectattr('level', 'in', ['onemli', 'dikkat'])|list|length %}
+{% set bilgi = alerts|selectattr('level', 'equalto', 'bilgi')|list|length %}
+<section class="summary">
+  <span class="sum-ic">{{ icon('shield', 28) }}</span>
+  <div class="sum-text">
+    <span class="eyebrow">Dönem özeti</span>
+    {% if run %}
+    {% set gecti = results|selectattr('status', 'equalto', 'gecti')|list|length %}
+    <p>{{ p|donem_adi }} dosyaları ({{ loaded|join(', ') }}) kontrol edildi. {{ results|length }} kontrolün {{ gecti }} tanesi sorunsuz.
+      {% if onemli or bilgi %}<strong>{{ onemli }} önemli konu</strong> ve {{ bilgi }} bilgilendirme ilgilenmenizi bekliyor.{% else %}İlgilenmeniz gereken bir konu yok.{% endif %}</p>
+    {% elif p %}
+    <p>Bu dönem için yüklenen belgeler henüz analiz edilmedi. "Kontrolleri yenile" ile başlatabilirsiniz.</p>
+    {% else %}
+    <p>Başlamak için Luca'dan aldığınız mizan, yevmiye, defteri kebir veya muavin dosyalarını yükleyin. Aşağıda her analizin hangi belgeye ihtiyaç duyduğu yazıyor.</p>
+    {% endif %}
+  </div>
+  {% if run %}<span class="rel-pill rel-{{ run.reliability }}">{{ icon('check' if run.reliability == 'uygun' else 'alert', 14) }}{{ RELIABILITY_LABELS[run.reliability] }}</span>{% endif %}
+</section>
+
+{% if fin %}
+{% set k = fin.kalemler %}{% set pk = prev_fin.kalemler if prev_fin else {} %}
+<section class="block">
+  <h2>Dönemin Finansal Özeti</h2>
+  <div class="tiles">
+    <div class="tile"><span class="tl">Net satışlar</span><span class="tv">{% if k.get('net_satis') is not none %}₺ {{ k.net_satis|tl0 }}{% else %}—{% endif %}</span>
+      <span class="ts">{{ delta(k.get('net_satis'), pk.get('net_satis')) or 'Satış hareketlerinden' }}</span></div>
+    <div class="tile"><span class="tl">Dönem kârı (vergi öncesi)</span><span class="tv {{ 'neg' if (k.get('donem_kari') or 0) < 0 }}">{% if k.get('donem_kari') is not none %}₺ {{ k.donem_kari|tl0 }}{% else %}—{% endif %}</span>
+      <span class="ts">{% if ratios.get('net_marj') and ratios.net_marj.value is not none %}Marj %{{ '%.1f'|format(ratios.net_marj.value * 100)|replace('.', ',') }}{% else %}Gelir tablosundan{% endif %}</span></div>
+    <div class="tile"><span class="tl">Hesaplanan KDV</span><span class="tv">{% if kdv.get('hesaplanan') is not none %}₺ {{ kdv.hesaplanan|tl0 }}{% else %}—{% endif %}</span><span class="ts">391 hesabı, dönem içi</span></div>
+    <div class="tile"><span class="tl">İndirilecek KDV</span><span class="tv">{% if kdv.get('indirilecek') is not none %}₺ {{ kdv.indirilecek|tl0 }}{% else %}—{% endif %}</span><span class="ts">191 hesabı, dönem içi</span></div>
+    <div class="tile"><span class="tl">Cari oran</span><span class="tv">{% if ratios.get('cari') and ratios.cari.value is not none %}{{ '%.2f'|format(ratios.cari.value)|replace('.', ',') }}{% else %}—{% endif %}</span><span class="ts">Dönen varlık / KVYK</span></div>
+    <div class="tile"><span class="tl">Hazır değerler</span><span class="tv {{ 'neg' if (k.get('hazir_degerler') or 0) < 0 }}">{% if fin.has_balance and k.get('hazir_degerler') is not none %}₺ {{ k.hazir_degerler|tl0 }}{% else %}—{% endif %}</span>
+      <span class="ts">{% if not fin.has_balance %}Dönem sonu bakiyesi yok{% elif (k.get('hazir_degerler') or 0) < 0 %}Eksi bakiye{% else %}Kasa, banka, çekler{% endif %}</span></div>
+  </div>
+</section>
 {% endif %}
 
-{% if not p or not has_batches %}
-<section class="card">
-  <h2>Luca belgelerini yükle</h2>
-  {% include "_upload.html" %}
+<section class="block">
+  <div class="block-head"><h2>Dikkat Gerektirenler</h2>{% if alerts %}<span class="muted">{{ onemli }} önemli · {{ bilgi }} bilgilendirme</span>{% endif %}</div>
+  {% if alerts %}
+  <div class="alerts">{% for al in alerts[:6] %}{{ alert_row(al) }}{% endfor %}</div>
+  {% if alerts|length > 6 and run %}<a class="more" href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Tümünü göster ({{ alerts|length }}) →</a>{% endif %}
+  {% elif run %}
+  <div class="alert-row lv-ok"><span class="al-ic">{{ icon('check', 22) }}</span><span class="al-text">Bu dönem için açık bulgu ve eksik belge yok.</span></div>
+  {% else %}
+  <p class="muted">Belgeler yüklendiğinde kontrol sonuçları burada görünecek.</p>
+  {% endif %}
 </section>
-{% else %}
 
 {% if run %}
-<div class="rel-banner rel-{{ run.reliability }}">
-  <strong>{{ RELIABILITY_LABELS[run.reliability] }}.</strong>
-  {% if run.reliability == 'kritik' %}Mizan veya fiş denkliği bozuk; finansal rakamlar güvenilir değil. Önce kritik bulgulara bakın.
-  {% elif run.reliability == 'kismen' %}Bazı kontroller eksik belge nedeniyle çalışmadı veya belgeler arasında fark var.
-  {% else %}Temel tutarlılık kontrolleri geçti.{% endif %}
+<div class="quick">
+  <a class="btn" href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Bulguları incele {{ icon('arrow', 16) }}</a>
+  <a class="btn" href="/mukellef/{{ c.id }}/kdv{{ q }}">KDV ön kontrol {{ icon('arrow', 16) }}</a>
+  <a class="btn" href="/mukellef/{{ c.id }}/finansal{{ q }}">Gelir tablosu ve bilanço {{ icon('arrow', 16) }}</a>
+  <a class="btn" href="/mukellef/{{ c.id }}/mutabakat{{ q }}">Defter mutabakatı {{ icon('arrow', 16) }}</a>
 </div>
 {% endif %}
 
-{# ---- Gösterge kutuları ---- #}
-{% set k = fin.kalemler %}{% set pk = prev_fin.kalemler if prev_fin else {} %}
-<div class="tiles">
-  <div class="tile"><div class="label">Net satışlar</div>
-    <div class="value">{{ tl_short(k.net_satis) if k.net_satis is defined else '—' }}<small>TL</small></div>
-    <div class="foot">{{ delta(k.get('net_satis'), pk.get('net_satis')) }}</div></div>
-  <div class="tile"><div class="label">Brüt satış kârı</div>
-    <div class="value">{{ tl_short(k.brut_kar) if k.brut_kar is defined else '—' }}<small>TL</small></div>
-    <div class="foot">{% if k.get('net_satis') %}Marj %{{ '%.1f'|format(k.brut_kar / k.net_satis * 100)|replace('.', ',') }}{% endif %}</div></div>
-  <div class="tile"><div class="label">Dönem kârı (vergi öncesi)</div>
-    <div class="value">{{ tl_short(k.donem_kari) if k.donem_kari is defined else '—' }}<small>TL</small></div>
-    <div class="foot">{{ delta(k.get('donem_kari'), pk.get('donem_kari')) }}</div></div>
-  <div class="tile"><div class="label">Hazır değerler</div>
-    <div class="value">{{ tl_short(k.hazir_degerler) if k.hazir_degerler is defined else '—' }}<small>TL</small></div>
-    <div class="foot">{% if not fin.has_balance %}Dönem sonu bakiyesi yok{% else %}Kasa, banka, çekler{% endif %}</div></div>
-  <div class="tile"><div class="label">Açık bulgu</div>
-    <div class="value">{{ findings|length }}</div>
-    <div class="foot">{% for sev in ['Kritik', 'Yüksek', 'Orta'] %}{% if sev_counts[sev] %}<span class="sev sev-{{ sev }}">{{ sev_counts[sev] }}</span> {% endif %}{% endfor %}</div></div>
+<section class="block">
+  <div class="block-head"><h2>Analizler ve Gereken Belgeler</h2><span class="muted">Her analiz eksik belgesini kendisi ister</span></div>
+  <div class="a-grid">{% for a in analyses %}{{ analysis_card(a, c, p) }}{% endfor %}</div>
+</section>
+
+<div class="two">
+  {% if run %}
+  {% set gecti = results|selectattr('status', 'equalto', 'gecti')|list|length %}
+  {% set bulgu = results|selectattr('status', 'equalto', 'bulgu')|list|length %}
+  <section class="card">
+    <div class="block-head"><h2>Kontroller</h2><span class="muted">{{ gecti }} / {{ results|length }} sorunsuz</span></div>
+    <div class="progress" role="img" aria-label="{{ gecti }} geçti, {{ bulgu }} bulgu, {{ results|length - gecti - bulgu }} çalışmadı veya belge yok">
+      <span class="g" style="width:{{ gecti / results|length * 100 }}%"></span><span class="r" style="width:{{ bulgu / results|length * 100 }}%"></span><span class="n" style="width:{{ (results|length - gecti - bulgu) / results|length * 100 }}%"></span>
+    </div>
+    <div class="chks">
+      {% for r in (results|selectattr('status', 'equalto', 'bulgu')|list) + (results|selectattr('status', 'in', ['calistirilamadi', 'bilgi', 'uygulanmadi'])|list) + (results|selectattr('status', 'equalto', 'gecti')|list) %}{% if loop.index <= 7 %}{{ rule_row(r) }}{% endif %}{% endfor %}
+    </div>
+    <a class="more" href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">{{ results|length }} kontrolün tamamı →</a>
+  </section>
+  {% endif %}
+  <section class="card" id="belgeler">
+    <div class="block-head"><h2>{% if p %}{{ p|donem_adi }} Belgeleri{% else %}Belgeler{% endif %}</h2>
+      {% if batches %}<span class="muted">Son yükleme {{ batches[0].created_at.strftime('%d.%m.%Y') if batches[0].created_at else '' }}</span>{% endif %}</div>
+    <ul class="docs">
+      {% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
+      {% set b = latest.get(d) %}
+      <li class="{{ 'n-ok' if b else 'n-miss' }}">{{ icon('check' if b else 'circle', 20) }}
+        {% if b %}<a href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">{{ name }}</a>{% else %}{{ name }}{% endif %}
+        <span class="doc-r">{% if b %}{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi }} kayıt{% else %}Yüklenmedi{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {{ upload_zone(c, p, csrf) }}
+  </section>
 </div>
-
-<div class="grid-3">
-  <div class="stack">
-    {# ---- Bulgular ---- #}
-    <section class="card">
-      <div class="card-head"><h2>Bulgular</h2>{% if run %}<a class="small" href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Tüm kontroller ve ayrıntı →</a>{% endif %}</div>
-      {% if findings %}
-      <ul class="findings">
-        {% for f in findings[:8] %}
-        <li><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span>
-          <div class="ft"><a href="/mukellef/{{ c.id }}/bulgu/{{ f.id }}">{{ f.title }}</a>
-            <div class="muted">{{ f.rule_id }} · {{ KIND_LABELS[f.kind] }}{% if f.fingerprint in cases and cases[f.fingerprint].status != 'yeni' %} · {{ STATUS_LABELS[cases[f.fingerprint].status] }}{% endif %}</div></div>
-          <span class="num">{{ f.amount|tl if f.amount is not none else '' }}{% if f.amount is not none %} TL{% endif %}</span></li>
-        {% endfor %}
-      </ul>
-      {% if findings|length > 8 %}<p class="muted" style="margin-top:8px">+{{ findings|length - 8 }} bulgu daha · <a href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">hepsini gör</a></p>{% endif %}
-      {% elif run %}<p class="st st-gecti">✓ Bu dönem için bulgu yok.</p>
-      {% else %}<p class="muted">Analiz henüz çalıştırılmadı.</p>{% endif %}
-    </section>
-
-    {# ---- Gelir tablosu ---- #}
-    <section class="card">
-      <div class="card-head"><h2>Gelir tablosu özeti</h2>
-        {% if fin.flows_window %}<span class="muted">{{ fin.flows_window[0].strftime('%d.%m.%Y') }} – {{ fin.flows_window[1].strftime('%d.%m.%Y') }} · {{ fin.flows_source }}</span>{% endif %}</div>
-      {% if fin.has_income %}
-      <table class="grid">
-        <thead><tr><th>Kalem</th><th class="num">Tutar (TL)</th>{% if prev_fin and prev_fin.has_income %}<th class="num">Önceki dönem</th>{% endif %}<th class="bar-cell"><span class="sr">Oran</span></th></tr></thead>
-        <tbody>
-        {% set base = (fin.gelir_tablosu[2].value|abs) or 1 %}
-        {% for ln in fin.gelir_tablosu %}{% if ln.value or ln.kind != 'kalem' %}
-        <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}">
-          <td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td>
-          {% if prev_fin and prev_fin.has_income %}<td class="num muted">{{ prev_fin.gelir_tablosu[loop.index0].value|tl }}</td>{% endif %}
-          <td class="bar-cell"><div class="bar {{ 'neg' if ln.value < 0 }}" style="width:{{ [ (ln.value|abs) / base * 100, 100 ]|min }}%" title="Net satışların %{{ '%.0f'|format((ln.value|abs) / base * 100) }}'i"></div></td></tr>
-        {% endif %}{% endfor %}
-        </tbody>
-      </table>
-      {% else %}<p class="muted">Gelir tablosu için yevmiye, defteri kebir veya mizan gerekli.</p>{% endif %}
-    </section>
-
-    {# ---- Bilanço ---- #}
-    <section class="card">
-      <div class="card-head"><h2>Bilanço özeti</h2>{% if fin.has_balance %}<span class="muted">{{ p.bitis.strftime('%d.%m.%Y') }} · {{ fin.balances_source }}</span>{% endif %}</div>
-      {% if fin.has_balance %}
-      <div class="chart">{{ balance_chart }}</div>
-      <div class="legend">
-        {% for key, name, var in [('1','Dönen varlıklar','--s1'),('2','Duran varlıklar','--s2'),('3','Kısa vadeli yabancı kaynaklar','--s3'),('4','Uzun vadeli yabancı kaynaklar','--s4'),('5','Özkaynaklar + dönem sonucu','--s5')] %}
-        <span><i style="background:var({{ var }})"></i>{{ name }} <strong>{{ tl_short(fin.bilanco[key] + (fin.donem_sonucu_kapanmamis if key == '5' else 0)) }}</strong></span>
-        {% endfor %}
-      </div>
-      <details style="margin-top:12px"><summary>Grup ayrıntısı</summary>
-      <div class="grid-2" style="margin-top:8px">
-        {% for side in [['1','2'], ['3','4','5']] %}
-        <table class="grid small"><tbody>
-          {% for s_ in side %}
-          <tr class="subtotal"><td>{{ SINIFLAR[s_] }}</td><td class="num">{{ fin.bilanco[s_]|tl }}</td></tr>
-          {% for g, name, val in fin.bilanco_gruplar.get(s_, []) %}<tr><td>{{ g }} {{ name }}</td><td class="num">{{ val|tl }}</td></tr>{% endfor %}
-          {% endfor %}
-          {% if '5' in side %}<tr><td>Kapanmamış dönem sonucu (6-7 sınıfı)</td><td class="num">{{ fin.donem_sonucu_kapanmamis|tl }}</td></tr>
-          <tr class="total"><td>Pasif toplamı</td><td class="num">{{ fin.pasif|tl }}</td></tr>
-          {% else %}<tr class="total"><td>Aktif toplamı</td><td class="num">{{ fin.aktif|tl }}</td></tr>{% endif %}
-        </tbody></table>
-        {% endfor %}
-      </div></details>
-      {% else %}<p class="muted">Bilanço için dönem sonu bakiyesi gerekli: yılbaşından alınmış mizan veya defteri kebir yükleyin.</p>{% endif %}
-      {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
-    </section>
-  </div>
-
-  <div class="stack">
-    {# ---- Oranlar ---- #}
-    <section class="card">
-      <h2>Oranlar</h2>
-      {% if fin.oranlar %}
-      <table class="grid small"><tbody>
-        {% for r in fin.oranlar %}
-        <tr title="{{ r.formula }}"><td>{{ r.label }}<div class="muted">{{ r.formula }}</div></td>
-          <td class="num"><strong>{{ ratio(r) }}</strong>{% if prev_ratios.get(r.key) %}<div class="muted">önceki {{ ratio(prev_ratios[r.key]) }}</div>{% endif %}</td></tr>
-        {% endfor %}
-      </tbody></table>
-      <p class="muted" style="margin-top:8px">Oranlar yalnızca hesaplanır; sektör karşılaştırması yapılmaz.</p>
-      {% else %}<p class="muted">Oranlar için bilanço veya gelir tablosu verisi gerekli.</p>{% endif %}
-    </section>
-
-    {# ---- Kontroller ---- #}
-    {% if run %}
-    <section class="card">
-      <div class="card-head"><h2>Kontroller</h2><span class="muted">{{ run.rule_results|selectattr('status', 'equalto', 'gecti')|list|length }}/{{ run.rule_results|length }} geçti</span></div>
-      <div class="checks" style="grid-template-columns:1fr">
-        {% for r in run.rule_results %}
-        <div class="check st-{{ r.status }}" title="{{ r.message }}">
-          <span class="ic st st-{{ r.status }}">{{ {'gecti':'✓','bulgu':'!','calistirilamadi':'–','uygulanmadi':'·','bilgi':'i'}[r.status] }}</span>
-          <div><div class="t">{{ r.id }} {{ r.title }}</div><div class="m">{{ r.message|truncate(110) }}</div></div>
-        </div>
-        {% endfor %}
-      </div>
-    </section>
-    {% endif %}
-
-    {# ---- Belgeler ---- #}
-    <section class="card">
-      <h2>Belgeler</h2>
-      <table class="grid small"><tbody>
-        {% for b in batches %}
-        <tr><td><a href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">{{ DOC_LABELS.get(b.doc_type, 'Belirlenmedi') }}</a>
-          <div class="muted">{{ files[b.source_file_id].orig_name|truncate(40) }}</div></td>
-          <td class="num">{% if b.status == 'onaylandi' %}sürüm {{ b.version }}{% elif b.status == 'taslak' %}<a href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">eşleştir</a>{% else %}iptal{% endif %}</td></tr>
-        {% endfor %}
-      </tbody></table>
-      <div style="margin-top:12px">{% include "_upload.html" %}</div>
-    </section>
-  </div>
-</div>
-{% endif %}
 {% endblock %}

@@ -20,10 +20,18 @@ def test_demo_dashboard(app_client):
     tc = app_client
     login(tc)
     r = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False)
-    page = tc.get(r.headers["location"]).text
-    for text in ("Gelir tablosu özeti", "Bilanço özeti", "Oranlar", "Kontroller", "Net satışlar", "<svg"):
+    loc = r.headers["location"]
+    page = tc.get(loc).text
+    for text in ("Gösterge Paneli", "Dönem özeti", "Dikkat Gerektirenler", "Analizler ve Gereken Belgeler", "KDV Ön Kontrol",
+                 "Kontroller", "Net satışlar", "ÖNEMLİ"):
         assert text in page, text
     assert "Fiş denkliği" in page or "denk değil" in page
+    fin = tc.get(loc + "/finansal").text
+    for text in ("Gelir tablosu özeti", "Bilanço özeti", "Oranlar", "<svg"):
+        assert text in fin, text
+    for sub in ("/kdv", "/mutabakat", "/gecici-vergi", "/belgeler"):
+        assert tc.get(loc + sub).status_code == 200, sub
+    assert tc.get(loc + "/olmayan").status_code == 404
     # İkinci tıklama yeni DEMO oluşturmaz.
     tc.post("/demo", data={"csrf": csrf(tc, "/")})
     with db.SessionLocal() as s:
@@ -79,3 +87,32 @@ def test_client_list_import(app_client, data_root):
     assert clients["Yeni Örnek A.Ş."].vkn == "2222222222" and clients["Yeni Örnek A.Ş."].luca_kodu == "002"
     # Bozulmuş veri reddedilir.
     assert tc.post("/mukellef/liste/onayla", data={"csrf": tok, "veri": veri + "x", "sec": secs}).status_code == 400
+
+
+def test_kdv_asks_for_devreden_and_uses_it(app_client, data_root):
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": "DEMO KDV"}, follow_redirects=False)
+    cid = int(r.headers["location"].rsplit("/", 1)[1])
+    files = synthetic_luca.generate(data_root / "kdv", mizan=True)
+    r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
+                files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=False)
+    pid = int(r.headers["location"].split("donem=")[1])
+    page = tc.get(f"/mukellef/{cid}/kdv?donem={pid}").text
+    assert "Önceki ayın devreden KDV" in page and "eksik" in page
+    # Tutarın yanlış girilmesi bulgu üretir, boşaltınca kontrol yine uygulanmaz.
+    tc.post(f"/mukellef/{cid}/donem/{pid}/devreden-kdv", data={"csrf": tok, "tutar": "999.999,99"})
+    with db.SessionLocal() as s:
+        p = s.get(Period, pid)
+        assert p.devreden_kdv == 99999999
+        run = s.scalars(select(AnalysisRun).where(AnalysisRun.period_id == pid).order_by(AnalysisRun.id.desc())).first()
+        k22 = next(x for x in run.rule_results if x["id"] == "K-22")
+        assert k22["status"] in ("bulgu", "uygulanmadi")
+    page = tc.get(f"/mukellef/{cid}/kdv?donem={pid}").text
+    assert "999.999,99" in page
+    tc.post(f"/mukellef/{cid}/donem/{pid}/devreden-kdv", data={"csrf": tok, "tutar": ""})
+    with db.SessionLocal() as s:
+        assert s.get(Period, pid).devreden_kdv is None
+    r = tc.post(f"/mukellef/{cid}/donem/{pid}/devreden-kdv", data={"csrf": tok, "tutar": "abc"}, follow_redirects=True)
+    assert "Tutar okunamadı" in r.text

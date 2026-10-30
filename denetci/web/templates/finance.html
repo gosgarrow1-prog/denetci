@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, need_row, status_pill %}
+{% macro ratio(r) -%}
+{%- if r.value is none -%}—{%- elif r.fmt == 'pct' -%}%{{ '%.1f'|format(r.value * 100)|replace('.', ',') }}{%- else -%}{{ '%.2f'|format(r.value)|replace('.', ',') }}{%- endif -%}
+{%- endmacro %}
+{% block content %}
+{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('trend', 24) }}</span>
+  <div class="ph-text"><h1>Finansal Analiz</h1>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Gelir tablosu, bilanço ve temel oranlar. Bilgi amaçlıdır; kapanış kayıtları yapılmamışsa dönem sonucu hesaplanarak gösterilir.</p></div>
+  <div class="ph-actions">{{ status_pill(analysis) }}</div>
+</div>
+{{ flash_list(flash) }}
+
+{% if analysis.missing or not fin %}
+<section class="card">
+  <div class="block-head"><h2>Gereken belgeler</h2></div>
+  <ul class="needs">{% for n in analysis.needs %}{{ need_row(n) }}{% endfor %}</ul>
+  <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a>
+</section>
+{% endif %}
+
+{% if fin %}
+<div class="two wide-left">
+  <section class="card">
+    <div class="block-head"><h2>Gelir tablosu özeti</h2>
+      {% if fin.flows_window %}<span class="muted">{{ fin.flows_window[0].strftime('%d.%m.%Y') }} – {{ fin.flows_window[1].strftime('%d.%m.%Y') }} · {{ fin.flows_source }}</span>{% endif %}</div>
+    {% if fin.has_income %}
+    <div class="scroll"><table class="grid">
+      <thead><tr><th>Kalem</th><th class="num">Tutar (TL)</th>{% if prev_fin and prev_fin.has_income %}<th class="num">Önceki dönem</th>{% endif %}<th class="bar-cell"><span class="sr">Net satışa oranı</span></th></tr></thead>
+      <tbody>
+      {% set base = (fin.gelir_tablosu[2].value|abs) or 1 %}
+      {% for ln in fin.gelir_tablosu %}{% if ln.value or ln.kind != 'kalem' %}
+      <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}">
+        <td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td>
+        {% if prev_fin and prev_fin.has_income %}<td class="num muted">{{ prev_fin.gelir_tablosu[loop.index0].value|tl }}</td>{% endif %}
+        <td class="bar-cell"><div class="bar {{ 'neg' if ln.value < 0 }}" style="width:{{ [ (ln.value|abs) / base * 100, 100 ]|min }}%" title="Net satışların %{{ '%.0f'|format((ln.value|abs) / base * 100) }}'i"></div></td></tr>
+      {% endif %}{% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<p class="muted">Gelir tablosu için yevmiye, defteri kebir veya mizan gerekli.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <div class="block-head"><h2>Oranlar</h2></div>
+    {% if fin.oranlar %}
+    <table class="grid small"><tbody>
+      {% for r in fin.oranlar %}
+      <tr><td>{{ r.label }}<div class="muted">{{ r.formula }}</div></td>
+        <td class="num"><strong>{{ ratio(r) }}</strong>{% if prev_ratios.get(r.key) %}<div class="muted">önceki {{ ratio(prev_ratios[r.key]) }}</div>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody></table>
+    <p class="muted" style="margin-top:8px">Oranlar yalnızca hesaplanır; sektör karşılaştırması yapılmaz.</p>
+    {% else %}<p class="muted">Oranlar için bilanço veya gelir tablosu verisi gerekli.</p>{% endif %}
+  </section>
+</div>
+
+<section class="card">
+  <div class="block-head"><h2>Bilanço özeti</h2>{% if fin.has_balance %}<span class="muted">{{ p.bitis.strftime('%d.%m.%Y') }} · {{ fin.balances_source }}</span>{% endif %}</div>
+  {% if fin.has_balance %}
+  <div class="chart">{{ balance_chart }}</div>
+  <div class="legend">
+    {% for key, name, var in [('1','Dönen varlıklar','--s1'),('2','Duran varlıklar','--s2'),('3','Kısa vadeli yabancı kaynaklar','--s3'),('4','Uzun vadeli yabancı kaynaklar','--s4'),('5','Özkaynaklar + dönem sonucu','--s5')] %}
+    <span><i style="background:var({{ var }})"></i>{{ name }} <strong>{{ tl_short(fin.bilanco[key] + (fin.donem_sonucu_kapanmamis if key == '5' else 0)) }}</strong></span>
+    {% endfor %}
+  </div>
+  <div class="two" style="margin-top:16px">
+    {% for side in [['1','2'], ['3','4','5']] %}
+    <table class="grid small"><tbody>
+      {% for s_ in side %}
+      <tr class="subtotal"><td>{{ SINIFLAR[s_] }}</td><td class="num">{{ fin.bilanco[s_]|tl }}</td></tr>
+      {% for g, name, val in fin.bilanco_gruplar.get(s_, []) %}<tr><td>{{ g }} {{ name }}</td><td class="num">{{ val|tl }}</td></tr>{% endfor %}
+      {% endfor %}
+      {% if '5' in side %}<tr><td>Kapanmamış dönem sonucu (6-7 sınıfı)</td><td class="num">{{ fin.donem_sonucu_kapanmamis|tl }}</td></tr>
+      <tr class="total"><td>Pasif toplamı</td><td class="num">{{ fin.pasif|tl }}</td></tr>
+      {% else %}<tr class="total"><td>Aktif toplamı</td><td class="num">{{ fin.aktif|tl }}</td></tr>{% endif %}
+    </tbody></table>
+    {% endfor %}
+  </div>
+  {% else %}<p class="muted">Bilanço için dönem sonu bakiyesi gerekli: yılbaşından alınmış mizan veya defteri kebir yükleyin.</p>{% endif %}
+  {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

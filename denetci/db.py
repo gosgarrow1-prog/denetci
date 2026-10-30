@@ -36,6 +36,7 @@ def SessionLocal():
 _ADDED_COLUMNS = {
     "import_batches": {"profile": "VARCHAR(32)"},
     "analysis_runs": {"source_batches": "JSON"},
+    "periods": {"devreden_kdv": "INTEGER"},
     "clients": {"vkn": "VARCHAR(16)", "vergi_dairesi": "VARCHAR(128)", "luca_kodu": "VARCHAR(64)"},
     "journal_lines": {"madde_no": "VARCHAR(32)", "fis_tipi": "VARCHAR(32)", "evrak_no": "VARCHAR(64)"},
 }

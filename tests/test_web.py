@@ -94,7 +94,7 @@ def test_end_to_end_upload_check_and_trace(app_client, files_hatali):
     run_url = r.headers["location"]
     page = tc.get(run_url).text
     assert "Kritik veri sorunu var" in page and "Merkez Kasa alacak bakiyesi veriyor" in page
-    fid = re.search(rf'/mukellef/{cid}/bulgu/(\d+)">100\.01', page).group(1)
+    fid = re.search(rf"/mukellef/{cid}/bulgu/(\d+)", page[page.index("Merkez Kasa alacak bakiyesi"):]).group(1)
     detail = tc.get(f"/mukellef/{cid}/bulgu/{fid}").text
     assert "48.250,00" in detail and "satır" in detail and "Y-2026-0912" in detail
     # Durum değişikliği

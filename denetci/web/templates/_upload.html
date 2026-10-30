@@ -1,9 +1,0 @@
-<form method="post" action="/mukellef/{{ c.id }}/yukle" enctype="multipart/form-data" data-auto="1">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  {% if p %}<input type="hidden" name="donem" value="{{ p.id }}">{% endif %}
-  <label class="drop"><span class="big">Luca dosyalarını buraya bırak</span>
-    <span class="muted">Mizan, yevmiye, defteri kebir, muavin · .xlsx · birden çok dosya seçilebilir</span>
-    <span class="files"></span>
-    <input type="file" name="dosya" accept=".xlsx,.csv" multiple required></label>
-</form>
-<p class="muted" style="margin-top:8px">Dönem, dosyadaki "Tarih Aralığı"ndan belirlenir. Dosyalar aktarılınca kontroller kendiliğinden çalışır. Orijinal dosyalar değiştirilmeden saklanır.</p>

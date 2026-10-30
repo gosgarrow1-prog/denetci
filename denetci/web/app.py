@@ -1,7 +1,7 @@
 """Web arayüzü. Yalnızca 127.0.0.1 üzerinde çalışacak şekilde tasarlandı (tek kullanıcı, yerel kurulum)."""
 
 import secrets
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -22,12 +22,13 @@ from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..models import (AnalysisRun, AuditLog, Client, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
                       SourceFile, User)
-from ..parsing import kurus_str
+from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
 from ..importer.ingest import ingest
+from ..analyses import build as build_analyses, kdv_amounts
 from .charts import balance_bars, tl_short
 
 HERE = Path(__file__).parent
@@ -37,6 +38,34 @@ templates.env.globals["RELIABILITY_LABELS"] = RELIABILITY_LABELS
 templates.env.globals["DOC_LABELS"] = DOC_LABELS
 templates.env.globals["SINIFLAR"] = SINIFLAR
 templates.env.globals["tl_short"] = tl_short
+AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+
+def donem_adi(p) -> str:
+    if p is None:
+        return ""
+    if p.tur == "aylik":
+        return f"{AYLAR[p.baslangic.month - 1]} {p.baslangic.year}"
+    if p.tur == "yillik":
+        return f"{p.baslangic.year} yılı"
+    if p.baslangic.day == 1 and p.baslangic.year == p.bitis.year and (p.bitis + timedelta(days=1)).day == 1:
+        return f"{AYLAR[p.baslangic.month - 1]}–{AYLAR[p.bitis.month - 1]} {p.bitis.year}"
+    if p.baslangic.month == p.bitis.month and p.baslangic.year == p.bitis.year and p.baslangic.day == 1:
+        return f"{AYLAR[p.baslangic.month - 1]} {p.baslangic.year}"
+    return f"{p.baslangic:%d.%m.%Y} – {p.bitis:%d.%m.%Y}"
+
+
+def tl0(kurus) -> str:
+    """Kuruşsuz TL: 5.005.585"""
+    if kurus is None:
+        return "—"
+    v = round(kurus / 100)
+    return ("−" if v < 0 else "") + f"{abs(v):,}".replace(",", ".")
+
+
+templates.env.filters["donem_adi"] = donem_adi
+templates.env.filters["tl0"] = tl0
+templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
@@ -109,7 +138,35 @@ def render(request: Request, name: str, **ctx):
     ctx["request"] = request
     ctx["csrf"] = csrf_token(request)
     ctx.setdefault("telefon_kodu", telefon_kodu())
+    if request.session.get("uid") and "shell" not in ctx:
+        ctx["shell"] = _shell(request.session["uid"], ctx.get("c"), ctx.get("p"))
     return templates.TemplateResponse(request, name, ctx)
+
+
+def _shell(uid: int, c, p) -> dict:
+    """Sol menü ve üst çubuk için: mükellef listesi, dönemler, son analiz ve açık bulgu sayısı."""
+    with db.SessionLocal() as s:
+        user = s.get(User, uid)
+        sh = {"username": user.username if user else "", "clients": list(s.execute(
+            select(Client.id, Client.unvan).order_by(Client.is_demo, Client.unvan))), "c": c, "p": None, "periods": [],
+            "run": None, "badge": 0}
+        if c is None:
+            return sh
+        sh["periods"] = list(s.scalars(select(Period).where(Period.client_id == c.id)
+                                       .order_by(Period.bitis.desc(), Period.baslangic)))
+        pid = getattr(p, "id", None) or (sh["periods"][0].id if sh["periods"] else None)
+        sh["p"] = next((pp for pp in sh["periods"] if pp.id == pid), None)
+        if sh["p"]:
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == pid)
+                           .order_by(AnalysisRun.id.desc()))
+            if run:
+                closed = {cs.fingerprint for cs in s.scalars(select(FindingCase).where(
+                    FindingCase.client_id == c.id, FindingCase.status == "aciklandi"))}
+                sh["run"] = run
+                sh["badge"] = sum(1 for f in s.scalars(select(Finding).where(Finding.run_id == run.id))
+                                  if f.fingerprint not in closed)
+        s.expunge_all()
+        return sh
 
 
 def owned(s, model, obj_id: int, client_id: int):
@@ -185,7 +242,7 @@ def create_app() -> FastAPI:
             rows.append({"c": c, "run": run, "period": period, "sev": sev, "open_high": sev["Kritik"] + sev["Yüksek"],
                          "rel": run.reliability if run else None})
         rows.sort(key=lambda r: (-r["open_high"], r["c"].is_demo, r["c"].unvan))
-        return render(request, "portfolio.html", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
+        return render(request, "portfolio.html", active="mukellefler", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
 
     @app.post("/mukellef/yeni")
     async def client_create(request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -270,45 +327,142 @@ def create_app() -> FastAPI:
 
     # ---- Mükellef paneli ----------------------------------------------------------
 
-    @app.get("/mukellef/{cid}", response_class=HTMLResponse)
-    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
-        c = s.get(Client, cid) or _404()
+    def _period_of(s, cid, donem):
         periods = list(s.scalars(select(Period).where(Period.client_id == cid).order_by(Period.bitis.desc(), Period.baslangic)))
         p = owned(s, Period, donem, cid) if donem else (periods[0] if periods else None)
-        flash = request.session.pop("flash", None)
-        ctx = {"c": c, "periods": periods, "p": p, "flash": flash, "has_batches": False}
+        return periods, p
+
+    def _view(s, c, p, request) -> dict:
+        """Bir dönemin panelde gösterilen her şeyi: belgeler, analiz, bulgular, finansal özet, analiz gereksinimleri."""
+        periods, _ = _period_of(s, c.id, None)
+        v = {"c": c, "p": p, "periods": periods, "flash": request.session.pop("flash", None), "batches": [], "files": {},
+             "latest": {}, "run": None, "findings": [], "cases": {}, "sev_counts": {}, "fin": None, "prev_fin": None,
+             "prev_ratios": {}, "results": [], "kdv": {}}
+        ctx = None
+        prev_exists = False
         if p:
-            batches = list(s.scalars(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.period_id == p.id,
+            batches = list(s.scalars(select(ImportBatch).where(ImportBatch.client_id == c.id, ImportBatch.period_id == p.id,
                                                                ImportBatch.status != "iptal").order_by(ImportBatch.id.desc())))
-            ctx.update(batches=batches, files={b.source_file_id: s.get(SourceFile, b.source_file_id) for b in batches},
-                       has_batches=bool(batches))
-            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == cid, AnalysisRun.period_id == p.id)
+            v["batches"] = batches
+            v["files"] = {b.source_file_id: s.get(SourceFile, b.source_file_id) for b in batches}
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == p.id)
                            .order_by(AnalysisRun.id.desc()))
             findings = list(s.scalars(select(Finding).where(Finding.run_id == run.id))) if run else []
             findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 9), -(abs(f.amount or 0))))
-            cases = {cs.fingerprint: cs for cs in s.scalars(select(FindingCase).where(FindingCase.client_id == cid))}
-            open_findings = [f for f in findings if f.fingerprint not in cases or cases[f.fingerprint].status != "aciklandi"]
-            sev_counts = {k: sum(1 for f in open_findings if f.severity == k) for k in ("Kritik", "Yüksek", "Orta")}
-            fctx, _ = build_context(s, c, p)
-            fin = summarize(fctx) if fctx else summarize_empty()
-            prev_fin = None
-            if fctx:
-                earlier = s.scalars(select(Period).where(Period.client_id == cid, Period.bitis < p.baslangic)
+            cases = {cs.fingerprint: cs for cs in s.scalars(select(FindingCase).where(FindingCase.client_id == c.id))}
+            open_f = [f for f in findings if f.fingerprint not in cases or cases[f.fingerprint].status != "aciklandi"]
+            ctx, latest = build_context(s, c, p)
+            v.update(run=run, findings=open_f, cases=cases, latest={k: b for k, b in latest.items() if b},
+                     sev_counts={k: sum(1 for f in open_f if f.severity == k) for k in ("Kritik", "Yüksek", "Orta", "Düşük")},
+                     results=run.rule_results if run else [])
+            if ctx:
+                earlier = s.scalars(select(Period).where(Period.client_id == c.id, Period.bitis < p.baslangic)
                                     .order_by(Period.bitis.desc())).all()
                 for pp in earlier:
                     pctx, _ = build_context(s, c, pp)
                     if pctx:
-                        prev_fin = summarize(pctx)
+                        if not ctx.previous:
+                            ctx.previous.append(pctx)
+                        if v["prev_fin"] is None:
+                            v["prev_fin"] = summarize(pctx)
+                        prev_exists = True
                         break
-            chart = None
-            if fin.has_balance:
-                b = fin.bilanco
-                chart = balance_bars([("Dönen varlıklar", b["1"], "--s1"), ("Duran varlıklar", b["2"], "--s2")],
-                                     [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
-                                      ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
-            ctx.update(run=run, findings=open_findings, cases=cases, sev_counts=sev_counts, fin=fin, prev_fin=prev_fin,
-                       prev_ratios={r.key: r for r in prev_fin.oranlar} if prev_fin else {}, balance_chart=chart)
-        return render(request, "client.html", **ctx)
+                v["fin"] = summarize(ctx)
+                v["kdv"] = kdv_amounts(ctx)
+            if v["prev_fin"]:
+                v["prev_ratios"] = {r.key: r for r in v["prev_fin"].oranlar}
+        v["analyses"] = build_analyses(p, v["latest"], ctx, v["fin"], prev_exists)
+        v["ratios"] = {r.key: r for r in v["fin"].oranlar} if v["fin"] else {}
+        return v
+
+    def _alerts(v, c) -> list:
+        """Dikkat gerektirenler: açık bulgular ve analizler için eksik belgeler."""
+        out = []
+        level = {"Kritik": "onemli", "Yüksek": "onemli", "Orta": "dikkat", "Düşük": "bilgi"}
+        for f in v["findings"]:
+            out.append({"level": level.get(f.severity, "bilgi"), "text": f.title, "detail": f.rule_id,
+                        "amount": f.amount, "href": f"/mukellef/{c.id}/bulgu/{f.id}", "action": "İncele"})
+        q = f"?donem={v['p'].id}" if v["p"] else ""
+        for a in v["analyses"]:
+            if a.yakinda:
+                continue
+            for n in a.missing:
+                out.append({"level": "bilgi", "text": f"{a.title}: {n.label} eksik.", "detail": n.hint, "amount": None,
+                            "href": f"/mukellef/{c.id}/{a.link}{q}", "action": "Tamamla"})
+        return out
+
+    @app.get("/mukellef/{cid}", response_class=HTMLResponse)
+    def client_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        v["alerts"] = _alerts(v, c)
+        return render(request, "client.html", active="panel", **v)
+
+    @app.get("/mukellef/{cid}/belgeler", response_class=HTMLResponse)
+    def documents_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        return render(request, "documents.html", active="belgeler", **_view(s, c, p, request))
+
+    @app.get("/mukellef/{cid}/finansal", response_class=HTMLResponse)
+    def finance_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        fin = v["fin"]
+        v["balance_chart"] = None
+        if fin and fin.has_balance:
+            b = fin.bilanco
+            v["balance_chart"] = balance_bars(
+                [("Dönen varlıklar", b["1"], "--s1"), ("Duran varlıklar", b["2"], "--s2")],
+                [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
+                 ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
+        v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
+        return render(request, "finance.html", active="finansal", **v)
+
+    @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
+    def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
+                      donem: int | None = None):
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "gecici-vergi": "gecici"}
+        if key not in keys:
+            _404()
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        a = next(x for x in v["analyses"] if x.key == keys[key])
+        v["analysis"] = a
+        v["a_results"] = [r for r in v["results"] if r["id"] in a.rules]
+        v["a_findings"] = [f for f in v["findings"] if f.rule_id in a.rules]
+        return render(request, "analysis.html", active=keys[key], **v)
+
+    @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")
+    async def set_devreden(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        p = owned(s, Period, pid, cid)
+        form = await form_checked(request)
+        raw = str(form.get("tutar", "")).strip()
+        if raw == "":
+            p.devreden_kdv = None
+        else:
+            try:
+                val = parse_amount(raw.replace("₺", "").replace("TL", "").strip(), "tr")
+            except ParseError:
+                val = None
+            if val is None or val < 0:
+                request.session["flash"] = [{"filename": "Devreden KDV", "status": "hata",
+                                             "message": "Tutar okunamadı. Örnek: 125.430,50"}]
+                return _redirect(s, f"/mukellef/{cid}/kdv?donem={pid}")
+            p.devreden_kdv = val
+        audit(s, user, "devreden_kdv", cid, f"period={pid}")
+        msg = "Devreden KDV kaydedildi."
+        try:
+            run_analysis(s, c, p)
+            msg += " KDV kontrolleri yeniden çalıştı."
+        except NoData:
+            msg += " Belgeler yüklenince kontrollerde kullanılacak."
+        request.session["flash"] = [{"filename": "Devreden KDV", "status": "aktarildi", "message": msg}]
+        return _redirect(s, f"/mukellef/{cid}/kdv?donem={pid}")
 
     @app.post("/mukellef/{cid}/yukle")
     async def upload_many(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -462,7 +616,7 @@ def create_app() -> FastAPI:
         batches = {k: owned(s, ImportBatch, v, cid) for k, v in src.items() if v}
         files = {k: s.get(SourceFile, b.source_file_id) for k, b in batches.items()}
         rules = {r.id: r for r, _ in ALL_RULES}
-        return render(request, "run.html", c=c, p=p, run=run, findings=findings, cases=cases, gone=gone,
+        return render(request, "run.html", active="bulgular", c=c, p=p, run=run, findings=findings, cases=cases, gone=gone,
                       batches=batches, files=files, rules=rules)
 
     @app.get("/mukellef/{cid}/bulgu/{fid}", response_class=HTMLResponse)

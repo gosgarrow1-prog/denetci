@@ -44,6 +44,7 @@ def build_context(session: Session, client: Client, period: Period):
         if batches[d]:
             ctx.openings[d] = list(session.scalars(select(OpeningBalance).where(
                 OpeningBalance.client_id == client.id, OpeningBalance.batch_id == batches[d].id)))
+    ctx.devreden_kdv = period.devreden_kdv
     if mizan_b and mizan_b.summary.get("bakiye_turu") == "hareket":
         ctx.mizan_hareket = True
     for d in ("mizan", "yevmiye", "kebir", "muavin"):

@@ -1,57 +1,67 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block content %}
 <div class="page-head">
-  <div><h1>Mükellefler</h1><div class="sub">{{ rows|length }} mükellef · Tekdüzen Hesap Planı</div></div>
+  <span class="ph-ic">{{ icon('building', 24) }}</span>
+  <div class="ph-text"><h1>Mükellefler</h1><p>Tüm mükelleflerin son dönem durumu. Bir mükellefe tıklayınca gösterge paneli açılır.</p></div>
+  <div class="ph-actions"><a class="btn primary" href="#ekle">{{ icon('users') }}Mükellef ekle</a></div>
 </div>
 
 {% if rows %}
 <div class="tiles">
-  <div class="tile"><div class="label">Mükellef</div><div class="value">{{ rows|length }}</div></div>
-  <div class="tile"><div class="label">Analizi olan</div><div class="value">{{ rows|selectattr('run')|list|length }}</div></div>
-  <div class="tile"><div class="label">Açık kritik / yüksek bulgu</div><div class="value">{{ rows|sum(attribute='open_high') }}</div>
-    <div class="foot">Son analizlere göre</div></div>
-  <div class="tile"><div class="label">Veri sorunu olan</div><div class="value">{{ rows|selectattr('rel', 'equalto', 'kritik')|list|length }}</div>
-    <div class="foot">Mizan veya fiş denkliği bozuk</div></div>
+  <div class="tile"><span class="tl">Mükellef</span><span class="tv">{{ rows|length }}</span><span class="ts">Tekdüzen hesap planı</span></div>
+  <div class="tile"><span class="tl">Analizi yapılmış</span><span class="tv">{{ rows|selectattr('run')|list|length }}</span><span class="ts">Son dönemine göre</span></div>
+  <div class="tile"><span class="tl">Önemli bulgu</span><span class="tv {{ 'neg' if rows|sum(attribute='open_high') }}">{{ rows|sum(attribute='open_high') }}</span><span class="ts">Kritik ve yüksek önemde</span></div>
+  <div class="tile"><span class="tl">Veri sorunu olan</span><span class="tv">{{ rows|selectattr('rel', 'equalto', 'kritik')|list|length }}</span><span class="ts">Mizan veya fiş denkliği bozuk</span></div>
 </div>
 
-<div class="clients">
-{% for r in rows %}
-  <a class="client-card" href="/mukellef/{{ r.c.id }}">
-    <div class="name">{{ r.c.unvan }}{% if r.c.is_demo %} <span class="tag demo-tag">DEMO</span>{% endif %}</div>
-    <div class="meta">{{ r.c.vkn or r.c.sirket_turu or 'Tekdüzen' }}{% if r.period %} · son dönem {{ r.period.baslangic.strftime('%d.%m.%Y') }} – {{ r.period.bitis.strftime('%d.%m.%Y') }}{% endif %}</div>
-    {% if r.run %}<span class="pill rel-{{ r.run.reliability }}">{{ RELIABILITY_LABELS[r.run.reliability] }}</span>
-    {% else %}<span class="pill rel-yok">Henüz belge yok</span>{% endif %}
-    {% if r.run %}<div class="counts">
-      {% for sev in ['Kritik', 'Yüksek', 'Orta'] %}{% if r.sev[sev] %}<span class="sev sev-{{ sev }}">{{ r.sev[sev] }} {{ sev|lower }}</span>{% endif %}{% endfor %}
-      {% if not r.sev.values()|sum %}<span class="st st-gecti">✓ Bulgu yok</span>{% endif %}
-    </div>{% endif %}
-  </a>
-{% endfor %}
-</div>
+<section class="block">
+  <div class="block-head"><h2>Mükellef listesi</h2><span class="muted">Önemli bulgusu olanlar üstte</span></div>
+  <div class="alerts">
+  {% for r in rows %}
+    <a class="client-row" href="/mukellef/{{ r.c.id }}">
+      <span class="cl-av">{{ r.c.unvan[:2]|upper }}</span>
+      <span class="cl-main"><span class="cl-name">{{ r.c.unvan }}{% if r.c.is_demo %} <span class="demo-tag">Örnek</span>{% endif %}</span>
+        <span class="muted">{{ r.c.vkn or r.c.sirket_turu or 'Tekdüzen' }}{% if r.period %} · son dönem {{ r.period|donem_adi }}{% endif %}</span></span>
+      <span class="cl-counts">
+        {% if r.run %}
+          {% if r.open_high %}<span class="st-pill red">{{ r.open_high }} önemli</span>{% endif %}
+          {% if r.sev['Orta'] %}<span class="st-pill amber">{{ r.sev['Orta'] }} dikkat</span>{% endif %}
+          {% if not r.sev.values()|sum %}<span class="st-pill green">Bulgu yok</span>{% endif %}
+          <span class="rel-pill rel-{{ r.run.reliability }}">{{ RELIABILITY_LABELS[r.run.reliability] }}</span>
+        {% else %}<span class="st-pill gray">Henüz belge yok</span>{% endif %}
+      </span>
+      <span class="cl-go">{{ icon('arrow', 18) }}</span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
 {% else %}
 <section class="card empty">
+  <span class="sum-ic">{{ icon('building', 28) }}</span>
   <div class="big">Henüz mükellef yok</div>
-  <p class="muted">Luca'dan aldığın mükellef listesini yükleyerek hepsini birden ekleyebilir, tek tek ekleyebilir veya önce örnek veriyle uygulamayı görebilirsin.</p>
-  <form method="post" action="/demo" style="display:inline-block;margin-top:8px"><input type="hidden" name="csrf" value="{{ csrf }}">
-    <button class="secondary">Örnek mükellefle dene (DEMO)</button></form>
+  <p class="muted">Luca'dan aldığınız mükellef listesini yükleyerek hepsini birden ekleyebilir, tek tek ekleyebilir veya önce örnek veriyle uygulamayı görebilirsiniz.</p>
+  <form method="post" action="/demo"><input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn primary">Örnek mükellefle dene</button></form>
 </section>
 {% endif %}
 
-<div class="grid-2" style="margin-top:16px">
+<div class="two" id="ekle">
 <section class="card">
-  <h2>Luca'dan mükellef listesi yükle</h2>
+  <div class="block-head"><h2>Luca'dan mükellef listesi yükle</h2></div>
   <form method="post" action="/mukellef/liste" enctype="multipart/form-data" data-auto="1">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    <label class="drop"><span class="big">Mükellef listesini buraya bırak veya seç</span>
+    <label class="drop"><span class="drop-ic">{{ icon('users', 26) }}</span>
+      <span class="big">Mükellef listesini buraya bırakın veya seçin</span>
       <span class="muted">.xlsx veya .csv · unvan, VKN/TCKN, vergi dairesi kolonları tanınır</span>
       <span class="files"></span>
       <input type="file" name="dosya" accept=".xlsx,.csv" required></label>
   </form>
-  <p class="muted" style="margin-top:8px">Eklemeden önce liste gösterilir; zaten kayıtlı olanlar tekrar eklenmez.</p>
+  <p class="muted" style="margin-top:10px">Eklemeden önce liste gösterilir; zaten kayıtlı olanlar tekrar eklenmez.</p>
 </section>
 <section class="card">
-  <h2>Tek mükellef ekle</h2>
-  <form method="post" action="/mukellef/yeni" class="stack">
+  <div class="block-head"><h2>Tek mükellef ekle</h2></div>
+  <form method="post" action="/mukellef/yeni" class="form-stack">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <div class="row">
       <label>Unvan <input name="unvan" required></label>
@@ -61,11 +71,11 @@
       <label>Şirket türü <input name="sirket_turu" placeholder="ör. A.Ş., Ltd. Şti."></label>
       <label>Faaliyet alanı <input name="faaliyet"></label>
     </div>
-    <button>Ekle</button>
+    <div><button class="btn primary">Ekle</button></div>
   </form>
 </section>
 </div>
 {% if rows and not has_demo %}
-<form method="post" action="/demo" style="margin-top:4px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Örnek (DEMO) mükellef ekle</button></form>
+<form method="post" action="/demo" style="margin-top:12px"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Örnek mükellef ekle (sentetik veri)</button></form>
 {% endif %}
 {% endblock %}

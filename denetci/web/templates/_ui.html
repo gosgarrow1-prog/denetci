@@ -1,0 +1,70 @@
+{% from "_icons.html" import icon %}
+
+{% macro flash_list(flash) -%}
+{% if flash %}<ul class="flash">{% for f in flash %}<li class="{{ f.status }}"><strong>{{ f.filename }}</strong> — {{ f.message }}</li>{% endfor %}</ul>{% endif %}
+{%- endmacro %}
+
+{% macro need_row(n) -%}
+<li class="need {{ 'n-ok' if n.ok else ('n-opt' if n.optional else 'n-miss') }}">
+  <span class="need-ic">{{ icon('check' if n.ok else ('circle' if n.optional else 'alert'), 18) }}</span>
+  <span class="need-t">{{ n.label }}{% if n.optional and not n.ok %} <span class="muted">(önerilir)</span>{% endif %}
+    {% if not n.ok and n.hint %}<span class="need-h">{{ n.hint }}</span>{% endif %}</span>
+</li>
+{%- endmacro %}
+
+{% macro status_pill(a) -%}
+{% if a.status == 'yakinda' %}<span class="st-pill gray">Yakında</span>
+{% elif a.status == 'hazir' %}<span class="st-pill green">Hazır</span>
+{% else %}<span class="st-pill amber">{{ a.missing|length }} eksik</span>{% endif %}
+{%- endmacro %}
+
+{% macro analysis_card(a, c, p) -%}
+{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="card a-card">
+  <div class="a-head"><span class="a-title">{{ a.title }}</span>{{ status_pill(a) }}</div>
+  <ul class="needs">{% for n in a.needs %}{{ need_row(n) }}{% endfor %}</ul>
+  <div class="a-actions">
+    {% if a.status == 'yakinda' %}
+      <span class="muted">Bu analiz hazırlanıyor.</span>
+    {% elif a.key == 'kdv' and a.missing %}
+      <a class="btn sm" href="/mukellef/{{ c.id }}/kdv{{ q }}#devreden">Devreden KDV'yi gir</a>
+      <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">Dosya yükle</a>
+    {% elif a.missing %}
+      <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">Eksikleri yükle</a>
+    {% else %}
+      <a class="btn sm" href="/mukellef/{{ c.id }}/{{ a.link }}{{ q }}">Analizi aç</a>
+    {% endif %}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro alert_row(al) -%}
+<div class="alert-row lv-{{ al.level }}">
+  <span class="al-ic">{{ icon({'onemli': 'alert', 'dikkat': 'warn', 'bilgi': 'info'}[al.level], 22) }}</span>
+  <span class="lv-pill">{{ {'onemli': 'ÖNEMLİ', 'dikkat': 'DİKKAT', 'bilgi': 'BİLGİ'}[al.level] }}</span>
+  <span class="al-text">{{ al.text }}{% if al.amount is not none %} <span class="muted">· {{ al.amount|tl }} TL</span>{% endif %}
+    {% if al.detail %}<span class="al-detail">{{ al.detail }}</span>{% endif %}</span>
+  <a class="al-act" href="{{ al.href }}">{{ al.action }} →</a>
+</div>
+{%- endmacro %}
+
+{% macro rule_row(r) -%}
+<div class="chk">
+  <span class="code">{{ r.id }}</span>
+  <span class="chk-t">{{ r.title }}<span class="chk-m">{{ r.message }}</span></span>
+  <span class="st-pill {{ {'gecti': 'green', 'bulgu': 'red', 'calistirilamadi': 'amber', 'uygulanmadi': 'gray', 'bilgi': 'blue'}[r.status] }}">{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Belge yok', 'bilgi': 'Bilgi'}[r.status] }}</span>
+</div>
+{%- endmacro %}
+
+{% macro upload_zone(c, p, csrf) -%}
+<form method="post" action="/mukellef/{{ c.id }}/yukle" enctype="multipart/form-data" data-auto="1">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if p %}<input type="hidden" name="donem" value="{{ p.id }}">{% endif %}
+  <label class="drop">
+    <span class="drop-ic">{{ icon('upload', 26) }}</span>
+    <span class="big">Luca dosyalarını buraya sürükleyin veya seçin</span>
+    <span class="muted">Mizan, yevmiye, defteri kebir, muavin (.xlsx) · birden çok dosya olabilir · dönem dosyadaki tarih aralığından bulunur</span>
+    <span class="files"></span>
+    <input type="file" name="dosya" accept=".xlsx,.csv" multiple required></label>
+</form>
+{%- endmacro %}

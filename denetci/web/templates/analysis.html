@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, need_row, status_pill, rule_row, alert_row %}
+{% block content %}
+{% set a = analysis %}{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon({'kdv': 'percent', 'mutabakat': 'book', 'gecici': 'calendar'}[a.key], 24) }}</span>
+  <div class="ph-text"><h1>{{ a.title }}</h1>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}.
+    {% if a.key == 'kdv' %}Mahsup kaydı, devreden KDV ve KDV/satış oranı ön kontrolleri. Beyan veya vergi görüşü yerine geçmez.
+    {% elif a.key == 'mutabakat' %}Defterlerin kendi içinde ve birbirleriyle tutarlılığı.
+    {% else %}Geçici vergi matrahı ve beyanname karşılaştırmaları.{% endif %}</p></div>
+  <div class="ph-actions">{{ status_pill(a) }}</div>
+</div>
+{{ flash_list(flash) }}
+
+<div class="two">
+  <section class="card">
+    <div class="block-head"><h2>Gereken belgeler</h2></div>
+    <ul class="needs">{% for n in a.needs %}{{ need_row(n) }}{% endfor %}</ul>
+    {% if a.yakinda %}
+    <p class="muted">Bu analiz henüz hazır değil. Hazır olduğunda yukarıdaki belgeleri isteyecek.</p>
+    {% else %}
+    <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a>
+    {% endif %}
+  </section>
+
+  {% if a.key == 'kdv' %}
+  <section class="card" id="devreden">
+    <div class="block-head"><h2>Önceki aydan devreden KDV</h2></div>
+    {% if p %}
+    <p class="muted">Önceki ayın KDV beyannamesindeki "Sonraki döneme devreden katma değer vergisi" tutarını yazın. Defterdeki dönem başı 190 bakiyesiyle karşılaştırılır.</p>
+    <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/devreden-kdv" class="inline-form">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Tutar (TL) <input name="tutar" inputmode="decimal" placeholder="ör. 125.430,50" value="{{ p.devreden_kdv|tl if p.devreden_kdv is not none else '' }}"></label>
+      <button class="btn primary">Kaydet</button>
+    </form>
+    {% if p.devreden_kdv is not none %}<p class="muted">Kayıtlı: {{ p.devreden_kdv|tl }} TL. Silmek için alanı boşaltıp kaydedin.</p>{% endif %}
+    <p class="muted">Beyanname dosyasından (PDF) otomatik okuma henüz yok.</p>
+    {% else %}<p class="muted">Önce bu mükellef için bir Luca dosyası yükleyin; dönem dosyadan belirlenir.</p>{% endif %}
+  </section>
+  {% endif %}
+</div>
+
+{% if not a.yakinda %}
+<section class="block">
+  <div class="block-head"><h2>Bulgular</h2><span class="muted">{{ a_findings|length }} açık</span></div>
+  {% if a_findings %}
+  <div class="alerts">
+  {% for f in a_findings %}{{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title, 'detail': f.rule_id ~ ' · ' ~ KIND_LABELS[f.kind], 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
+  </div>
+  {% elif run %}<div class="alert-row lv-ok"><span class="al-ic">{{ icon('check', 22) }}</span><span class="al-text">Bu analizde açık bulgu yok.</span></div>
+  {% else %}<p class="muted">Belgeler yüklenince kontroller çalışır.</p>{% endif %}
+</section>
+
+{% if a_results %}
+<section class="card">
+  <div class="block-head"><h2>Kontroller</h2>{% if run %}<a class="more" href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Ayrıntılı analiz sayfası →</a>{% endif %}</div>
+  <div class="chks">{% for r in a_results %}{{ rule_row(r) }}{% endfor %}</div>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

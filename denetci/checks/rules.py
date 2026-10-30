@@ -75,6 +75,8 @@ class Context:
     mizan_hareket: bool = False
     # Önceki dönemlerin bağlamları (en yakından uzağa). Dönemler arası kontroller kullanır.
     previous: list = field(default_factory=list)
+    # Kullanıcının beyannameden girdiği önceki aydan devreden KDV (kuruş), yoksa None.
+    devreden_kdv: int | None = None
 
     @property
     def leaves(self):

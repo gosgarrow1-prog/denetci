@@ -207,9 +207,12 @@ def _adjacent_previous(ctx: Context) -> Context | None:
 
 
 def k22(ctx: Context) -> Result:
+    if ctx.devreden_kdv is not None:
+        return _k22_declared(ctx)
     prev = _adjacent_previous(ctx)
     if prev is None:
-        return Result(K22, "uygulanmadi", "Uygulanmadı: hemen önceki dönemin verisi yüklenmemiş.")
+        return Result(K22, "uygulanmadi", "Uygulanmadı: önceki ayın devreden KDV tutarı girilmemiş ve önceki ayın "
+                                          "dosyaları yüklenmemiş.")
     pc, co = closing(prev, "190"), opening(ctx, "190")
     if pc is None or co is None:
         need = "önceki dönemin sonu" if pc is None else "bu dönemin başı"
@@ -225,6 +228,24 @@ def k22(ctx: Context) -> Result:
             "Önceki ayın KDV beyannamesindeki devreden KDV ile iki tutarı karşılaştırın; önceki dönemin belgelerini güncel haliyle yeniden yükleyin.",
             pc.evidence + co.evidence)])
     return Result(K22, "gecti", f"190 devreden KDV önceki dönemden doğru devretmiş ({kurus_str(co.net)} TL).")
+
+
+def _k22_declared(ctx: Context) -> Result:
+    """Beyannameden girilen devreden KDV ile defterdeki dönem başı 190 bakiyesini karşılaştırır."""
+    co = opening(ctx, "190")
+    if co is None:
+        return Result(K22, "uygulanmadi", "Uygulanmadı: bu dönemin başı için 190 bakiyesi bulunamadı "
+                                          "(dönem başından alınmış mizan veya defteri kebir gerekli).")
+    diff = co.net - ctx.devreden_kdv
+    if abs(diff) > ctx.tolerance:
+        return Result(K22, "bulgu", "Devreden KDV beyannameyle uyuşmuyor.", [Draft(
+            "Defterdeki devreden KDV beyannameyle uyuşmuyor", K22.default_severity, "190", diff, "beyan",
+            f"Girilen beyanname tutarı {kurus_str(ctx.devreden_kdv)} TL; {ctx.period_start:%d.%m.%Y} başında 190 bakiyesi "
+            f"{kurus_str(co.net)} TL ({co.source}). Fark {kurus_str(diff)} TL.",
+            "Tutar elle girildi; yazım hatası olmadığını kontrol edin.",
+            "Önceki ayın KDV beyannamesindeki 'sonraki döneme devreden KDV' satırını ve 190 hesabının devir kaydını karşılaştırın.",
+            co.evidence)])
+    return Result(K22, "gecti", f"190 dönem başı bakiyesi beyannamedeki devreden KDV ile aynı ({kurus_str(co.net)} TL).")
 
 
 def k22d(ctx: Context) -> Result:

@@ -54,6 +54,8 @@ class Period(Base):
     tur: Mapped[str] = mapped_column(String(16))  # aylik, uc_aylik, yillik, ara
     kapanis_durumu: Mapped[str] = mapped_column(String(16), default="oncesi")  # oncesi, sonrasi
     enflasyon_duzeltmesi: Mapped[str] = mapped_column(String(16), default="bilinmiyor")
+    # Önceki ayın KDV beyannamesindeki "sonraki döneme devreden KDV" (kuruş); kullanıcı girer.
+    devreden_kdv: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class SourceFile(Base):

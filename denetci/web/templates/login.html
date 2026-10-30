@@ -1,15 +1,27 @@
-{% extends "base.html" %}
-{% block content %}
-<section class="card narrow">
-  <h1>Giriş</h1>
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Giriş · Denetçi</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-page">
+<section class="login-card">
+  <div class="brand login-brand">
+    <span class="brand-mark">{{ icon('shield', 24) }}</span>
+    <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
+  </div>
+  <h1>Giriş yap</h1>
   {% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="/giris">
+  <form method="post" action="/giris" class="form-stack">
     <input type="hidden" name="csrf" value="{{ csrf }}">
     <label>Kullanıcı adı <input name="kullanici" autocomplete="username" required autofocus></label>
     <label>Parola <input name="parola" type="password" autocomplete="current-password" required></label>
     {% if telefon_kodu %}<label>Doğrulama kodu (kimlik doğrulayıcı uygulamadaki 6 hane) <input name="kod" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" required></label>{% endif %}
-    <button>Giriş yap</button>
+    <button class="primary big-btn">Giriş yap</button>
   </form>
-  <p class="muted">Kayıt olma yoktur. Kullanıcılar komut satırından eklenir.</p>
+  <p class="muted">Uygulama yalnızca bu bilgisayarda çalışır; veriler dışarı gönderilmez.</p>
 </section>
-{% endblock %}
+</body>
+</html>

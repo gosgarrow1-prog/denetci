@@ -1,4 +1,4 @@
-<!doctype html>
+{% from "_icons.html" import icon %}<!doctype html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
@@ -7,28 +7,78 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">D</span>Denetçi</a>
-  <nav class="crumb">
-  {% if c is defined and c %}<a href="/">Mükellefler</a> › <a href="/mukellef/{{ c.id }}">{{ c.unvan }}</a>{% block crumb %}{% endblock %}{% endif %}
-  </nav>
-  {% if request.session.get('uid') %}
-  <form method="post" action="/cikis" class="logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Çıkış</button></form>
+{% set sh = shell if shell is defined else {} %}
+{% set sc = sh.get('c') %}{% set sp = sh.get('p') %}
+{% set q = ('?donem=' ~ sp.id) if sp else '' %}
+{% set active = active if active is defined else '' %}
+<div class="app">
+<nav class="side" aria-label="Ana menü">
+  <a class="brand" href="/">
+    <span class="brand-mark">{{ icon('shield', 24) }}</span>
+    <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
+  </a>
+  {% if sc %}
+  <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
+  <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>
+  {% if sh.get('run') %}
+  <a class="nav {{ 'on' if active == 'bulgular' }}" href="/mukellef/{{ sc.id }}/analiz/{{ sh.run.id }}">{{ icon('alert') }}Bulgular ve Kontroller{% if sh.badge %}<span class="badge">{{ sh.badge }}</span>{% endif %}</a>
+  {% else %}
+  <span class="nav off">{{ icon('alert') }}Bulgular ve Kontroller</span>
   {% endif %}
-</header>
-{% if c is defined and c and c.is_demo %}
-<div class="demo">DEMO — SENTETİK VERİ. Bu mükellef ve tüm tutarlar uydurmadır.</div>
-{% endif %}
-<main>{% block content %}{% endblock %}</main>
+  <div class="sect">Vergi ve analiz</div>
+  <a class="nav {{ 'on' if active == 'kdv' }}" href="/mukellef/{{ sc.id }}/kdv{{ q }}">{{ icon('percent') }}KDV Ön Kontrol</a>
+  <a class="nav {{ 'on' if active == 'mutabakat' }}" href="/mukellef/{{ sc.id }}/mutabakat{{ q }}">{{ icon('book') }}Defter Mutabakatı</a>
+  <a class="nav {{ 'on' if active == 'finansal' }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
+  <a class="nav {{ 'on' if active == 'gecici' }}" href="/mukellef/{{ sc.id }}/gecici-vergi{{ q }}">{{ icon('calendar') }}Geçici Vergi<span class="soon">yakında</span></a>
+  <span class="nav off">{{ icon('bars') }}Raporlar<span class="soon">yakında</span></span>
+  {% endif %}
+  <div class="sect">Yönetim</div>
+  <a class="nav {{ 'on' if active == 'mukellefler' }}" href="/">{{ icon('building') }}Mükellefler</a>
+  <div class="side-foot"><span class="dot"></span>Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz</div>
+</nav>
+
+<div class="main">
+  <header class="topbar">
+    {% if sh.get('clients') is not none and request.session.get('uid') %}
+    <label class="sel"><span>Mükellef</span>
+      <select onchange="location = this.value" aria-label="Mükellef seç">
+        <option value="/" {{ 'selected' if not sc }}>Tüm mükellefler</option>
+        {% for cc in sh.clients %}<option value="/mukellef/{{ cc.id }}" {{ 'selected' if sc and cc.id == sc.id }}>{{ cc.unvan }}</option>{% endfor %}
+      </select></label>
+    {% if sc and sh.periods %}
+    <label class="sel"><span>Dönem</span>
+      <select onchange="location = this.value" aria-label="Dönem seç">
+        {% for pp in sh.periods %}<option value="{{ request.url.path }}?donem={{ pp.id }}" {{ 'selected' if sp and pp.id == sp.id }}>{{ pp|donem_adi }}</option>{% endfor %}
+      </select></label>
+    {% endif %}
+    {% if sc and sc.is_demo %}<span class="demo-tag">Örnek veri · sentetik</span>{% endif %}
+    {% endif %}
+    {% if request.session.get('uid') %}
+    <div class="user">
+      {% if sh.get('run') and sh.badge %}
+      <a class="bell" href="/mukellef/{{ sc.id }}/analiz/{{ sh.run.id }}" aria-label="{{ sh.badge }} açık bulgu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+        <span class="bell-n">{{ sh.badge }}</span></a>
+      {% endif %}
+      <span class="avatar">{{ (sh.get('username') or '?')[:2]|upper }}</span>
+      <span class="uname">{{ sh.get('username') }}</span>
+      <form method="post" action="/cikis"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="icon-btn" aria-label="Çıkış" title="Çıkış">{{ icon('logout') }}</button></form>
+    </div>
+    {% endif %}
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+</div>
+</div>
 <script>
-// Sürükle-bırak alanı: seçilen dosya adlarını göster.
+// Sürükle-bırak alanı: seçilen dosya adlarını göster, seçince gönder.
 document.querySelectorAll('.drop').forEach(function (z) {
   var inp = z.querySelector('input[type=file]'), out = z.querySelector('.files');
   ['dragenter', 'dragover'].forEach(function (e) { z.addEventListener(e, function () { z.classList.add('over'); }); });
   ['dragleave', 'drop'].forEach(function (e) { z.addEventListener(e, function () { z.classList.remove('over'); }); });
   if (inp && out) inp.addEventListener('change', function () {
     out.textContent = Array.from(inp.files).map(function (f) { return f.name; }).join(', ');
-    var f = z.closest('form'); if (f && f.dataset.auto) f.submit();
+    var f = z.closest('form'); if (f && f.dataset.auto) { out.textContent += ' · yükleniyor…'; f.submit(); }
   });
 });
 </script>
