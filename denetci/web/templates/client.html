@@ -16,11 +16,14 @@
     <p>{{ c.unvan }}{% if p %} için {{ p|donem_adi }} kontrolleri, KDV durumu ve finansal özet tek bakışta.{% else %} için henüz belge yüklenmedi.{% endif %}</p>
   </div>
   <div class="ph-actions">
-    {% if p and batches %}
+    {% if p and p.kesin %}
+    <span class="st-pill navy">{{ icon('shield', 14) }} Kesinleşti · {{ p.kesin_at.strftime('%d.%m.%Y') if p.kesin_at }}</span>
+    {% elif p and batches %}
     <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/analiz"><input type="hidden" name="csrf" value="{{ csrf }}">
       <input type="hidden" name="geri" value="panel"><button class="btn">{{ icon('refresh') }}Kontrolleri yenile</button></form>
     {% endif %}
-    <a class="btn primary" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload') }}Luca dosyası yükle</a>
+    {% if run %}<a class="btn" href="/mukellef/{{ c.id }}/rapor{{ q }}">{{ icon('file') }}Rapor</a>{% endif %}
+    {% if not (p and p.kesin) %}<a class="btn primary" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload') }}Luca dosyası yükle</a>{% endif %}
   </div>
 </div>
 
@@ -116,7 +119,41 @@
         <span class="doc-r">{% if b %}{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi }} kayıt{% else %}Yüklenmedi{% endif %}</span></li>
       {% endfor %}
     </ul>
-    {{ upload_zone(c, p, csrf) }}
+    {% if p and p.kesin %}<p class="muted">Dönem kesinleştiği için yükleme kapalı.</p>{% else %}{{ upload_zone(c, p, csrf) }}{% endif %}
   </section>
 </div>
+
+{% if p %}
+<section class="block" id="not">
+  <div class="block-head"><h2>Dönem İşlemleri</h2></div>
+  <div class="two">
+    <section class="card">
+      <div class="block-head"><h2>Çalışma notu</h2><span class="muted">Rapora da eklenir</span></div>
+      <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/not" class="form-stack">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label class="sr" for="notlar">Dönem notu</label>
+        <textarea id="notlar" name="notlar" rows="4" placeholder="Bu dönemle ilgili açıklamalarınız, müşteriden istenecekler…">{{ p.notlar or '' }}</textarea>
+        <div><button class="btn primary">Kaydet</button></div>
+      </form>
+    </section>
+    <section class="card">
+      <div class="block-head"><h2>Analizi kesinleştir veya temizle</h2></div>
+      {% if p.kesin %}
+      <p>Bu dönem <strong>{{ p.kesin_at.strftime('%d.%m.%Y %H:%M') if p.kesin_at }}</strong> tarihinde {{ p.kesin_kullanici }} tarafından kesinleştirildi. Belgeler ve sonuçlar kilitli.</p>
+      <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/kilidi-ac" onsubmit="return confirm('Dönemin kilidi açılsın mı?')">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn">Kilidi aç</button></form>
+      {% else %}
+      <p class="muted">Kesinleştirince dönemin belgeleri ve analiz sonucu kilitlenir; rapor "kesin" olarak çıkar. Gerekirse kilit sonra açılabilir.</p>
+      <div class="row">
+        <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/kesinlestir" onsubmit="return confirm('{{ p|donem_adi }} dönemi kesinleştirilsin mi?')">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn primary" {{ 'disabled' if not run }}>{{ icon('shield', 16) }}Kesinleştir</button></form>
+        <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/temizle" onsubmit="return confirm('Bu dönemin tüm belgeleri ve analiz sonuçları kaldırılacak. Emin misiniz?')">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn danger">Analizi temizle</button></form>
+      </div>
+      <p class="muted">Temizle: dönemin yüklemelerini ve analiz sonuçlarını kaldırır, baştan yükleme yapabilirsiniz. Orijinal dosyalar arşivde kalır.</p>
+      {% endif %}
+    </section>
+  </div>
+</section>
+{% endif %}
 {% endblock %}

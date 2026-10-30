@@ -1,0 +1,110 @@
+{% from "_icons.html" import icon %}<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ c.unvan }} · {{ p|donem_adi }} kontrol raporu</title>
+<link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
+</head>
+<body class="report-page">
+<div class="report-bar no-print">
+  <a class="btn" href="/mukellef/{{ c.id }}?donem={{ p.id }}">← Panele dön</a>
+  <button class="btn primary" onclick="window.print()">{{ icon('file', 16) }}Yazdır / PDF olarak kaydet</button>
+  <span class="muted">PDF için yazdırma penceresinde hedef olarak "PDF olarak kaydet"i seçin.</span>
+</div>
+<article class="report">
+  <header class="r-head">
+    <div>
+      <div class="r-brand">{{ icon('shield', 20) }} Denetçi · Dönem Kontrol Raporu</div>
+      <h1>{{ c.unvan }}</h1>
+      <p>{% if c.vkn %}VKN/TCKN {{ c.vkn }} · {% endif %}{% if c.vergi_dairesi %}{{ c.vergi_dairesi }} V.D. · {% endif %}Dönem: <strong>{{ p|donem_adi }}</strong> ({{ p.baslangic.strftime('%d.%m.%Y') }} – {{ p.bitis.strftime('%d.%m.%Y') }})</p>
+    </div>
+    <div class="r-status">
+      {% if p.kesin %}<span class="st-pill navy">KESİN</span><div class="muted">{{ p.kesin_at.strftime('%d.%m.%Y %H:%M') if p.kesin_at }} · {{ p.kesin_kullanici }}</div>
+      {% else %}<span class="st-pill amber">TASLAK</span><div class="muted">Dönem kesinleştirilmedi</div>{% endif %}
+      <div class="muted">Rapor tarihi {{ now.strftime('%d.%m.%Y') }}</div>
+    </div>
+  </header>
+  {% if c.is_demo %}<p class="demo-tag">Örnek (sentetik) veri: bu rapordaki firma ve tutarlar uydurmadır.</p>{% endif %}
+
+  <h2>1. Özet</h2>
+  {% if run %}
+  {% set gecti = results|selectattr('status', 'equalto', 'gecti')|list|length %}
+  <p>Veri durumu: <strong>{{ RELIABILITY_LABELS[run.reliability] }}</strong>. {{ results|length }} kontrolün {{ gecti }} tanesi sorunsuz;
+    {{ findings|length }} açık bulgu var{% set eksik = alerts|selectattr('action', 'equalto', 'Tamamla')|list %}{% if eksik %}, {{ eksik|length }} analiz için belge eksik{% endif %}.</p>
+  {% else %}<p>Bu dönem için analiz yapılmadı.</p>{% endif %}
+
+  <h2>2. Kullanılan belgeler</h2>
+  <table class="grid small"><thead><tr><th>Belge</th><th>Dosya</th><th>Sürüm</th><th class="num">Kayıt</th></tr></thead><tbody>
+  {% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
+    {% set b = latest.get(d) %}
+    <tr><td>{{ name }}</td><td>{{ files[b.source_file_id].orig_name if b else 'Yüklenmedi' }}</td><td>{{ b.version if b else '' }}</td>
+      <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b else '' }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% if p.devreden_kdv is not none %}<p class="muted">Önceki aydan devreden KDV (beyannameden elle girildi): {{ p.devreden_kdv|tl }} TL</p>{% endif %}
+
+  <h2>3. Bulgular</h2>
+  {% if findings %}
+  <table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
+  {% for f in findings %}
+    {% set cs = cases.get(f.fingerprint) %}
+    <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
+      <td>{{ f.rule_id }}</td><td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
+      <td>{{ STATUS_LABELS[cs.status] if cs else 'Yeni' }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% elif run %}<p>Açık bulgu yok.</p>{% endif %}
+  {% set eksik = alerts|selectattr('action', 'equalto', 'Tamamla')|list %}
+  {% if eksik %}<h3>Eksik belgeler</h3><ul>{% for al in eksik %}<li>{{ al.text }}</li>{% endfor %}</ul>{% endif %}
+
+  {% if run %}
+  <h2>4. Kontrol sonuçları</h2>
+  <table class="grid small"><thead><tr><th>Kural</th><th>Sonuç</th><th>Açıklama</th></tr></thead><tbody>
+  {% for r in results %}
+    <tr><td><strong>{{ r.id }}</strong> {{ r.title }}</td>
+      <td>{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Belge yok', 'bilgi': 'Bilgi'}[r.status] }}</td>
+      <td>{{ r.message }}</td></tr>
+  {% endfor %}
+  </tbody></table>
+  {% endif %}
+
+  {% if fin and (fin.has_income or fin.has_balance) %}
+  <h2>5. Finansal özet</h2>
+  <div class="r-two">
+    {% if fin.has_income %}
+    <table class="grid small"><thead><tr><th>Gelir tablosu</th><th class="num">TL</th></tr></thead><tbody>
+      {% for ln in fin.gelir_tablosu %}{% if ln.value or ln.kind != 'kalem' %}
+      <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td></tr>
+      {% endif %}{% endfor %}
+    </tbody></table>
+    {% endif %}
+    <div>
+    {% if fin.has_balance %}
+    <table class="grid small"><thead><tr><th>Bilanço ({{ p.bitis.strftime('%d.%m.%Y') }})</th><th class="num">TL</th></tr></thead><tbody>
+      {% for k_ in ['1', '2', '3', '4', '5'] %}<tr><td>{{ SINIFLAR[k_] }}</td><td class="num">{{ fin.bilanco[k_]|tl }}</td></tr>{% endfor %}
+      <tr><td>Kapanmamış dönem sonucu</td><td class="num">{{ fin.donem_sonucu_kapanmamis|tl }}</td></tr>
+      <tr class="total"><td>Aktif / Pasif</td><td class="num">{{ fin.aktif|tl }} / {{ fin.pasif|tl }}</td></tr>
+    </tbody></table>
+    {% endif %}
+    {% if fin.oranlar %}
+    <table class="grid small" style="margin-top:12px"><thead><tr><th>Oran</th><th class="num">Değer</th></tr></thead><tbody>
+      {% for r in fin.oranlar %}<tr><td>{{ r.label }}</td><td class="num">{% if r.value is none %}—{% elif r.fmt == 'pct' %}%{{ '%.1f'|format(r.value * 100)|replace('.', ',') }}{% else %}{{ '%.2f'|format(r.value)|replace('.', ',') }}{% endif %}</td></tr>{% endfor %}
+    </tbody></table>
+    {% endif %}
+    </div>
+  </div>
+  {% if kdv %}<p class="muted">Dönem içi hesaplanan KDV (391): {{ kdv.hesaplanan|tl }} TL · indirilecek KDV (191): {{ kdv.indirilecek|tl }} TL</p>{% endif %}
+  {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+  {% endif %}
+
+  {% if p.notlar %}
+  <h2>6. Çalışma notu</h2>
+  <p class="r-pre">{{ p.notlar }}</p>
+  {% endif %}
+
+  <footer class="r-foot">Bu rapor, yüklenen muhasebe kayıtları üzerinde yapılan otomatik ön kontrollerin sonucudur. Denetim görüşü, tasdik veya beyan yerine geçmez; bulgular mesleki değerlendirme gerektirir.</footer>
+</article>
+</body>
+</html>

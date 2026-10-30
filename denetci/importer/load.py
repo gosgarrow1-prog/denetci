@@ -42,7 +42,12 @@ def store_file(session: Session, client: Client, filename: str, content: bytes) 
     sha = hashlib.sha256(content).hexdigest()
     existing = session.scalar(select(SourceFile).where(SourceFile.client_id == client.id, SourceFile.sha256 == sha))
     if existing:
-        raise DuplicateFile(existing)
+        # Geri alınmış (iptal) bir yüklemenin dosyası yeniden yüklenebilir.
+        active = session.scalar(select(ImportBatch).where(ImportBatch.source_file_id == existing.id,
+                                                          ImportBatch.status != "iptal"))
+        if active:
+            raise DuplicateFile(existing)
+        return existing
     folder = data_dir() / "dosyalar" / str(client.id)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{sha}{suffix}"

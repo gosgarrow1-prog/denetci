@@ -27,7 +27,8 @@ from ..finance import SINIFLAR, summarize
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
-from ..importer.ingest import ingest
+from ..importer.ingest import ingest, peek
+from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
 from ..analyses import build as build_analyses, kdv_amounts
 from .charts import balance_bars, tl_short
 
@@ -423,6 +424,17 @@ def create_app() -> FastAPI:
         v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
         return render(request, "finance.html", active="finansal", **v)
 
+    @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
+    def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        if not p:
+            return _redirect(s, f"/mukellef/{cid}")
+        v = _view(s, c, p, request)
+        v["alerts"] = _alerts(v, c)
+        v["now"] = _now()
+        return render(request, "report.html", active="rapor", **v)
+
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
@@ -443,6 +455,8 @@ def create_app() -> FastAPI:
         c = s.get(Client, cid) or _404()
         p = owned(s, Period, pid, cid)
         form = await form_checked(request)
+        if (r := _guard(request, p, cid, f"/mukellef/{cid}/kdv?donem={pid}")):
+            return r
         raw = str(form.get("tutar", "")).strip()
         if raw == "":
             p.devreden_kdv = None
@@ -471,12 +485,25 @@ def create_app() -> FastAPI:
         c = s.get(Client, cid) or _404()
         form = await form_checked(request)
         period = owned(s, Period, int(form["donem"]), cid) if str(form.get("donem", "")).isdigit() else None
-        outcomes, touched = [], {}
+        outcomes, touched, held = [], {}, []
+        others = [x for x in s.scalars(select(Client)) if x.id != c.id]
+        uploads = []
         for up in form.getlist("dosya"):
-            if not getattr(up, "filename", ""):
+            if getattr(up, "filename", ""):
+                content = await up.read()
+                uploads.append((up.filename, content, peek(up.filename, content).get("firma")))
+        foreign = [f for _, _, f in uploads if f and not firma_eslesir(f, c.unvan)]
+        for filename, content, firma in uploads:
+            # Dosya başka bir firmaya ait görünüyorsa aktarmadan önce sor. Unvan yazmayan dosya (ör. kebir),
+            # aynı yüklemedeki diğer dosyalar başka firmaya aitse o da bekletilir.
+            if foreign and len(content) <= MAX_YUKLEME_BAYT and (not firma or not firma_eslesir(firma, c.unvan)):
+                ref = firma or foreign[0]
+                oneri = firma_en_iyi(ref, others)
+                held.append({"id": _hold(content, filename), "filename": Path(filename).name[:200],
+                             "firma": firma[:200] if firma else f"dosyada yazmıyor (aynı yüklemedeki dosyalar: {foreign[0][:120]})",
+                             "oneri": oneri.id if oneri else None})
                 continue
-            content = await up.read()
-            o = ingest(s, c, up.filename, content, period)
+            o = ingest(s, c, filename, content, period)
             outcomes.append(o)
             if o.batch:
                 audit(s, user, "dosya_yukle", cid, f"batch={o.batch.id}")
@@ -485,11 +512,150 @@ def create_app() -> FastAPI:
         for p in touched.values():
             run_analysis(s, c, p)
         request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
+        if held:
+            request.session["bekleyen"] = {"cid": cid, "donem": period.id if period else None, "items": held}
+            return _redirect(s, f"/mukellef/{cid}/yukle/kontrol")
         pending = next((o for o in outcomes if o.status == "esleme"), None)
         if pending and not touched:
             return _redirect(s, f"/mukellef/{cid}/aktarim/{pending.batch.id}")
         target = next(iter(touched.values()), None) or (outcomes[0].period if outcomes and outcomes[0].period else period)
         return _redirect(s, f"/mukellef/{cid}" + (f"?donem={target.id}" if target else ""))
+
+    @app.get("/mukellef/{cid}/yukle/kontrol", response_class=HTMLResponse)
+    def upload_check(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        b = request.session.get("bekleyen")
+        if not b or b.get("cid") != cid:
+            return _redirect(s, f"/mukellef/{cid}")
+        clients = list(s.scalars(select(Client).order_by(Client.is_demo, Client.unvan)))
+        names = {x.id: x.unvan for x in clients}
+        flash = request.session.pop("flash", None)
+        return render(request, "upload_check.html", c=c, items=b["items"], clients=clients, names=names, flash=flash)
+
+    @app.post("/mukellef/{cid}/yukle/kontrol")
+    async def upload_check_confirm(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        form = await form_checked(request)
+        b = request.session.pop("bekleyen", None)
+        if not b or b.get("cid") != cid:
+            return _redirect(s, f"/mukellef/{cid}")
+        outcomes, touched = [], {}
+        for it in b["items"]:
+            path = _held_path(it["id"])
+            choice = str(form.get(f"hedef_{it['id']}", ""))
+            if path is None:
+                continue
+            if choice.isdigit():
+                target = s.get(Client, int(choice))
+                if target:
+                    period = s.get(Period, b["donem"]) if target.id == cid and b.get("donem") else None
+                    o = ingest(s, target, it["filename"], path.read_bytes(), period)
+                    o.filename = f"{it['filename']} → {target.unvan}"
+                    outcomes.append(o)
+                    if o.batch:
+                        audit(s, user, "dosya_yukle", target.id, f"batch={o.batch.id} firma_uyarisi_onaylandi")
+                    if o.status == "aktarildi":
+                        touched[(target.id, o.period.id)] = (target, o.period)
+            else:
+                outcomes.append(type("O", (), {"filename": it["filename"], "status": "tekrar", "message": "Yüklenmedi."})())
+            path.unlink(missing_ok=True)
+        for tc_, tp in touched.values():
+            run_analysis(s, tc_, tp)
+        request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
+        dest = next(iter(touched.values()), None)
+        if dest:
+            return _redirect(s, f"/mukellef/{dest[0].id}?donem={dest[1].id}")
+        return _redirect(s, f"/mukellef/{cid}")
+
+    # ---- Dönem işlemleri: geri alma, temizleme, kesinleştirme, not, rapor ---------
+
+    def _rerun(s, c, p):
+        try:
+            run_analysis(s, c, p)
+        except NoData:
+            _clear_runs(s, c, p)
+
+    def _guard(request, p, cid, back):
+        """Kesinleşmiş dönemde değişiklik yapılmaz."""
+        if p.kesin:
+            request.session["flash"] = [{"filename": p_name(p), "status": "hata",
+                                         "message": "Dönem kesinleştirilmiş. Değişiklik için önce kilidini açın."}]
+            return _redirect(None, back)
+        return None
+
+    @app.post("/mukellef/{cid}/aktarim/{bid}/geri-al")
+    async def batch_undo(cid: int, bid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        b = owned(s, ImportBatch, bid, cid)
+        await form_checked(request)
+        p = s.get(Period, b.period_id)
+        back = f"/mukellef/{cid}/belgeler?donem={p.id}"
+        if (r := _guard(request, p, cid, back)):
+            return r
+        b.status = "iptal"
+        s.flush()
+        _rerun(s, c, p)
+        sf = s.get(SourceFile, b.source_file_id)
+        audit(s, user, "aktarim_geri_al", cid, f"batch={bid}")
+        request.session["flash"] = [{"filename": sf.orig_name, "status": "aktarildi",
+                                     "message": "Yükleme geri alındı; kontroller kalan belgelerle yeniden çalıştı."}]
+        return _redirect(s, back)
+
+    @app.post("/mukellef/{cid}/donem/{pid}/temizle")
+    async def period_clear(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        p = owned(s, Period, pid, cid)
+        await form_checked(request)
+        if (r := _guard(request, p, cid, f"/mukellef/{cid}?donem={pid}")):
+            return r
+        n = 0
+        for b in s.scalars(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.period_id == pid,
+                                                     ImportBatch.status != "iptal")):
+            b.status = "iptal"
+            n += 1
+        p.devreden_kdv = None
+        s.flush()
+        _clear_runs(s, c, p)
+        audit(s, user, "donem_temizle", cid, f"period={pid} belge={n}")
+        request.session["flash"] = [{"filename": donem_adi(p), "status": "aktarildi",
+                                     "message": f"Dönem temizlendi: {n} belge ve analiz sonuçları kaldırıldı. Orijinal dosyalar arşivde duruyor."}]
+        return _redirect(s, f"/mukellef/{cid}?donem={pid}")
+
+    @app.post("/mukellef/{cid}/donem/{pid}/kesinlestir")
+    async def period_finalize(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        owned(s, Period, pid, cid)
+        p = s.get(Period, pid)
+        await form_checked(request)
+        run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == cid, AnalysisRun.period_id == pid)
+                       .order_by(AnalysisRun.id.desc()))
+        if not run:
+            request.session["flash"] = [{"filename": donem_adi(p), "status": "hata",
+                                         "message": "Kesinleştirmek için önce belgeleri yükleyip analizi çalıştırın."}]
+            return _redirect(s, f"/mukellef/{cid}?donem={pid}")
+        p.durum, p.kesin_at, p.kesin_kullanici, p.kesin_run_id = "kesin", _now(), user.username, run.id
+        audit(s, user, "donem_kesinlestir", cid, f"period={pid} run={run.id}")
+        request.session["flash"] = [{"filename": donem_adi(p), "status": "aktarildi",
+                                     "message": "Dönem kesinleştirildi. Belgeler ve analiz sonuçları kilitlendi."}]
+        return _redirect(s, f"/mukellef/{cid}?donem={pid}")
+
+    @app.post("/mukellef/{cid}/donem/{pid}/kilidi-ac")
+    async def period_unlock(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        p = owned(s, Period, pid, cid)
+        await form_checked(request)
+        p.durum = "acik"
+        audit(s, user, "donem_kilidi_ac", cid, f"period={pid}")
+        request.session["flash"] = [{"filename": donem_adi(p), "status": "esleme",
+                                     "message": "Dönemin kilidi açıldı; belgeler ve analiz yeniden değiştirilebilir."}]
+        return _redirect(s, f"/mukellef/{cid}?donem={pid}")
+
+    @app.post("/mukellef/{cid}/donem/{pid}/not")
+    async def period_note(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        p = owned(s, Period, pid, cid)
+        form = await form_checked(request)
+        p.notlar = str(form.get("notlar", "")).strip()[:10000] or None
+        audit(s, user, "donem_not", cid, f"period={pid}")
+        request.session["flash"] = [{"filename": donem_adi(p), "status": "aktarildi", "message": "Dönem notu kaydedildi."}]
+        return _redirect(s, f"/mukellef/{cid}?donem={pid}#not")
 
     @app.post("/mukellef/{cid}/donem")
     async def period_create(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -527,6 +693,8 @@ def create_app() -> FastAPI:
         c = s.get(Client, cid) or _404()
         p = owned(s, Period, pid, cid)
         form = await form_checked(request)
+        if (r := _guard(request, p, cid, f"/mukellef/{cid}?donem={pid}")):
+            return r
         up = form.get("dosya")
         if not up or not getattr(up, "filename", ""):
             return _redirect(s, f"/mukellef/{cid}/donem/{pid}?hata=Dosya+seçilmedi")
@@ -559,6 +727,8 @@ def create_app() -> FastAPI:
         c = s.get(Client, cid) or _404()
         b = owned(s, ImportBatch, bid, cid)
         form = await form_checked(request)
+        if (r := _guard(request, s.get(Period, b.period_id), cid, f"/mukellef/{cid}/aktarim/{bid}")):
+            return r
         doc_type = str(form.get("doc_type", ""))
         mapping = {}
         for f in DOC_FIELDS.get(doc_type, []):
@@ -590,6 +760,8 @@ def create_app() -> FastAPI:
         p = owned(s, Period, pid, cid)
         await form_checked(request)
         form = await request.form()
+        if (r := _guard(request, p, cid, f"/mukellef/{cid}?donem={pid}")):
+            return r
         try:
             run = run_analysis(s, c, p)
         except NoData as exc:
@@ -671,3 +843,47 @@ def summarize_empty():
 
 def _404():
     raise HTTPException(404, "Bulunamadı")
+
+
+def _now():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc)
+
+
+def p_name(p) -> str:
+    return donem_adi(p)
+
+
+def _hold_dir() -> Path:
+    d = data_dir() / "bekleyen"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _hold(content: bytes, filename: str) -> str:
+    """Onay bekleyen dosyayı geçici olarak saklar; rastgele kimlik döner."""
+    hid = secrets.token_hex(12) + Path(filename).suffix.lower()[:6]
+    (_hold_dir() / hid).write_bytes(content)
+    return hid
+
+
+def _held_path(hid: str) -> Path | None:
+    import re
+    if not re.fullmatch(r"[0-9a-f]{24}(\.[a-z]{1,5})?", hid or ""):
+        return None
+    path = _hold_dir() / hid
+    return path if path.exists() else None
+
+
+def _clear_runs(s, c, p):
+    """Dönemin analiz sonuçlarını siler (belge kalmadığında veya dönem temizlendiğinde)."""
+    from sqlalchemy import delete
+    run_ids = [r.id for r in s.scalars(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == p.id))]
+    if not run_ids:
+        return
+    f_ids = [f.id for f in s.scalars(select(Finding).where(Finding.run_id.in_(run_ids)))]
+    if f_ids:
+        s.execute(delete(FindingEvidence).where(FindingEvidence.finding_id.in_(f_ids)))
+        s.execute(delete(Finding).where(Finding.id.in_(f_ids)))
+    s.execute(delete(AnalysisRun).where(AnalysisRun.id.in_(run_ids)))
+    s.flush()

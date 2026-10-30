@@ -116,3 +116,73 @@ def test_kdv_asks_for_devreden_and_uses_it(app_client, data_root):
         assert s.get(Period, pid).devreden_kdv is None
     r = tc.post(f"/mukellef/{cid}/donem/{pid}/devreden-kdv", data={"csrf": tok, "tutar": "abc"}, follow_redirects=True)
     assert "Tutar okunamadı" in r.text
+
+
+def _new_client(tc, tok, unvan):
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": unvan}, follow_redirects=False)
+    return int(r.headers["location"].rsplit("/", 1)[1])
+
+
+def test_wrong_client_upload_is_held_and_redirected(app_client, data_root):
+    from denetci.models import ImportBatch
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    wrong = _new_client(tc, tok, "Başka Mobilya Ltd. Şti.")
+    right = _new_client(tc, tok, "Örnek Ticaret A.Ş. (sentetik)")
+    files = synthetic_luca.generate(data_root / "yanlis", mizan=True)
+    r = tc.post(f"/mukellef/{wrong}/yukle", data={"csrf": tok},
+                files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=False)
+    assert r.headers["location"] == f"/mukellef/{wrong}/yukle/kontrol"
+    page = tc.get(r.headers["location"]).text
+    assert "başka bir firmaya ait" in page and "SENTETİK ÖRNEK TİCARET" in page and "(önerilen)" in page
+    with db.SessionLocal() as s:
+        assert not s.scalars(select(ImportBatch).where(ImportBatch.client_id == wrong)).all()
+    ids = re.findall(r'name="hedef_([^"]+)"', page)
+    assert len(ids) == 4
+    r = tc.post(f"/mukellef/{wrong}/yukle/kontrol", data={"csrf": tok, **{f"hedef_{i}": str(right) for i in ids}},
+                follow_redirects=False)
+    assert r.headers["location"].startswith(f"/mukellef/{right}?donem=")
+    with db.SessionLocal() as s:
+        assert {b.doc_type for b in s.scalars(select(ImportBatch).where(ImportBatch.client_id == right))} == {"mizan", "yevmiye", "kebir", "muavin"}
+
+
+def test_undo_clear_finalize_report(app_client, data_root):
+    from denetci.models import ImportBatch
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    cid = _new_client(tc, tok, "DEMO Örnek Ticaret")
+    files = synthetic_luca.generate(data_root / "islem", mizan=True)
+    r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
+                files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=False)
+    pid = int(r.headers["location"].split("donem=")[1])
+    with db.SessionLocal() as s:
+        muavin = s.scalar(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.doc_type == "muavin"))
+    # Geri al: muavin çıkar, aynı dosya yeniden yüklenebilir.
+    tc.post(f"/mukellef/{cid}/aktarim/{muavin.id}/geri-al", data={"csrf": tok})
+    with db.SessionLocal() as s:
+        assert s.get(ImportBatch, muavin.id).status == "iptal"
+    r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
+                files=[("dosya", (files["muavin"].name, files["muavin"].read_bytes()))], follow_redirects=True)
+    assert "kayıt aktarıldı" in r.text
+    # Not ve kesinleştirme
+    tc.post(f"/mukellef/{cid}/donem/{pid}/not", data={"csrf": tok, "notlar": "Müşteriden banka ekstresi istenecek."})
+    tc.post(f"/mukellef/{cid}/donem/{pid}/kesinlestir", data={"csrf": tok})
+    page = tc.get(f"/mukellef/{cid}?donem={pid}").text
+    assert "Kesinleşti" in page and "Kilidi aç" in page
+    r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
+                files=[("dosya", (files["mizan"].name, files["mizan"].read_bytes() + b""))], follow_redirects=True)
+    r = tc.post(f"/mukellef/{cid}/donem/{pid}/temizle", data={"csrf": tok}, follow_redirects=True)
+    assert "kesinleştirilmiş" in r.text
+    rep = tc.get(f"/mukellef/{cid}/rapor?donem={pid}").text
+    for text in ("Dönem Kontrol Raporu", "KESİN", "Kullanılan belgeler", "Bulgular", "Kontrol sonuçları",
+                 "Müşteriden banka ekstresi istenecek.", "window.print()"):
+        assert text in rep, text
+    # Kilidi aç, temizle
+    tc.post(f"/mukellef/{cid}/donem/{pid}/kilidi-ac", data={"csrf": tok})
+    tc.post(f"/mukellef/{cid}/donem/{pid}/temizle", data={"csrf": tok})
+    with db.SessionLocal() as s:
+        assert not s.scalars(select(ImportBatch).where(ImportBatch.client_id == cid, ImportBatch.status != "iptal")).all()
+        assert not s.scalars(select(AnalysisRun).where(AnalysisRun.period_id == pid)).all()
+    assert tc.get(f"/mukellef/{cid}?donem={pid}").status_code == 200

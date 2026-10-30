@@ -92,8 +92,29 @@ def sniff(sheets) -> tuple[str, object] | None:
     return None
 
 
+BASLIKLAR = ("mizan", "yevmiye defteri", "muavin defter", "defteri kebir", "kebir defteri")
+
+
+def _firma(rows) -> str | None:
+    """Rapor başlığındaki firma unvanı: ilk satırlarda tek hücreli, başlık veya fiş satırı olmayan metin."""
+    for _, vals in rows[:6]:
+        cells = [v for v in vals if not is_empty(v)]
+        if len(cells) != 1 or not isinstance(cells[0], str):
+            continue
+        text = cells[0].strip()
+        f = fold(text)
+        if f.startswith(BASLIKLAR) or f.startswith(("donem", "tarih", "hesap kodu")) or FIS_RE.match(text):
+            continue
+        if len(f) >= 3 and not GROUP_RE.match(text) and not MUAVIN_ACC_RE.match(text):
+            return text[:256]
+    return None
+
+
 def _info(rows) -> dict:
     info = {}
+    firma = _firma(rows)
+    if firma:
+        info["firma"] = firma
     for _, vals in rows[:12]:
         label = fold(_v(vals, 0))
         val = _v(vals, 1)

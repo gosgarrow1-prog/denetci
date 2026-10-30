@@ -56,6 +56,16 @@ class Period(Base):
     enflasyon_duzeltmesi: Mapped[str] = mapped_column(String(16), default="bilinmiyor")
     # Önceki ayın KDV beyannamesindeki "sonraki döneme devreden KDV" (kuruş); kullanıcı girer.
     devreden_kdv: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Kesinleşen dönem kilitlenir: yükleme, geri alma ve yeniden analiz yapılmaz (kilidi açılabilir).
+    durum: Mapped[str | None] = mapped_column(String(16), default="acik")  # acik, kesin
+    kesin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    kesin_kullanici: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kesin_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notlar: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @property
+    def kesin(self) -> bool:
+        return self.durum == "kesin"
 
 
 class SourceFile(Base):

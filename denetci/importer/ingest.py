@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ..models import Client, ImportBatch, Period
 from . import luca
 from .load import DuplicateFile, ImportError_, confirm, create_draft
-from .tables import UnsupportedFile, read_tables
+from .tables import read_tables
 
 
 @dataclass
@@ -28,22 +28,25 @@ class Outcome:
     period: Period | None = None
 
 
-def peek_range(filename: str, content: bytes) -> tuple[date, date] | None:
-    """Luca dosyasındaki "Tarih Aralığı"nı döner (yoksa None). Hiçbir şey kaydetmez."""
+def peek(filename: str, content: bytes) -> dict:
+    """Luca dosyasının başlık bilgisini döner (tarih aralığı, firma unvanı). Hiçbir şey kaydetmez."""
     suffix = Path(filename).suffix.lower()
     if suffix not in (".xlsx", ".csv"):
-        return None
+        return {}
     try:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / f"dosya{suffix}"
             path.write_bytes(content)
             sheets = read_tables(path)
-    except (UnsupportedFile, Exception):
-        return None
+    except Exception:
+        return {}
     sniffed = luca.sniff(sheets)
-    if not sniffed:
-        return None
-    rng = luca._info(sniffed[1].rows).get("tarih_araligi")
+    return luca._info(sniffed[1].rows) if sniffed else {}
+
+
+def peek_range(filename: str, content: bytes) -> tuple[date, date] | None:
+    """Luca dosyasındaki "Tarih Aralığı"nı döner (yoksa None)."""
+    rng = peek(filename, content).get("tarih_araligi")
     return (date.fromisoformat(rng[0]), date.fromisoformat(rng[1])) if rng else None
 
 
@@ -70,6 +73,9 @@ def ingest(session: Session, client: Client, filename: str, content: bytes, peri
         period = find_or_create_period(session, client, *rng)
     if period is None:
         return Outcome(filename, "hata", "Dönem belirlenemedi: dosyada tarih aralığı yok. Önce bir dönem seçin.")
+    if period.kesin:
+        return Outcome(filename, "hata", "Bu dönem kesinleştirilmiş; dosya alınmadı. Değişiklik için önce dönemin kilidini açın.",
+                       period=period)
     try:
         with session.begin_nested():
             batch = create_draft(session, client, period, filename, content)

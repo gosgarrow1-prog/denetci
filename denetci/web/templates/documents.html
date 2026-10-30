@@ -8,8 +8,8 @@
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Luca'dan aldığınız dosyaları yükleyin; dönem dosyadan bulunur ve kontroller kendiliğinden çalışır.</p></div>
 </div>
 {{ flash_list(flash) }}
-<section class="card">{{ upload_zone(c, p, csrf) }}
-  <p class="muted" style="margin-top:10px">Orijinal dosyalar değiştirilmeden saklanır. Aynı dosya ikinci kez yüklenirse alınmaz; yeni sürüm yüklenirse eskisi arşivde kalır.</p>
+<section class="card">{% if p and p.kesin %}<p>Bu dönem kesinleştirildi; yükleme ve geri alma kapalı. Değişiklik için gösterge panelinden kilidi açın.</p>{% else %}{{ upload_zone(c, p, csrf) }}{% endif %}
+  <p class="muted" style="margin-top:10px">Orijinal dosyalar değiştirilmeden saklanır. Aynı dosya ikinci kez yüklenirse alınmaz; yeni sürüm yüklenirse eskisi arşivde kalır. Dosyadaki firma unvanı seçili mükellefle uyuşmazsa aktarmadan önce sorulur. Yanlış yüklenen dosyayı aşağıdaki listeden "Geri al" ile kaldırabilirsiniz.</p>
 </section>
 
 <section class="block">
@@ -29,6 +29,8 @@
       <td>{{ PROFILE_LABELS.get(b.profile, 'Kolon eşleştirme') if b.profile else 'Kolon eşleştirme' }}</td>
       <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b.status == 'onaylandi' else '' }}</td>
       <td>{% if b.status == 'onaylandi' %}<span class="st-pill green">Aktarıldı · sürüm {{ b.version }}</span>
+        {% if not p.kesin %}<form method="post" action="/mukellef/{{ c.id }}/aktarim/{{ b.id }}/geri-al" class="inline" onsubmit="return confirm('Bu yükleme geri alınsın mı? Kontroller kalan belgelerle yeniden çalışır.')">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button class="link">Geri al</button></form>{% endif %}
         {% elif b.status == 'taslak' %}<a class="st-pill amber" href="/mukellef/{{ c.id }}/aktarim/{{ b.id }}">Eşleştirme bekliyor</a>{% endif %}</td></tr>
     {% endfor %}
     </tbody>
