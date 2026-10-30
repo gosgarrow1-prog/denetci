@@ -15,9 +15,9 @@ DEGISIM_ORAN = 0.25
 DEGISIM_TUTAR_KURUS = 10_000_00
 
 MAX_YUKLEME_BAYT = 20 * 1024 * 1024
-IZINLI_UZANTILAR = {".xlsx", ".csv"}
+IZINLI_UZANTILAR = {".xlsx", ".csv"}  # Luca tabloları; beyanname PDF'leri ayrı yoldan alınır
 
-RULESET_VERSION = "0.3.0"
+RULESET_VERSION = "0.4.0"
 ENGINE_VERSION = "0.1.0"
 
 

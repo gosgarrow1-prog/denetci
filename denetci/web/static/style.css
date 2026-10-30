@@ -302,3 +302,9 @@ form.inline { display: inline; margin-left: 8px; }
   h2 { break-after: avoid; }
   .st-pill, .demo-tag { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Beyannameler */
+.n-ok-text { color: var(--green); display: flex; gap: 6px; align-items: center; margin: 8px 0; }
+.n-ok-text strong { color: inherit; }
+.decl-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eef2ff; color: #3730a3; }
+.decl-tag.gv { background: #ecfdf3; color: #067647; }

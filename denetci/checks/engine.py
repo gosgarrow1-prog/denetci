@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import ENGINE_VERSION, RULESET_VERSION
+from .. import beyannameler
 from ..importer.load import latest_batch
 from ..models import AnalysisRun, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
 from .registry import ALL_RULES
@@ -45,6 +46,15 @@ def build_context(session: Session, client: Client, period: Period):
             ctx.openings[d] = list(session.scalars(select(OpeningBalance).where(
                 OpeningBalance.client_id == client.id, OpeningBalance.batch_id == batches[d].id)))
     ctx.devreden_kdv = period.devreden_kdv
+    ctx.devreden_kaynak = "girildi" if period.devreden_kdv is not None else None
+    decls = beyannameler.aktif(session, client.id)
+    if beyannameler.tek_ay(period.baslangic, period.bitis):
+        if ctx.devreden_kdv is None and (d := beyannameler.onceki_ay_kdv(decls, period.baslangic)):
+            ctx.devreden_kdv, ctx.devreden_kaynak = d.alanlar.get("sonraki_devreden"), "beyanname"
+        if d := beyannameler.bul(decls, "kdv", period.bitis.year, period.bitis.month):
+            ctx.kdv_beyan = d.alanlar
+    if d := beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month):
+        ctx.gv_beyan = d.alanlar
     if mizan_b and mizan_b.summary.get("bakiye_turu") == "hareket":
         ctx.mizan_hareket = True
     for d in ("mizan", "yevmiye", "kebir", "muavin"):

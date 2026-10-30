@@ -1,4 +1,4 @@
-"""Geçici vergi ön kontrolleri: K-27 dönem sonu hazırlığı, K-29 peşin ödenen vergilerin mahsubu.
+"""Geçici vergi ön kontrolleri: K-27 dönem sonu hazırlığı, K-28 beyanname ile defter, K-29 peşin ödenen vergilerin mahsubu.
 
 Bunlar hatırlatma niteliğindedir: kayıt "izinin" olup olmadığına bakılır. Yokluk her zaman hata değildir
 (ör. amortismana tabi varlık yoksa amortisman kaydı da olmaz).
@@ -7,7 +7,7 @@ Bunlar hatırlatma niteliğindedir: kayıt "izinin" olup olmadığına bakılır
 import re
 
 from ..finance import ana_balances
-from ..gecici import donem_no
+from ..gecici import donem_no, ticari_kar
 from ..parsing import fold, kurus_str
 from .kdv import movements
 from .rules import D0, Context, Draft, Result, Rule
@@ -21,6 +21,12 @@ K27 = Rule("K-27", "1.0", "Geçici vergi dönem sonu hazırlığı",
            "D", ("THP_VUK",), (), GV_DAYANAK, False,
            "Amortismana tabi varlık, dövizli hesap veya stoklu satış yoksa ilgili kayıt gerekmez. Kayıt başka hesaplarla "
            "veya yıl sonunda yapılıyor olabilir.", D0, "Orta")
+K28 = Rule("K-28", "1.0", "Geçici vergi beyannamesi ile defter",
+           "Dönemin geçici vergi beyannamesindeki ticari bilanço kârı (zararı), defterden yılbaşından hesaplanan kârla "
+           "karşılaştırılır.",
+           "K", ("THP_VUK",), (), GV_DAYANAK, False,
+           "Beyannameden sonra kayıt eklenmiş veya düzeltilmiş olabilir; beyandaki kâr ayrı bir çalışma tablosuyla "
+           "hesaplanmış olabilir.", D0, "Orta")
 K29 = Rule("K-29", "1.0", "Peşin ödenen vergilerin mahsubu",
            "Yıl sonunda 193 Peşin Ödenen Vergiler hesabında kalan tutar, kapanışta 371 ile mahsup edilmeli veya iade/mahsup "
            "talebine konu edilmeli.",
@@ -85,6 +91,27 @@ def k27(ctx: Context) -> Result:
     return Result(K27, "gecti", "Dönem sonu kayıtlarının izi var: " + ", ".join(ok) + ".")
 
 
+def k28(ctx: Context) -> Result:
+    b = ctx.gv_beyan
+    if not b:
+        return Result(K28, "uygulanmadi", "Uygulanmadı: bu dönemin geçici vergi beyannamesi (PDF) yüklenmemiş.")
+    tk = ticari_kar(ctx)
+    if tk is None:
+        return Result(K28, "calistirilamadi", "Çalıştırılamadı: yılbaşından dönem sonuna bakiyeler yok "
+                                              "(kümülatif mizan veya defteri kebir gerekli).")
+    defter, src = tk[0], tk[3]
+    beyan = (b.get("ticari_kar") or 0) - (b.get("ticari_zarar") or 0)
+    diff = defter - beyan
+    if abs(diff) > ctx.tolerance:
+        return Result(K28, "bulgu", "Defterdeki kâr beyannameden farklı.", [Draft(
+            "Defterdeki kâr geçici vergi beyannamesinden farklı", K28.default_severity, "690", diff, "beyan-kar",
+            f"Beyannamede ticari bilanço kârı {kurus_str(beyan)} TL; defterde yılbaşından {ctx.period_end:%d.%m.%Y} "
+            f"tarihine kâr {kurus_str(defter)} TL ({src}). Fark {kurus_str(diff)} TL.",
+            K28.exceptions,
+            "Beyandan sonra girilen veya değiştirilen kayıtları kontrol edin; gerekiyorsa düzeltme beyannamesi değerlendirin.")])
+    return Result(K28, "gecti", f"Defterdeki kâr beyannamedeki ticari kârla aynı ({kurus_str(beyan)} TL).")
+
+
 def k29(ctx: Context) -> Result:
     if not (ctx.period_end.month == 12 and ctx.period_end.day == 31):
         return Result(K29, "uygulanmadi", "Uygulanmadı: yalnızca yıl sonu (31 Aralık) döneminde çalışır.")
@@ -101,4 +128,4 @@ def k29(ctx: Context) -> Result:
     return Result(K29, "gecti", "193 hesabında yıl sonu bakiyesi yok.")
 
 
-GECICI_RULES = [(K27, k27), (K29, k29)]
+GECICI_RULES = [(K27, k27), (K28, k28), (K29, k29)]

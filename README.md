@@ -12,6 +12,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri, KDV ön kontrolleri ve finansal panel 
 - **Gösterge paneli:** Dönem özeti, finansal özet kutucukları, önem sırasıyla "Dikkat Gerektirenler", kontroller ve belgeler tek sayfada.
 - **Analizler ve gereken belgeler:** KDV Ön Kontrol, Defter Mutabakatı, Finansal Analiz ve Geçici Vergi kendi ihtiyaç duyduğu belgeleri listeler ve eksikleri ister. KDV için önceki ayın beyannamesindeki devreden KDV tutarı elle girilebilir; K-22 bunu dönem başı 190 bakiyesiyle karşılaştırır.
 - **Geçici vergi:** Yılbaşından dönem sonuna ticari kâr (kümülatif mizan veya defteri kebir), elle girilen KKEG/istisna/indirim/geçmiş yıl zararı ile tahmini matrah ve vergi; önceki dönemlerin mahsubu. Oranlar ve tarihler `denetci/parametreler.py` dosyasındadır ve doğrulanmalıdır. K-27 dönem sonu kayıtlarının (amortisman, kur değerlemesi, satış maliyeti) izine, K-29 yıl sonunda 193 bakiyesine bakar. Ön hesaplamadır, beyan değildir.
+- **Beyanname PDF'leri:** GİB beyanname sisteminden indirilen KDV (KDV1, aylık) ve geçici vergi beyannamesi PDF'leri Luca dosyalarıyla aynı alana yüklenir. Okunan tutarlar mükellefin kaydına girer: KDV beyannamesindeki sonraki döneme devreden KDV izleyen ayın K-22 kontrolünde, geçici vergi beyannamesindeki hesaplanan vergi bir sonraki dönemin mahsubunda kullanılır. K-24 ayın KDV beyannamesini 391/191 hareketleri ve ay sonu 190 bakiyesiyle, K-28 dönemin geçici vergi beyannamesindeki ticari kârı defterle karşılaştırır. Beyannamedeki VKN veya unvan mükellefle uyuşmazsa aktarmadan önce sorulur.
 - **Dönem işlemleri:** Çalışma notu, kesinleştirme (dönem kilitlenir, açılabilir), analizi temizleme, yazdırılabilir dönem raporu. Dosyadaki firma unvanı seçili mükellefle uyuşmazsa aktarmadan önce sorulur; yüklemeler geri alınabilir.
 - **Finansal analiz:** Gelir tablosu özeti, bilanço yapısı grafiği ve temel oranlar (formülleriyle). Bilgi amaçlıdır; kapanmamış dönemlerde dönem sonucu hesaplanarak gösterilir.
 - **Toplu yükleme:** Birden fazla dosya sürükle-bırak ile yüklenebilir. Luca dosyasındaki "Tarih Aralığı"ndan dönem kendiliğinden bulunur, analiz kendiliğinden çalışır.
@@ -38,7 +39,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri, KDV ön kontrolleri ve finansal panel 
 - **Veri durumu:** Analiz sonucu "analize uygun", "kısmen uygun" veya "kritik veri sorunu var" olarak gösterilir. Eksik belge varsa ilgili kontrol "çalıştırılamadı" olarak işaretlenir.
 - **Bulgular:** Her bulgudan orijinal dosyanın sayfa ve satırına inilebilir. Bulgulara durum (yeni, inceleniyor, açıklandı) ve not eklenebilir; bunlar kaynak veriyi değiştirmez.
 
-Henüz yapılmayanlar: PDF ve Word dosyalarının okunması, beyanname gerektiren KDV kontrolleri (K-24–K-26), Excel rapor ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
+Henüz yapılmayanlar: Word dosyalarının ve üç aylık KDV beyannamesinin okunması, K-25–K-26, Excel rapor ve Claude ile soru-cevap. Bunlar sonraki aşamalarda.
 
 > Luca mizan, yevmiye, kebir ve muavin okuyucuları 29.10.2026'da Luca'dan alınmış gerçek örneklerle denendi. Testlerde ve DEMO'da yalnızca bu düzeni taklit eden **sentetik** dosyalar kullanılır; gerçek mükellef dosyaları depoya konmaz.
 

@@ -75,8 +75,12 @@ class Context:
     mizan_hareket: bool = False
     # Önceki dönemlerin bağlamları (en yakından uzağa). Dönemler arası kontroller kullanır.
     previous: list = field(default_factory=list)
-    # Kullanıcının beyannameden girdiği önceki aydan devreden KDV (kuruş), yoksa None.
+    # Önceki aydan devreden KDV (kuruş), yoksa None. Kaynak: "girildi" (elle) veya "beyanname" (yüklenen PDF).
     devreden_kdv: int | None = None
+    devreden_kaynak: str | None = None
+    # Aynı dönemin yüklenmiş beyannameleri (alanlar sözlüğü, kuruş): KDV (aylık) ve geçici vergi.
+    kdv_beyan: dict | None = None
+    gv_beyan: dict | None = None
 
     @property
     def leaves(self):

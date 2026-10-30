@@ -5,11 +5,32 @@
 <div class="page-head">
   <span class="ph-ic">{{ icon('upload', 24) }}</span>
   <div class="ph-text"><h1>Belgeler ve Yükleme</h1>
-    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Luca'dan aldığınız dosyaları yükleyin; dönem dosyadan bulunur ve kontroller kendiliğinden çalışır.</p></div>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Luca'dan aldığınız dosyaları ve GİB'den indirdiğiniz beyanname PDF'lerini yükleyin; dönem dosyadan bulunur ve kontroller kendiliğinden çalışır.</p></div>
 </div>
 {{ flash_list(flash) }}
 <section class="card">{% if p and p.kesin %}<p>Bu dönem kesinleştirildi; yükleme ve geri alma kapalı. Değişiklik için gösterge panelinden kilidi açın.</p>{% else %}{{ upload_zone(c, p, csrf) }}{% endif %}
   <p class="muted" style="margin-top:10px">Orijinal dosyalar değiştirilmeden saklanır. Aynı dosya ikinci kez yüklenirse alınmaz; yeni sürüm yüklenirse eskisi arşivde kalır. Dosyadaki firma unvanı seçili mükellefle uyuşmazsa aktarmadan önce sorulur. Yanlış yüklenen dosyayı aşağıdaki listeden "Geri al" ile kaldırabilirsiniz.</p>
+</section>
+
+<section class="card" id="beyannameler">
+  <div class="block-head"><h2>Beyannameler</h2><span class="muted">Mükellefin tüm dönemleri</span></div>
+  {% if decls %}
+  <div class="scroll"><table class="grid">
+    <thead><tr><th>Beyanname</th><th>Dönem</th><th class="num">Önemli tutarlar (TL)</th><th>Dosya</th><th></th></tr></thead>
+    <tbody>
+    {% for d in decls %}{% set a_ = d.alanlar %}
+    <tr><td>{% if d.tur == 'kdv' %}<span class="decl-tag">KDV</span>{% else %}<span class="decl-tag gv">Geçici vergi</span>{% endif %}{% if d.duzeltme %} <span class="muted">düzeltme</span>{% endif %}</td>
+      <td>{{ beyan_donem(d.tur, d.yil, d.ay) }}<div class="muted">Onay {{ d.onay or '—' }}</div></td>
+      <td class="num">{% if d.tur == 'kdv' %}Ödenecek {{ a_.get('odenecek')|tl }}<div class="muted">Sonraki döneme devreden {{ a_.get('sonraki_devreden')|tl }}</div>
+        {% else %}Matrah {{ a_.get('matrah')|tl }}<div class="muted">Hesaplanan {{ a_.get('nihai', a_.get('hesaplanan'))|tl }} · ödenecek {{ a_.get('odenecek')|tl }}</div>{% endif %}</td>
+      <td>{{ decl_files[d.source_file_id].orig_name }}</td>
+      <td><form method="post" action="/mukellef/{{ c.id }}/beyanname/{{ d.id }}/geri-al" class="inline" onsubmit="return confirm('Bu beyanname kaldırılsın mı? Kontroller yeniden çalışır.')">
+          <input type="hidden" name="csrf" value="{{ csrf }}">{% if p %}<input type="hidden" name="donem" value="{{ p.id }}">{% endif %}<button class="link">Geri al</button></form></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="muted" style="margin-top:8px">KDV beyannamesindeki "sonraki döneme devreden KDV" izleyen ayın kontrolünde, geçici vergi beyannamesindeki hesaplanan vergi bir sonraki dönemin mahsubunda kendiliğinden kullanılır. Beyannamenin kendi ayı veya dönemi de defterle karşılaştırılır.</p>
+  {% else %}<p class="muted">Henüz beyanname yüklenmedi. GİB beyanname sisteminden indirdiğiniz KDV veya geçici vergi beyannamesi PDF'ini yukarıdaki alana bırakın.</p>{% endif %}
 </section>
 
 <section class="block">

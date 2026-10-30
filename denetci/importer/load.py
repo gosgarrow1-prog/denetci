@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import IZINLI_UZANTILAR, MAX_YUKLEME_BAYT, data_dir
-from ..models import Client, ImportBatch, JournalLine, OpeningBalance, Period, RawRow, SourceFile, TrialBalanceLine
+from ..models import Client, Declaration, ImportBatch, JournalLine, OpeningBalance, Period, RawRow, SourceFile, TrialBalanceLine
 from ..parsing import ParseError, code_segments, detect_number_format, is_empty, parse_account_code, parse_amount, parse_date
 from . import luca
 from .tables import DOC_FIELDS, REQUIRED, Sheet, UnsupportedFile, classify_row, detect, read_tables
@@ -31,10 +31,10 @@ def _json_safe(v):
     return str(v)
 
 
-def store_file(session: Session, client: Client, filename: str, content: bytes) -> SourceFile:
+def store_file(session: Session, client: Client, filename: str, content: bytes, allowed=IZINLI_UZANTILAR) -> SourceFile:
     suffix = Path(filename).suffix.lower()
-    if suffix not in IZINLI_UZANTILAR:
-        raise ImportError_("Yalnızca .xlsx ve .csv dosyaları destekleniyor. Luca'dan bu biçimlerde dışa aktarın.")
+    if suffix not in allowed:
+        raise ImportError_("Yalnızca .xlsx ve .csv dosyaları (Luca) ile beyanname PDF'leri destekleniyor.")
     if len(content) == 0:
         raise ImportError_("Dosya boş.")
     if len(content) > MAX_YUKLEME_BAYT:
@@ -45,6 +45,8 @@ def store_file(session: Session, client: Client, filename: str, content: bytes) 
         # Geri alınmış (iptal) bir yüklemenin dosyası yeniden yüklenebilir.
         active = session.scalar(select(ImportBatch).where(ImportBatch.source_file_id == existing.id,
                                                           ImportBatch.status != "iptal"))
+        active = active or session.scalar(select(Declaration).where(Declaration.source_file_id == existing.id,
+                                                                    Declaration.durum == "aktif"))
         if active:
             raise DuplicateFile(existing)
         return existing

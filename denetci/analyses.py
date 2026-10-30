@@ -7,6 +7,7 @@ Eksik belge için kullanıcıya ne yapması gerektiği söylenir (dosya yükle v
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from . import beyannameler
 from .checks import kdv
 from .checks.rules import Context
 
@@ -39,8 +40,8 @@ class Analysis:
         return "eksik" if self.missing else "hazir"
 
 
-KDV_RULES = ("K-21", "K-22", "K-22D", "K-23")
-GECICI_RULES = ("K-27", "K-29")
+KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24")
+GECICI_RULES = ("K-27", "K-28", "K-29")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
 
@@ -48,23 +49,28 @@ def _has(batches, doc):
     return bool(batches and batches.get(doc))
 
 
-def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool) -> list[Analysis]:
-    """period: Period veya None; batches: belge türü -> son onaylı aktarım."""
+def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool, decls=()) -> list[Analysis]:
+    """period: Period veya None; batches: belge türü -> son onaylı aktarım; decls: mükellefin aktif beyannameleri."""
     has_mizan, has_kebir = _has(batches, "mizan"), _has(batches, "kebir")
     has_yev, has_muavin = _has(batches, "yevmiye"), _has(batches, "muavin")
     hareket = bool(ctx and ctx.mizan_hareket)
 
     # --- KDV ---
     prev_adjacent = bool(ctx and ctx.previous and ctx.previous[0].period_end == ctx.period_start - timedelta(days=1))
-    devreden_girildi = period is not None and period.devreden_kdv is not None
+    aylik = period is not None and beyannameler.tek_ay(period.baslangic, period.bitis)
+    devreden_girildi = period is not None and (
+        period.devreden_kdv is not None or (aylik and beyannameler.onceki_ay_kdv(decls, period.baslangic) is not None))
+    ayin_beyani = aylik and beyannameler.bul(decls, "kdv", period.bitis.year, period.bitis.month) is not None
     k = Analysis("kdv", "KDV Ön Kontrol", KDV_RULES, link="kdv")
     k.needs = [
         Need("Dönem mizanı veya defteri kebir", has_mizan or has_kebir,
              "191, 391, 190 ve 360 hesaplarının bakiyeleri buradan okunur."),
         Need("Yevmiye defteri", has_yev, "Ay içindeki KDV hareketleri ve mahsup fişi için.", optional=True),
         Need("Önceki ayın devreden KDV'si", devreden_girildi or prev_adjacent,
-             "Önceki ayın KDV beyannamesindeki 'sonraki döneme devreden KDV' tutarını girin "
+             "Önceki ayın KDV beyannamesini (PDF) yükleyin, 'sonraki döneme devreden KDV' tutarını girin "
              "veya önceki ayın Luca dosyalarını yükleyin."),
+        Need("Bu ayın KDV beyannamesi", ayin_beyani,
+             "Beyan verildiyse PDF'ini yükleyin; beyandaki tutarlar defterle karşılaştırılır.", optional=True),
         Need("Önceki aylar (oran karşılaştırması)", bool(ctx and ctx.previous),
              "Hesaplanan KDV / satış oranını önceki aylarla karşılaştırmak için.", optional=True),
     ]
@@ -100,9 +106,12 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              "Mart, Haziran veya Eylül sonuyla biten dönemin dosyalarını yükleyin."),
         Need("KKEG, istisna ve indirimler", bool(gv.get("kaydedildi")),
              "Geçici Vergi sayfasında girin; girilmezse sıfır kabul edilir.", optional=True),
-        Need("Önceki dönemlerde hesaplanan geçici vergi", bool(gv.get("onceki_odenen")) or
-             (period is not None and donem_no(period.bitis) == 1),
-             "Mahsup için önceki geçici vergi beyannamelerindeki tutar.", optional=True),
+        Need("Önceki dönemin geçici vergi beyannamesi", bool(gv.get("onceki_odenen")) or
+             (period is not None and (donem_no(period.bitis) == 1 or beyannameler.onceki_gv(decls, period.bitis) is not None)),
+             "Mahsup için önceki dönemin beyannamesini (PDF) yükleyin veya hesaplanan vergiyi elle girin.", optional=True),
+        Need("Bu dönemin geçici vergi beyannamesi", period is not None and
+             beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month) is not None,
+             "Beyan verildiyse PDF'ini yükleyin; beyandaki kâr defterle karşılaştırılır.", optional=True),
     ]
     return [k, m, f, g]
 

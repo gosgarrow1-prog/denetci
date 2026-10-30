@@ -42,10 +42,11 @@
         <tr><td>Oran ({{ 'kurum kazancı' if gv.tur == 'kurum' else 'gelir vergisi mükellefi' }}{% if gv.oran_girildi %}, elle girildi{% endif %})</td>
           <td class="num">{{ pct(gv.oran) if gv.oran is not none else '—' }}</td></tr>
         <tr><td>Hesaplanan geçici vergi</td><td class="num">{{ gv.hesaplanan|tl if gv.hesaplanan is not none else '—' }}</td></tr>
-        <tr><td>− Önceki dönemlerde hesaplanan geçici vergi</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
+        <tr><td>− Önceki dönemlerde hesaplanan geçici vergi{% if gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' %}<div class="muted">{{ gv.mahsup_kaynak }}nden okundu</div>{% endif %}</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
         <tr class="total"><td>Ödenecek geçici vergi (tahmini)</td><td class="num">{{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</td></tr>
       </tbody>
     </table>
+    {% if gv.gecmis_zarar_kalan %}<p class="muted">Bilgi: önceki dönem beyannamesindeki toplam geçmiş yıl zararı {{ gv.gecmis_zarar_kalan|tl }} TL.</p>{% endif %}
     {% if gv.pesin_193 %}<p class="muted">Bilgi: 193 Peşin ödenen vergiler bakiyesi {{ gv.pesin_193|tl }} TL (stopajlar dahil olabilir).</p>{% endif %}
     {% else %}
     <ul class="needs">{% for n in a.needs[:1] %}{{ need_row(n) }}{% endfor %}</ul>
@@ -60,7 +61,7 @@
     <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gecici-vergi" class="form-stack">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       {% for key, label, sign in GV_ALANLAR %}
-      <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="0,00" value="{{ saved[key]|tl if saved.get(key) else '' }}" {{ 'disabled' if p.kesin }}></label>
+      <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="{{ (gv.girdiler[key]|tl ~ ' (beyannameden)') if key == 'onceki_odenen' and gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' else '0,00' }}" value="{{ saved[key]|tl if saved.get(key) else '' }}" {{ 'disabled' if p.kesin }}></label>
       {% endfor %}
       <div class="row">
         <label>Mükellef türü
@@ -75,6 +76,24 @@
     <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'si. {{ GV_PARAM.dayanak }}</p>
   </section>
 </div>
+
+{% if gv.beyanname %}{% set b = gv.beyanname %}
+<section class="card">
+  <div class="block-head"><h2>Verilen beyanname ile karşılaştırma</h2><span class="muted">Bu dönemin yüklenen beyannamesi</span></div>
+  <table class="grid small">
+    <thead><tr><th></th><th class="num">Beyanname</th><th class="num">Defterden hesaplanan</th></tr></thead>
+    <tbody>
+      <tr><td>Ticari bilanço kârı (zararı −)</td><td class="num">{{ ((b.get('ticari_kar') or 0) - (b.get('ticari_zarar') or 0))|tl }}</td><td class="num">{{ gv.ticari_kar|tl if gv.ticari_kar is not none else '—' }}</td></tr>
+      <tr><td>KKEG</td><td class="num">{{ b.get('kkeg')|tl }}</td><td class="num">{{ gv.girdiler.kkeg|tl }}</td></tr>
+      <tr><td>Mahsup edilen geçmiş yıl zararı</td><td class="num">{{ b.get('gecmis_zarar')|tl }}</td><td class="num">{{ gv.girdiler.gecmis_zarar|tl }}</td></tr>
+      <tr class="subtotal"><td>Geçici vergi matrahı</td><td class="num">{{ b.get('matrah')|tl }}</td><td class="num">{{ gv.matrah|tl if gv.matrah is not none else '—' }}</td></tr>
+      <tr><td>Hesaplanan geçici vergi</td><td class="num">{{ b.get('nihai', b.get('hesaplanan'))|tl }}</td><td class="num">{{ gv.hesaplanan|tl if gv.hesaplanan is not none else '—' }}</td></tr>
+      <tr class="total"><td>Ödenecek geçici vergi</td><td class="num">{{ b.get('odenecek')|tl }}</td><td class="num">{{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Kâr farkı K-28 kontrolünde bulgu olarak gösterilir. KKEG ve geçmiş zarar gibi düzeltmeleri beyannameyle aynı girerseniz matrahlar da karşılaştırılabilir hale gelir.</p>
+</section>
+{% endif %}
 
 <section class="block">
   <div class="block-head"><h2>Dönem sonu kontrolleri</h2><span class="muted">{{ a_findings|length }} açık bulgu</span></div>

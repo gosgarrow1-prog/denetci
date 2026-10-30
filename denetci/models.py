@@ -233,3 +233,24 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(64))
     detail: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Declaration(Base):
+    """GİB'den indirilmiş beyanname (PDF) özeti. Mükellef düzeyindedir; dönemle (yıl, ay) eşleşir.
+    tur: kdv (ay = beyan ayı) veya gecici (ay = dönem sonu ayı: 3, 6, 9, 12). Tutarlar kuruş."""
+
+    __tablename__ = "declarations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    source_file_id: Mapped[int] = mapped_column(ForeignKey("source_files.id"))
+    tur: Mapped[str] = mapped_column(String(16))
+    alt: Mapped[str | None] = mapped_column(String(16))
+    yil: Mapped[int] = mapped_column(Integer)
+    ay: Mapped[int] = mapped_column(Integer)
+    vkn: Mapped[str | None] = mapped_column(String(16))
+    unvan: Mapped[str | None] = mapped_column(String(256))
+    onay: Mapped[str | None] = mapped_column(String(32))
+    duzeltme: Mapped[bool] = mapped_column(Boolean, default=False)
+    alanlar: Mapped[dict] = mapped_column(JSON, default=dict)
+    durum: Mapped[str] = mapped_column(String(16), default="aktif")  # aktif, iptal
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

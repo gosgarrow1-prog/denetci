@@ -20,7 +20,7 @@ from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
-from ..models import (AnalysisRun, AuditLog, Client, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
+from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
@@ -28,7 +28,9 @@ from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
 from ..importer.ingest import ingest, peek
+from ..importer.beyanname import donem_adi as beyan_donem_adi
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
+from .. import beyannameler
 from ..analyses import build as build_analyses, kdv_amounts
 from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
@@ -72,6 +74,7 @@ templates.env.filters["donem_adi"] = donem_adi
 templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
+templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
     "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
@@ -376,7 +379,9 @@ def create_app() -> FastAPI:
                 v["kdv"] = kdv_amounts(ctx)
             if v["prev_fin"]:
                 v["prev_ratios"] = {r.key: r for r in v["prev_fin"].oranlar}
-        v["analyses"] = build_analyses(p, v["latest"], ctx, v["fin"], prev_exists)
+        v["decls"] = beyannameler.aktif(s, c.id)
+        v["decl_files"] = {d.source_file_id: s.get(SourceFile, d.source_file_id) for d in v["decls"]}
+        v["analyses"] = build_analyses(p, v["latest"], ctx, v["fin"], prev_exists, v["decls"])
         v["ratios"] = {r.key: r for r in v["fin"].oranlar} if v["fin"] else {}
         return v
 
@@ -435,7 +440,7 @@ def create_app() -> FastAPI:
         v = _view(s, c, p, request)
         v["alerts"] = _alerts(v, c)
         v["now"] = _now()
-        v["gv"] = gv_hesapla(build_context(s, c, p)[0], p, c)
+        v["gv"] = gv_hesapla(build_context(s, c, p)[0], p, c, v["decls"])
         v["GV_ALANLAR"] = GV_ALANLAR
         return render(request, "report.html", active="rapor", **v)
 
@@ -446,7 +451,7 @@ def create_app() -> FastAPI:
         v = _view(s, c, p, request)
         a = next(x for x in v["analyses"] if x.key == "gecici")
         ctx = build_context(s, c, p)[0] if p else None
-        v.update(analysis=a, gv=gv_hesapla(ctx, p, c) if p else None, GV_ALANLAR=GV_ALANLAR, GV_PARAM=GECICI_VERGI,
+        v.update(analysis=a, gv=gv_hesapla(ctx, p, c, v["decls"]) if p else None, GV_ALANLAR=GV_ALANLAR, GV_PARAM=GECICI_VERGI,
                  GV_DONEM=GV_DONEM_ADI,
                  a_results=[r for r in v["results"] if r["id"] in a.rules],
                  a_findings=[f for f in v["findings"] if f.rule_id in a.rules])
@@ -502,6 +507,9 @@ def create_app() -> FastAPI:
         v["analysis"] = a
         v["a_results"] = [r for r in v["results"] if r["id"] in a.rules]
         v["a_findings"] = [f for f in v["findings"] if f.rule_id in a.rules]
+        if p and key == "kdv" and beyannameler.tek_ay(p.baslangic, p.bitis):
+            v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
+            v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
         return render(request, "analysis.html", active=keys[key], **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")
@@ -545,26 +553,34 @@ def create_app() -> FastAPI:
         for up in form.getlist("dosya"):
             if getattr(up, "filename", ""):
                 content = await up.read()
-                uploads.append((up.filename, content, peek(up.filename, content).get("firma")))
-        foreign = [f for _, _, f in uploads if f and not firma_eslesir(f, c.unvan)]
-        for filename, content, firma in uploads:
+                uploads.append((up.filename, content, peek(up.filename, content)))
+        foreign = [i.get("firma") or i.get("vkn") for _, _, i in uploads if _yabanci(i, c)]
+        decl_added = False
+        for filename, content, info in uploads:
+            firma = info.get("firma")
             # Dosya başka bir firmaya ait görünüyorsa aktarmadan önce sor. Unvan yazmayan dosya (ör. kebir),
             # aynı yüklemedeki diğer dosyalar başka firmaya aitse o da bekletilir.
-            if foreign and len(content) <= MAX_YUKLEME_BAYT and (not firma or not firma_eslesir(firma, c.unvan)):
+            if foreign and len(content) <= MAX_YUKLEME_BAYT and (_yabanci(info, c) or not (firma or info.get("vkn"))):
                 ref = firma or foreign[0]
-                oneri = firma_en_iyi(ref, others)
+                oneri = _oneri(info, ref, others)
                 held.append({"id": _hold(content, filename), "filename": Path(filename).name[:200],
-                             "firma": firma[:200] if firma else f"dosyada yazmıyor (aynı yüklemedeki dosyalar: {foreign[0][:120]})",
+                             "firma": (firma[:200] + (f" (VKN {info['vkn']})" if info.get("vkn") else "")) if firma
+                             else f"dosyada yazmıyor (aynı yüklemedeki dosyalar: {foreign[0][:120]})",
                              "oneri": oneri.id if oneri else None})
                 continue
             o = ingest(s, c, filename, content, period)
             outcomes.append(o)
             if o.batch:
                 audit(s, user, "dosya_yukle", cid, f"batch={o.batch.id}")
-            if o.status == "aktarildi":
+            if o.declaration:
+                audit(s, user, "beyanname_yukle", cid, f"declaration={o.declaration.id}")
+                decl_added = True
+            if o.status == "aktarildi" and o.period:
                 touched[o.period.id] = o.period
         for p in touched.values():
             run_analysis(s, c, p)
+        if decl_added:
+            _rerun_open(s, c, skip=set(touched))
         request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
         if held:
             request.session["bekleyen"] = {"cid": cid, "donem": period.id if period else None, "items": held}
@@ -573,6 +589,8 @@ def create_app() -> FastAPI:
         if pending and not touched:
             return _redirect(s, f"/mukellef/{cid}/aktarim/{pending.batch.id}")
         target = next(iter(touched.values()), None) or (outcomes[0].period if outcomes and outcomes[0].period else period)
+        if decl_added and not touched:
+            return _redirect(s, f"/mukellef/{cid}/belgeler" + (f"?donem={target.id}" if target else "") + "#beyannameler")
         return _redirect(s, f"/mukellef/{cid}" + (f"?donem={target.id}" if target else ""))
 
     @app.get("/mukellef/{cid}/yukle/kontrol", response_class=HTMLResponse)
@@ -593,7 +611,7 @@ def create_app() -> FastAPI:
         b = request.session.pop("bekleyen", None)
         if not b or b.get("cid") != cid:
             return _redirect(s, f"/mukellef/{cid}")
-        outcomes, touched = [], {}
+        outcomes, touched, decl_clients = [], {}, {}
         for it in b["items"]:
             path = _held_path(it["id"])
             choice = str(form.get(f"hedef_{it['id']}", ""))
@@ -608,17 +626,24 @@ def create_app() -> FastAPI:
                     outcomes.append(o)
                     if o.batch:
                         audit(s, user, "dosya_yukle", target.id, f"batch={o.batch.id} firma_uyarisi_onaylandi")
-                    if o.status == "aktarildi":
+                    if o.declaration:
+                        audit(s, user, "beyanname_yukle", target.id, f"declaration={o.declaration.id} firma_uyarisi_onaylandi")
+                        decl_clients[target.id] = target
+                    if o.status == "aktarildi" and o.period:
                         touched[(target.id, o.period.id)] = (target, o.period)
             else:
                 outcomes.append(type("O", (), {"filename": it["filename"], "status": "tekrar", "message": "Yüklenmedi."})())
             path.unlink(missing_ok=True)
         for tc_, tp in touched.values():
             run_analysis(s, tc_, tp)
+        for dc in decl_clients.values():
+            _rerun_open(s, dc, skip={k[1] for k in touched if k[0] == dc.id})
         request.session["flash"] = [{"filename": o.filename, "status": o.status, "message": o.message} for o in outcomes]
         dest = next(iter(touched.values()), None)
         if dest:
             return _redirect(s, f"/mukellef/{dest[0].id}?donem={dest[1].id}")
+        if decl_clients:
+            return _redirect(s, f"/mukellef/{next(iter(decl_clients))}/belgeler#beyannameler")
         return _redirect(s, f"/mukellef/{cid}")
 
     # ---- Dönem işlemleri: geri alma, temizleme, kesinleştirme, not, rapor ---------
@@ -654,6 +679,21 @@ def create_app() -> FastAPI:
         request.session["flash"] = [{"filename": sf.orig_name, "status": "aktarildi",
                                      "message": "Yükleme geri alındı; kontroller kalan belgelerle yeniden çalıştı."}]
         return _redirect(s, back)
+
+    @app.post("/mukellef/{cid}/beyanname/{did}/geri-al")
+    async def declaration_undo(cid: int, did: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        d = owned(s, Declaration, did, cid)
+        form = await form_checked(request)
+        d.durum = "iptal"
+        s.flush()
+        _rerun_open(s, c)
+        audit(s, user, "beyanname_geri_al", cid, f"declaration={did}")
+        sf = s.get(SourceFile, d.source_file_id)
+        request.session["flash"] = [{"filename": sf.orig_name, "status": "aktarildi",
+                                     "message": "Beyanname kaldırıldı; açık dönemlerin kontrolleri yeniden çalıştı."}]
+        donem = str(form.get("donem", ""))
+        return _redirect(s, f"/mukellef/{cid}/belgeler" + (f"?donem={donem}" if donem.isdigit() else "") + "#beyannameler")
 
     @app.post("/mukellef/{cid}/donem/{pid}/temizle")
     async def period_clear(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -902,6 +942,32 @@ def _404():
 def _now():
     from datetime import datetime, timezone
     return datetime.now(timezone.utc)
+
+
+def _yabanci(info: dict, c) -> bool:
+    """Dosya başka bir firmaya mı ait? Beyannamede VKN varsa ve mükellefin VKN'si kayıtlıysa VKN'ye bakılır."""
+    if info.get("vkn") and c.vkn:
+        return info["vkn"] != c.vkn
+    return bool(info.get("firma")) and not firma_eslesir(info["firma"], c.unvan)
+
+
+def _oneri(info: dict, ref: str, others):
+    if info.get("vkn"):
+        by_vkn = next((x for x in others if x.vkn and x.vkn == info["vkn"]), None)
+        if by_vkn:
+            return by_vkn
+    return firma_en_iyi(ref, others)
+
+
+def _rerun_open(s, c, skip=()):
+    """Beyanname eklenince/kaldırılınca mükellefin açık dönemlerinin kontrollerini yeniler."""
+    for p in s.scalars(select(Period).where(Period.client_id == c.id)):
+        if p.id in skip or p.kesin:
+            continue
+        try:
+            run_analysis(s, c, p)
+        except NoData:
+            pass
 
 
 def p_name(p) -> str:

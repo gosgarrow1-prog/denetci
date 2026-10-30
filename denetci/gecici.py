@@ -1,13 +1,15 @@
-"""Geçici vergi ön hesaplaması (K-28). Beyan değildir; tahmini matrah ve vergi gösterir.
+"""Geçici vergi ön hesaplaması. Beyan değildir; tahmini matrah ve vergi gösterir.
 
 Ticari kâr, yılbaşından dönem sonuna 6-7 sınıfı bakiyelerinden (kümülatif mizan veya defteri kebir, nakli yekün dahil)
 hesaplanır. KKEG, istisna, indirim ve geçmiş yıl zararları kullanıcı tarafından girilir.
+Önceki dönemde hesaplanan geçici vergi, elle girilmemişse bir önceki dönemin yüklenmiş beyannamesinden alınır.
 """
 
 import re
 from dataclasses import dataclass, field
 from datetime import date
 
+from . import beyannameler
 from .finance import ana_balances, income_statement
 from .parametreler import GECICI_VERGI, KURUM_ISARETLERI
 from .parsing import fold
@@ -64,27 +66,48 @@ class Hesap:
     mahsup: int = 0
     odenecek: int | None = None
     pesin_193: int | None = None
-    tur: str = "kurum"
+    mahsup_kaynak: str | None = None  # "girildi" veya beyanname dönemi adı
     beyan: date | None = None
+    beyanname: dict | None = None  # aynı dönemin yüklenmiş beyannamesi (alanlar)
+    gecmis_zarar_kalan: int | None = None  # önceki beyannamedeki toplam geçmiş yıl zararı (bilgi)
+    tur: str = "kurum"
     notlar: list = field(default_factory=list)
 
 
-def hesapla(ctx, period, client) -> Hesap:
+def ticari_kar(ctx):
+    """Yılbaşından dönem sonuna ticari kâr: (kâr, gelir tablosu satırları, notlar, kaynak, bakiyeler) veya None."""
+    bal, src = ana_balances(ctx)
+    if bal is None:
+        return None
+    net = {k: -v for k, v in bal.items() if k[:1] in ("6", "7")}
+    lines, kal, notes = income_statement(net)
+    return kal["donem_kari"], lines, notes, src, bal
+
+
+def hesapla(ctx, period, client, decls=()) -> Hesap:
     h = Hesap(donem_no(period.bitis), False, None)
     h.tur = (period.gv or {}).get("tur") or mukellef_turu(client.sirket_turu, client.unvan)
     h.girdiler = {k: int((period.gv or {}).get(k) or 0) for k, _, _ in ALANLAR}
     h.beyan = beyan_tarihi(period.bitis) if h.donem_no else None
+    if h.girdiler["onceki_odenen"]:
+        h.mahsup_kaynak = "girildi"
+    elif (og := beyannameler.onceki_gv(decls, period.bitis)):
+        h.girdiler["onceki_odenen"] = og[0]
+        h.mahsup_kaynak = f"{og[1].yil} / {og[1].ay // 3}. dönem beyannamesi"
+    if (d := beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month)):
+        h.beyanname = d.alanlar
+    prev = [d for d in decls if d.tur == "gecici" and d.yil == period.bitis.year and d.ay < period.bitis.month]
+    if prev:
+        h.gecmis_zarar_kalan = max(prev, key=lambda x: x.ay).alanlar.get("toplam_gecmis_zarar")
     if ctx is None:
         return h
-    bal, src = ana_balances(ctx)
-    if bal is None:
+    tk = ticari_kar(ctx)
+    if tk is None:
         h.notlar.append("Yılbaşından dönem sonuna bakiyeler yok: kümülatif mizan veya defteri kebir (nakli yekün dahil) gerekli.")
         return h
-    h.ytd, h.kaynak = True, src
-    net = {k: -v for k, v in bal.items() if k[:1] in ("6", "7")}
-    h.gelir_tablosu, kal, notes = income_statement(net)
+    h.ticari_kar, h.gelir_tablosu, notes, h.kaynak, bal = tk
+    h.ytd = True
     h.notlar += notes
-    h.ticari_kar = kal["donem_kari"]
     h.pesin_193 = bal.get("193")
     g = h.girdiler
     h.matrah = max(h.ticari_kar + g["kkeg"] - g["istisna"] - g["gecmis_zarar"] - g["indirim"], 0)

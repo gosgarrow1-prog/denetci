@@ -237,12 +237,15 @@ def _k22_declared(ctx: Context) -> Result:
         return Result(K22, "uygulanmadi", "Uygulanmadı: bu dönemin başı için 190 bakiyesi bulunamadı "
                                           "(dönem başından alınmış mizan veya defteri kebir gerekli).")
     diff = co.net - ctx.devreden_kdv
+    src = ("Önceki ayın beyannamesindeki (PDF) devreden KDV" if ctx.devreden_kaynak == "beyanname"
+           else "Girilen beyanname tutarı")
     if abs(diff) > ctx.tolerance:
         return Result(K22, "bulgu", "Devreden KDV beyannameyle uyuşmuyor.", [Draft(
             "Defterdeki devreden KDV beyannameyle uyuşmuyor", K22.default_severity, "190", diff, "beyan",
-            f"Girilen beyanname tutarı {kurus_str(ctx.devreden_kdv)} TL; {ctx.period_start:%d.%m.%Y} başında 190 bakiyesi "
+            f"{src} {kurus_str(ctx.devreden_kdv)} TL; {ctx.period_start:%d.%m.%Y} başında 190 bakiyesi "
             f"{kurus_str(co.net)} TL ({co.source}). Fark {kurus_str(diff)} TL.",
-            "Tutar elle girildi; yazım hatası olmadığını kontrol edin.",
+            "Tutar yüklenen beyanname PDF'inden okundu." if ctx.devreden_kaynak == "beyanname"
+            else "Tutar elle girildi; yazım hatası olmadığını kontrol edin.",
             "Önceki ayın KDV beyannamesindeki 'sonraki döneme devreden KDV' satırını ve 190 hesabının devir kaydını karşılaştırın.",
             co.evidence)])
     return Result(K22, "gecti", f"190 dönem başı bakiyesi beyannamedeki devreden KDV ile aynı ({kurus_str(co.net)} TL).")
@@ -337,4 +340,51 @@ def k23(ctx: Context) -> Result:
     return Result(K23, "gecti", f"{head} Önceki dönemlerin ortalaması {_pct(avg)} ({hist}); belirgin sapma yok.")
 
 
-KDV_RULES = [(K21, k21), (K22, k22), (K22D, k22d), (K23, k23)]
+# ---- K-24 Beyanname ile defter karşılaştırması ----------------------------------
+
+K24 = Rule("K-24", "1.0", "KDV beyannamesi ile defter",
+           "Ayın KDV beyannamesindeki hesaplanan KDV, bu döneme ait indirilecek KDV ve sonraki döneme devreden KDV; "
+           "391 alacak, 191 borç hareketleri ve ay sonu 190 bakiyesiyle karşılaştırılır.",
+           "K", ("THP_VUK",), (), KDV_DAYANAK, False,
+           "391/191'e beyannameye girmeyen kayıtlar (iade, iptal, KKEG'e atılan KDV, tevkifat) veya beyannameden sonra "
+           "yapılan düzeltmeler fark yaratabilir.", D0, "Orta")
+
+
+def k24(ctx: Context) -> Result:
+    b = ctx.kdv_beyan
+    if not b:
+        return Result(K24, "uygulanmadi", "Uygulanmadı: bu ayın KDV beyannamesi (PDF) yüklenmemiş.")
+    m = movements(ctx)
+    if m is None:
+        return Result(K24, "calistirilamadi", "Çalıştırılamadı: dönem hareketleri yok.")
+    rows = []
+    if b.get("hesaplanan") is not None:
+        rows.append(("391", "Hesaplanan KDV", b["hesaplanan"], m.total(("391",), "alacak"), m.source, "391 alacak hareketi",
+                     m.evidence(("391",))))
+    if b.get("indirimler_toplami") is not None:
+        bu_donem = b["indirimler_toplami"] - (b.get("onceki_devreden") or 0)
+        rows.append(("191", "Bu döneme ait indirilecek KDV", bu_donem, m.total(("191",), "borc"), m.source,
+                     "191 borç hareketi", m.evidence(("191",))))
+    c190 = closing(ctx, "190")
+    if b.get("sonraki_devreden") is not None and c190 is not None:
+        rows.append(("190", "Sonraki döneme devreden KDV", b["sonraki_devreden"], c190.net, c190.source,
+                     "ay sonu 190 bakiyesi", c190.evidence))
+    drafts, ok = [], []
+    for kod, ad, beyan, defter, src, nerede, ev in rows:
+        diff = defter - beyan
+        if abs(diff) > ctx.tolerance:
+            drafts.append(Draft(f"{ad} beyannameyle defterde farklı", K24.default_severity, kod, diff, f"beyan-{kod}",
+                                f"Beyannamede {kurus_str(beyan)} TL; defterde {nerede} {kurus_str(defter)} TL ({src}). "
+                                f"Fark {kurus_str(diff)} TL.",
+                                K24.exceptions,
+                                f"{kod} hesabının ay içindeki kayıtlarını beyannameyle satır satır karşılaştırın.", ev))
+        else:
+            ok.append(ad.lower())
+    if not rows:
+        return Result(K24, "calistirilamadi", "Çalıştırılamadı: beyannamede karşılaştırılacak tutar okunamadı.")
+    if drafts:
+        return Result(K24, "bulgu", f"{len(drafts)} tutar beyannameyle uyuşmuyor.", drafts)
+    return Result(K24, "gecti", "Beyanname ile defter uyumlu: " + ", ".join(ok) + ".")
+
+
+KDV_RULES = [(K21, k21), (K22, k22), (K22D, k22d), (K23, k23), (K24, k24)]

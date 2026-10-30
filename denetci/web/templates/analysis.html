@@ -35,12 +35,28 @@
       <label>Tutar (TL) <input name="tutar" inputmode="decimal" placeholder="ör. 125.430,50" value="{{ p.devreden_kdv|tl if p.devreden_kdv is not none else '' }}"></label>
       <button class="btn primary">Kaydet</button>
     </form>
-    {% if p.devreden_kdv is not none %}<p class="muted">Kayıtlı: {{ p.devreden_kdv|tl }} TL. Silmek için alanı boşaltıp kaydedin.</p>{% endif %}
-    <p class="muted">Beyanname dosyasından (PDF) otomatik okuma henüz yok.</p>
+    {% if p.devreden_kdv is not none %}<p class="muted">Kayıtlı: {{ p.devreden_kdv|tl }} TL (elle girildi; beyannameden okunan tutarın yerine kullanılır). Silmek için alanı boşaltıp kaydedin.</p>
+    {% elif kdv_onceki %}<p class="n-ok-text">{{ icon('check', 16) }} {{ beyan_donem('kdv', kdv_onceki.yil, kdv_onceki.ay) }} beyannamesinden okundu: <strong>{{ kdv_onceki.alanlar.get('sonraki_devreden')|tl }} TL</strong>. Elle bir şey girmenize gerek yok.</p>
+    {% else %}<p class="muted">Ya da önceki ayın KDV beyannamesini PDF olarak <a href="/mukellef/{{ c.id }}/belgeler{{ q }}">yükleyin</a>; tutar kendiliğinden okunur.</p>{% endif %}
     {% else %}<p class="muted">Önce bu mükellef için bir Luca dosyası yükleyin; dönem dosyadan belirlenir.</p>{% endif %}
   </section>
   {% endif %}
 </div>
+
+{% if a.key == 'kdv' and kdv_bu %}
+{% set b = kdv_bu.alanlar %}
+<section class="card">
+  <div class="block-head"><h2>{{ beyan_donem('kdv', kdv_bu.yil, kdv_bu.ay) }} KDV beyannamesi</h2><span class="muted">Onay {{ kdv_bu.onay or '—' }}{% if kdv_bu.duzeltme %} · düzeltme{% endif %}</span></div>
+  <table class="grid small"><tbody>
+    <tr><td>Hesaplanan KDV</td><td class="num">{{ b.get('hesaplanan')|tl }}</td></tr>
+    <tr><td>Bu döneme ait indirilecek KDV</td><td class="num">{{ ((b.get('indirimler_toplami') or 0) - (b.get('onceki_devreden') or 0))|tl }}</td></tr>
+    <tr><td>Önceki dönemden devreden KDV</td><td class="num">{{ b.get('onceki_devreden')|tl }}</td></tr>
+    <tr><td>Bu dönemde ödenmesi gereken KDV</td><td class="num">{{ b.get('odenecek')|tl }}</td></tr>
+    <tr class="total"><td>Sonraki döneme devreden KDV</td><td class="num">{{ b.get('sonraki_devreden')|tl }}</td></tr>
+  </tbody></table>
+  <p class="muted">Bu tutarlar K-24 kontrolünde defterdeki 391, 191 hareketleri ve ay sonu 190 bakiyesiyle karşılaştırılır.</p>
+</section>
+{% endif %}
 
 {% if not a.yakinda %}
 <section class="block">
