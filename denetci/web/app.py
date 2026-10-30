@@ -27,7 +27,7 @@ from ..finance import SINIFLAR, summarize
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
-from ..importer.ingest import ingest, peek
+from ..importer.ingest import find_or_create_period, ingest, peek
 from ..importer.beyanname import donem_adi as beyan_donem_adi
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
 from .. import beyannameler
@@ -163,6 +163,9 @@ def _shell(uid: int, c, p) -> dict:
         sh["periods"] = list(s.scalars(select(Period).where(Period.client_id == c.id)
                                        .order_by(Period.bitis.desc(), Period.baslangic)))
         pid = getattr(p, "id", None) or (sh["periods"][0].id if sh["periods"] else None)
+        dolu = set(s.scalars(select(ImportBatch.period_id).where(ImportBatch.client_id == c.id,
+                                                                 ImportBatch.status == "onaylandi")))
+        sh["donem_gruplari"] = donem_gruplari(sh["periods"], dolu, pid, _today())
         sh["p"] = next((pp for pp in sh["periods"] if pp.id == pid), None)
         if sh["p"]:
             run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == pid)
@@ -175,6 +178,41 @@ def _shell(uid: int, c, p) -> dict:
                                   if f.fingerprint not in closed)
         s.expunge_all()
         return sh
+
+
+def _today() -> date:
+    return date.today()
+
+
+def _ay_sonu(y: int, m: int) -> date:
+    return (date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1))
+
+
+def donem_gruplari(periods, dolu: set, pid, bugun: date) -> list:
+    """Dönem seçicisi: her yıl için aylık ve 3 aylık dönemler (bugüne kadar), sonra diğer dönemler.
+    Seçenek: {"bas", "bit", "ad", "id" (varsa), "dolu", "secili"}."""
+    by_range = {(pp.baslangic, pp.bitis): pp for pp in periods}
+    years = sorted({pp.bitis.year for pp in periods} | {bugun.year}, reverse=True)
+    groups, used = [], set()
+
+    def opt(bas, bit, ad):
+        pp = by_range.get((bas, bit))
+        if pp:
+            used.add(pp.id)
+        return {"bas": bas.isoformat(), "bit": bit.isoformat(), "ad": ad, "id": pp.id if pp else None,
+                "dolu": bool(pp and pp.id in dolu), "secili": bool(pp and pp.id == pid)}
+
+    for y in years:
+        aylar = [opt(date(y, m, 1), _ay_sonu(y, m), f"{AYLAR[m - 1]} {y}") for m in range(12, 0, -1) if date(y, m, 1) <= bugun]
+        ceyrek = [opt(date(y, 3 * q - 2, 1), _ay_sonu(y, 3 * q), f"{q}. dönem: {AYLAR[3 * q - 3]}–{AYLAR[3 * q - 1]} {y}")
+                  for q in range(4, 0, -1) if date(y, 3 * q - 2, 1) <= bugun]
+        groups.append((f"Aylık · {y}", aylar))
+        groups.append((f"3 aylık · {y}", ceyrek))
+    diger = [{"bas": pp.baslangic.isoformat(), "bit": pp.bitis.isoformat(), "ad": donem_adi(pp), "id": pp.id,
+              "dolu": pp.id in dolu, "secili": pp.id == pid} for pp in periods if pp.id not in used]
+    if diger:
+        groups.append(("Diğer dönemler", diger))
+    return [(g, o) for g, o in groups if o]
 
 
 def owned(s, model, obj_id: int, client_id: int):
@@ -507,6 +545,20 @@ def create_app() -> FastAPI:
         audit(s, user, "gecici_vergi_girdi", cid, f"period={pid}")
         request.session["flash"] = [{"filename": "Geçici vergi", "status": "aktarildi", "message": "Bilgiler kaydedildi, hesaplama güncellendi."}]
         return _redirect(s, back)
+
+    @app.get("/mukellef/{cid}/donem-sec")
+    def period_select(cid: int, bas: str, bit: str, geri: str = "", user=Depends(current_user), s=Depends(get_session)):
+        """Seçicideki henüz olmayan bir ay veya 3 aylık dönemi açar (boş dönem oluşturur) ve o sayfaya döner."""
+        c = s.get(Client, cid) or _404()
+        try:
+            b, e = date.fromisoformat(bas), date.fromisoformat(bit)
+        except ValueError:
+            raise HTTPException(400, "Tarihler geçersiz")
+        if e < b or (e - b).days > 400:
+            raise HTTPException(400, "Dönem geçersiz")
+        p = find_or_create_period(s, c, b, e)
+        base = geri if geri.startswith(f"/mukellef/{cid}") and "?" not in geri and "//" not in geri else f"/mukellef/{cid}"
+        return _redirect(s, f"{base}?donem={p.id}")
 
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),

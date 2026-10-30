@@ -215,3 +215,23 @@ def test_gecici_vergi_page_and_inputs(app_client):
     r = tc.post(f"/mukellef/{cid}/donem/{p.id}/gecici-vergi", data={"csrf": tok, "kkeg": "abc"}, follow_redirects=True)
     assert "Okunamayan tutar" in r.text
     assert "Geçici vergi ön hesaplaması" in tc.get(f"/mukellef/{cid}/rapor?donem={p.id}").text
+
+
+def test_period_selector_groups_months_and_quarters(app_client):
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    loc = tc.post("/demo", data={"csrf": tok}, follow_redirects=False).headers["location"]
+    page = tc.get(loc).text
+    assert '<optgroup label="Aylık · 2026">' in page and '<optgroup label="3 aylık · 2026">' in page
+    assert "3. dönem: Temmuz–Eylül 2026 ●" in page  # DEMO dosyaları bu dönemde
+    cid = int(loc.rsplit("/", 1)[1].split("?")[0])
+    r = tc.get(f"/mukellef/{cid}/donem-sec?bas=2026-08-01&bit=2026-08-31&geri=/mukellef/{cid}/kdv", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"].startswith(f"/mukellef/{cid}/kdv?donem=")
+    with db.SessionLocal() as s:
+        p = s.scalars(select(Period).where(Period.client_id == cid, Period.tur == "aylik")).one()
+        assert (p.baslangic.isoformat(), p.bitis.isoformat()) == ("2026-08-01", "2026-08-31")
+    # Aynı dönem ikinci kez oluşturulmaz; dışarıya yönlendirme yapılmaz.
+    r = tc.get(f"/mukellef/{cid}/donem-sec?bas=2026-08-01&bit=2026-08-31&geri=https://ornek.com", follow_redirects=False)
+    assert r.headers["location"] == f"/mukellef/{cid}?donem={p.id}"
+    assert "Ağustos 2026" in tc.get(r.headers["location"]).text

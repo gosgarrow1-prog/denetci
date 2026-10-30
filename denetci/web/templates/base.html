@@ -45,10 +45,14 @@
         <option value="/" {{ 'selected' if not sc }}>Tüm mükellefler</option>
         {% for cc in sh.clients %}<option value="/mukellef/{{ cc.id }}" {{ 'selected' if sc and cc.id == sc.id }}>{{ cc.unvan }}</option>{% endfor %}
       </select></label>
-    {% if sc and sh.periods %}
+    {% if sc and sh.donem_gruplari %}
+    {% set dpath = request.url.path if request.url.path.startswith('/mukellef/' ~ sc.id) and '/aktarim/' not in request.url.path and '/bulgu/' not in request.url.path and '/analiz/' not in request.url.path and '/donem/' not in request.url.path else '/mukellef/' ~ sc.id %}
     <label class="sel"><span>Dönem</span>
       <select onchange="location = this.value" aria-label="Dönem seç">
-        {% for pp in sh.periods %}<option value="{{ request.url.path }}?donem={{ pp.id }}" {{ 'selected' if sp and pp.id == sp.id }}>{{ pp|donem_adi }}</option>{% endfor %}
+        {% if not sp %}<option value="" selected>Dönem seçin</option>{% endif %}
+        {% for g, opts in sh.donem_gruplari %}<optgroup label="{{ g }}">
+          {% for o in opts %}<option value="{% if o.id %}{{ dpath }}?donem={{ o.id }}{% else %}/mukellef/{{ sc.id }}/donem-sec?bas={{ o.bas }}&amp;bit={{ o.bit }}&amp;geri={{ dpath|urlencode }}{% endif %}" {{ 'selected' if o.secili }}>{{ o.ad }}{{ ' ●' if o.dolu }}</option>{% endfor %}
+        </optgroup>{% endfor %}
       </select></label>
     {% endif %}
     {% if sc and sc.is_demo %}<span class="demo-tag">Örnek veri · sentetik</span>{% endif %}
