@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% if c is defined and c %}{{ c.unvan }} · {% endif %}Denetçi{% endblock %}</title>
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
 </head>
 <body>
 {% set sh = shell if shell is defined else {} %}

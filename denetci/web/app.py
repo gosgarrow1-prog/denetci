@@ -38,6 +38,8 @@ templates.env.globals["RELIABILITY_LABELS"] = RELIABILITY_LABELS
 templates.env.globals["DOC_LABELS"] = DOC_LABELS
 templates.env.globals["SINIFLAR"] = SINIFLAR
 templates.env.globals["tl_short"] = tl_short
+# Stil dosyası değişince tarayıcı eskisini önbellekten kullanmasın.
+templates.env.globals["static_v"] = str(int((HERE / "static" / "style.css").stat().st_mtime))
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
 
