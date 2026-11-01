@@ -41,7 +41,7 @@
     <thead><tr><th>Liste</th><th>Tarih aralığı</th><th class="num">Fatura</th><th>Dosya</th><th></th></tr></thead><tbody>
     {% for l in fatura_listeleri %}
     <tr><td>{% if l.yon == 'giden' %}<span class="decl-tag">Giden (satış)</span>{% elif l.yon == 'gelen' %}<span class="decl-tag gv">Gelen (alış)</span>{% else %}<span class="tag warn">Yönü seçilmedi</span>{% endif %}
-        <div class="muted">{{ 'defterden bulundu' if l.yon_kaynak == 'defter' else ('siz seçtiniz' if l.yon_kaynak == 'secildi' else '') }}</div></td>
+        <div class="muted">{{ 'defterden bulundu' if l.yon_kaynak == 'defter' else ('siz seçtiniz' if l.yon_kaynak == 'secildi' else ('fatura serilerinden tahmin' if l.yon_kaynak == 'seri' else '')) }}</div></td>
       <td>{{ l.baslangic.strftime('%d.%m.%Y') }} – {{ l.bitis.strftime('%d.%m.%Y') }}</td><td class="num">{{ l.adet }}</td>
       <td>{{ decl_files[l.source_file_id].orig_name }}</td>
       <td><form method="post" action="/mukellef/{{ c.id }}/fatura/{{ l.id }}" class="inline">

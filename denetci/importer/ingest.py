@@ -147,10 +147,20 @@ def ingest_fatura(session: Session, client: Client, filename: str, content: byte
     session.flush()
     lst.yon = yon_bul(session, client, rows)
     lst.yon_kaynak = "defter" if lst.yon else None
+    if not lst.yon:
+        # Fatura numarasının ilk 3 karakteri faturayı kesen firmanın serisidir: birden çok seri varsa liste başka
+        # firmalardan gelen (alış) faturalardır; tek seri ve birden çok fatura varsa büyük olasılıkla giden.
+        seriler = {r.no[:3].upper() for r in rows}
+        if len(seriler) > 1:
+            lst.yon, lst.yon_kaynak = "gelen", "seri"
+        elif len(rows) > 2:
+            lst.yon, lst.yon_kaynak = "giden", "seri"
     ad = {"giden": "giden (satış)", "gelen": "gelen (alış)"}.get(lst.yon)
+    if lst.yon_kaynak == "seri":
+        ad += " (fatura serilerine göre tahmin; yanlışsa Belgeler sayfasından değiştirin)"
     msg = (f"Fatura listesi okundu: {len(rows)} fatura, {lst.baslangic:%d.%m.%Y} – {lst.bitis:%d.%m.%Y}, KDV toplamı "
            f"{_tl(sum(r.kdv_toplam for r in rows))} TL")
-    msg += f"; defterle eşleşmeye göre {ad} faturalar." if ad else \
+    msg += (f"; defterle eşleşmeye göre {ad} faturalar." if lst.yon_kaynak == "defter" else f"; {ad} faturalar.") if ad else \
         "; gelen mi giden mi olduğu defterden anlaşılamadı, Belgeler sayfasında seçin."
     return Outcome(filename, "aktarildi", msg, fatura=lst)
 
