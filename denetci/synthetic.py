@@ -28,7 +28,7 @@ ACCOUNTS = {
     "391": "HESAPLANAN KDV", "391.01": "Hesaplanan KDV %20",
     "500": "SERMAYE", "500.01": "Ödenmiş Sermaye",
     "570": "GEÇMİŞ YILLAR KARLARI", "570.01": "Geçmiş Yıllar Karları",
-    "600": "YURTİÇİ SATIŞLAR", "600.01": "Yurtiçi Satışlar",
+    "600": "YURTİÇİ SATIŞLAR", "600.01": "Yurtiçi Satışlar %20",
     "621": "SATILAN TİCARİ MALLAR MALİYETİ", "621.01": "Satılan Ticari Mallar Maliyeti",
     "770": "GENEL YÖNETİM GİDERLERİ", "770.01": "Genel Giderler", "770.02": "Kira Giderleri",
 }

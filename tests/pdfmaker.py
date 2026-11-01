@@ -62,9 +62,16 @@ def _head(title, sub, vkn, unvan1, unvan2, vd, extra):
 
 def kdv_pdf(yil=2026, ay="Ağustos", vkn="1234567890", unvan=("ORNEK KAGIT AMBALAJ", "SAN TIC LTD STI"),
             hesaplanan=36_000_00, onceki_devreden=10_000_00, yurtici=30_000_00, sonraki_devreden=4_000_00,
-            odenecek=0) -> bytes:
+            odenecek=0, matrahlar=None, indirimler=None, istisna=None) -> bytes:
+    """matrahlar: [(ad, matrah, oran, vergi)]; indirimler: [(oran, bedel, kdv)]; istisna: tutar (301 Mal İhracatı)."""
     rows = _head("KATMA DEĞER VERGİSİ BEYANNAMESİ", "(Gerçek Usulde Vergilendirilen Mükellefler İçin)", vkn, unvan[0],
                  unvan[1], "MERKEZ", [[(200, "Aylık"), (350, "Yıl"), (400, str(yil))], [(350, "Ay"), (400, ay)]])
+    if matrahlar:
+        rows += [[(200, "MATRAH VE VERGİ BİLDİRİMİ")], [(180, "TEVKİFAT UYGULANMAYAN İŞLEMLER")],
+                 [(60, "İşlem Türü"), (260, "Matrah"), (360, "KDV Oranı"), (460, "Vergi")]]
+        for ad, mt, o, v in matrahlar:
+            rows += [[(60, ad)], [(260, _amt(mt)), (370, str(o)), (460, _amt(v))]]
+        rows += [[(200, "DİĞER İŞLEMLER")]]
     toplam = hesaplanan
     indirim = onceki_devreden + yurtici
     for label, v in [("Matrah Toplamı", hesaplanan * 5), ("Hesaplanan Katma Değer Vergisi", hesaplanan),
@@ -76,6 +83,15 @@ def kdv_pdf(yil=2026, ay="Ağustos", vkn="1234567890", unvan=("ORNEK KAGIT AMBAL
                      ("İade Edilmesi Gereken Katma Değer Vergisi", 0),
                      ("Sonraki Döneme Devreden Katma Değer Vergisi", sonraki_devreden)]:
         rows.append([(40, label), (420, _amt(v))])
+    if indirimler:
+        rows += [[(120, "BU DÖNEME AİT İNDİRİLECEK KDV TUTARININ ORANLARA GÖRE DAĞILIMI")],
+                 [(40, "İndirim Türü"), (200, "KDV Oranı"), (300, "Alınan Mal ve Hizmete Ait Bedel"), (480, "KDV Tutarı")]]
+        for o, bd, k in indirimler:
+            rows.append([(40, "Yurtiçi Alımlara İlişkin KDV"), (200, str(o)), (330, _amt(bd)), (480, _amt(k))])
+        rows.append([(150, "İHRAÇ KAYDIYLA TESLİMLERE AİT BİLDİRİM")])
+    if istisna is not None:
+        rows += [[(150, "TAM İSTİSNA KAPSAMINA GİREN İŞLEMLER")], [(40, "301 - Mal İhracatı"), (260, _amt(istisna)), (400, "0,00")],
+                 [(40, "İstisna Kapsamına Giren İşlemlere Ait Toplam Teslim ve Hizmet Tutarı"), (460, _amt(istisna))]]
     return make_pdf(rows)
 
 

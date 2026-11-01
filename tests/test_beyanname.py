@@ -227,3 +227,59 @@ def test_balances_from_ytd_journal():
     bal, src = ana_balances(ctx)
     assert bal["100"] == 700_00 and bal["600"] == -200_00 and src.startswith("yevmiye")
     assert kdv.opening(ctx, "100").net == 500_00 and kdv.closing(ctx, "100").net == 700_00
+
+
+def _nl(code, name, borc=0, alacak=0):
+    ln = _line(code, borc, alacak)
+    ln.hesap_adi = name
+    return ln
+
+
+def _oranli_pdf(**kw):
+    return kdv_pdf(hesaplanan=4_100_000, matrahlar=[("Yurtiçi Teslim ve Hizmetler", 20_000_000, 20, 4_000_000),
+                                                    ("Yurtiçi Teslim ve Hizmetler", 1_000_000, 10, 100_000)],
+                   indirimler=[(1, 1_000_000, 10_000), (20, 14_950_000, 2_990_000)], istisna=5_000_000, **kw)
+
+
+def test_parse_kdv_rate_tables():
+    a = parse(_oranli_pdf()).alanlar
+    assert [(x["tur"], x["oran"], x["matrah"], x["vergi"]) for x in a["hesaplanan_oranlar"]] == [
+        ("normal", 20, 20_000_000, 4_000_000), ("normal", 10, 1_000_000, 100_000)]
+    assert [(x["oran"], x["bedel"], x["kdv"]) for x in a["indirim_oranlar"]] == [(1, 1_000_000, 10_000), (20, 14_950_000, 2_990_000)]
+    assert a["istisnalar"][0]["kod"] == "301" and a["istisnalar"][0]["tutar"] == 5_000_000
+    assert a["yurtici_alim"] == 3_000_000  # özet satırı dağılım satırlarıyla karışmaz
+
+
+def test_rate_based_kdv_checks():
+    from denetci.checks import kdv_oran
+    assert kdv_oran.oran("391.01.020", "%20 LİK HESAPLANAN KDV") == 20
+    assert kdv_oran.oran("191.01.001", "İNDİRİLECEK KDV %1") == 1
+    assert kdv_oran.oran("391.01.010", "HESAPLANAN KDV") is None and kdv_oran.oran("391.01.002", "İHRAÇ KAYITLI KDV") is None
+    lines = [_nl("600.01.020", "%20 SATIŞLAR", alacak=20_000_000), _nl("391.01.020", "%20 HESAPLANAN KDV", alacak=4_000_000),
+             _nl("600.01.010", "%10 SATIŞLAR", alacak=1_000_000), _nl("391.01.010", "%10 HESAPLANAN KDV", alacak=200_000),
+             _nl("601.01", "YURTDIŞI SATIŞLAR", alacak=5_000_000),
+             _nl("191.01.001", "İNDİRİLECEK KDV %1", borc=10_000), _nl("191.01.020", "%20 İNDİRİLECEK KDV", borc=2_990_000)]
+    ctx = Context("THP_VUK", date(2026, 8, 1), date(2026, 8, 31), None, lines)
+    r = kdv_oran.k25(ctx)
+    # %10 satış 10.000 TL, KDV 1.000 TL olmalı; 2.000 TL kaydedilmiş.
+    assert r.status == "bulgu" and [(d.key, d.amount) for d in r.drafts] == [("oran-10", 100_000)]
+    assert kdv_oran.k26(ctx).status == "uygulanmadi"
+    ctx.kdv_beyan = parse(_oranli_pdf()).alanlar
+    r = kdv_oran.k25(ctx)
+    assert sorted(d.key for d in r.drafts) == ["beyan-oran-('normal', 10)", "oran-10"]
+    assert kdv_oran.k26(ctx).status == "gecti"
+    lines[3].alacak = 100_000
+    lines[6].borc = 2_000_000
+    assert kdv_oran.k25(ctx).status == "gecti"
+    r = kdv_oran.k26(ctx)
+    assert r.status == "bulgu" and r.drafts[0].amount == -990_000
+    d = kdv_oran.dokum(ctx)
+    assert [x.ad for x in d.hesaplanan] == ["%20", "%10", "İhracat / tam istisna"]
+    assert d.hesaplanan[2].matrah == d.hesaplanan[2].beyan_matrah == 5_000_000
+
+
+def test_rate_check_needs_rate_in_account_names():
+    from denetci.checks import kdv_oran
+    ctx = Context("THP_VUK", date(2026, 8, 1), date(2026, 8, 31), None,
+                  [_line("600.01", alacak=1_000_000), _line("391.01", alacak=200_000)])
+    assert kdv_oran.k25(ctx).status == "uygulanmadi"

@@ -75,7 +75,7 @@ class Beyanname:
     vergi_dairesi: str | None
     onay: str | None
     duzeltme: bool
-    alanlar: dict = field(default_factory=dict)  # kuruş
+    alanlar: dict = field(default_factory=dict)  # kuruş; KDV'de oran listeleri de (_oranli)
 
     @property
     def bitis(self) -> date:
@@ -125,6 +125,67 @@ def _alanlar(tutarlar: dict, tanim: dict) -> dict:
 
 
 _TR = str.maketrans("İıŞşĞğÜüÖöÇç", "IiSsGgUuOoCc")
+
+
+AMT = r"-?\d{1,3}(?:\.\d{3})*,\d{2}"
+_MATRAH_RE = re.compile(rf"^(.*?)\s*({AMT})\s+(\d{{1,2}})(?:\s+(\d+/\d+))?\s+({AMT})\s*$")
+_INDIRIM_RE = re.compile(rf"^\s*(.*?\S)\s+(\d{{1,2}})\s+({AMT})\s+({AMT})\s*$")
+_ISTISNA_RE = re.compile(rf"^\s*(\d{{3}})\s*-\s*(.+?)\s{{2,}}({AMT})(?:\s|$)")
+
+
+def _oranli(lines: list[str]) -> dict:
+    """Oranlara göre satırlar: matrah bildirimi, indirilecek KDV dağılımı ve tam istisna işlemleri.
+
+    hesaplanan_oranlar: [{tur, ad, matrah, oran, tevkifat, vergi}] (tur: normal, ihrac, tevkifatli)
+    indirim_oranlar: [{ad, oran, bedel, kdv}]; istisnalar: [{kod, ad, tutar}]
+    """
+    hes, ind, ist = [], [], []
+    bolum, etiket = None, []
+    for ln in lines:
+        f = fold(ln)
+        if "matrah ve vergi bildirimi" in f:
+            bolum, etiket = "matrah", []
+            continue
+        if bolum == "matrah" and ("diger islemler" in f or f.strip().startswith("matrah toplami")):
+            bolum = None
+        if "oranlara gore dagilimi" in f:
+            bolum = "indirim"
+            continue
+        if bolum == "indirim" and "ihrac kaydiyla" in f:
+            bolum = None
+        if "tam istisna kapsamina giren" in f:
+            bolum = "istisna"
+            continue
+        if bolum == "istisna" and f.strip().startswith("istisna kapsamina giren islemlere ait toplam"):
+            bolum = None
+        if bolum == "matrah":
+            m = _MATRAH_RE.match(ln)
+            if m:
+                ad = " ".join((" ".join(etiket) + " " + m.group(1)).split())
+                fa = fold(ad)
+                tur = "ihrac" if ("11/1-c" in fa or "ihrac" in fa) else ("tevkifatli" if m.group(4) else "normal")
+                hes.append({"tur": tur, "ad": ad or "Teslim ve hizmetler", "matrah": _kurus(m.group(2)),
+                            "oran": int(m.group(3)), "tevkifat": m.group(4), "vergi": _kurus(m.group(5))})
+                etiket = []
+            elif ln.strip() and not re.search(r"\d,\d{2}", ln) and "islem turu" not in f and "tevkifat" not in f:
+                etiket = (etiket + [ln.strip()])[-2:]
+        elif bolum == "indirim":
+            m = _INDIRIM_RE.match(ln)
+            if m and 0 < int(m.group(2)) <= 40:
+                ind.append({"ad": " ".join(m.group(1).split()), "oran": int(m.group(2)),
+                            "bedel": _kurus(m.group(3)), "kdv": _kurus(m.group(4))})
+        elif bolum == "istisna":
+            m = _ISTISNA_RE.match(ln)
+            if m:
+                ist.append({"kod": m.group(1), "ad": " ".join(m.group(2).split()), "tutar": _kurus(m.group(3))})
+    out = {}
+    if hes:
+        out["hesaplanan_oranlar"] = hes
+    if ind:
+        out["indirim_oranlar"] = ind
+    if ist:
+        out["istisnalar"] = ist
+    return out
 
 
 def _bul(lines, pattern):
@@ -187,6 +248,9 @@ def parse_lines(lines: list[str]) -> Beyanname:
     vd = _bul(lines, r"^\s*(.+?)\s+VD\b")
     onay = _bul(lines, r"Onay Zamani\s*:\s*([\d.]+\s*-\s*[\d:]+)")
     alanlar = _alanlar(_tutarlar(lines), KDV_ALANLAR if tur == "kdv" else GV_ALANLAR)
+    if tur == "kdv":
+        alanlar.update(_oranli(lines))
+        alanlar["_oran_surumu"] = 1
     need = ("sonraki_devreden", "toplam_kdv") if tur == "kdv" else ("matrah", "hesaplanan")
     if not all(k in alanlar for k in need):
         raise BeyannameHatasi("Beyannamedeki tutarlar okunamadı. Form biçimi değişmiş olabilir.")

@@ -40,7 +40,7 @@ class Analysis:
         return "eksik" if self.missing else "hazir"
 
 
-KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24")
+KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24", "K-25", "K-26")
 GECICI_RULES = ("K-27", "K-28", "K-29")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 

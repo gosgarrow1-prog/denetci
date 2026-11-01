@@ -15,6 +15,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .. import db
 from ..auth import LoginThrottle, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
+from ..config import RULESET_VERSION
 from ..checks.registry import ALL_RULES
 from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
@@ -24,6 +25,7 @@ from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, Findi
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
+from ..checks import kdv_oran
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
@@ -75,6 +77,7 @@ def tl0(kurus) -> str:
 templates.env.filters["donem_adi"] = donem_adi
 templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
+templates.env.filters["id_of"] = id
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
@@ -500,6 +503,12 @@ def create_app() -> FastAPI:
             v["files"] = {b.source_file_id: s.get(SourceFile, b.source_file_id) for b in batches}
             run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == p.id)
                            .order_by(AnalysisRun.id.desc()))
+            if run and run.ruleset_version != RULESET_VERSION and not p.kesin:
+                # Kontroller güncellendi (yeni kural eklendi): açık dönem bir kez yeniden analiz edilir.
+                try:
+                    run = run_analysis(s, c, p)
+                except NoData:
+                    pass
             findings = list(s.scalars(select(Finding).where(Finding.run_id == run.id))) if run else []
             findings.sort(key=lambda f: (SEVERITY_ORDER.get(f.severity, 9), -(abs(f.amount or 0))))
             cases = {cs.fingerprint: cs for cs in s.scalars(select(FindingCase).where(FindingCase.client_id == c.id))}
@@ -729,6 +738,14 @@ def create_app() -> FastAPI:
         if p and key == "kdv" and beyannameler.tek_ay(p.baslangic, p.bitis):
             v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
             v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
+        if p and key == "kdv":
+            ctx = build_context(s, c, p)[0]
+            if ctx is not None:
+                v["kdv_ozet"] = kdv_oran.ozet(ctx)
+                d = kdv_oran.dokum(ctx)
+                if d is not None:
+                    v["kdv_dokum"] = d
+                    v["kdv_durum"] = {id(r): kdv_oran.durum(ctx, r) for r in d.hesaplanan + d.indirilecek}
         return render(request, "analysis.html", active=keys[key], **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")

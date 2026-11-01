@@ -10,12 +10,37 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from .models import Declaration
+from .models import Declaration, SourceFile
+
+ORAN_SURUMU = 1  # KDV beyannamesinden oran listelerinin okunduğu sürüm
 
 
 def aktif(session, client_id: int) -> list[Declaration]:
-    return list(session.scalars(select(Declaration).where(Declaration.client_id == client_id, Declaration.durum == "aktif")
-                                .order_by(Declaration.yil.desc(), Declaration.ay.desc(), Declaration.tur)))
+    decls = list(session.scalars(select(Declaration).where(Declaration.client_id == client_id, Declaration.durum == "aktif")
+                                 .order_by(Declaration.yil.desc(), Declaration.ay.desc(), Declaration.tur)))
+    for d in decls:
+        if d.tur == "kdv" and (d.alanlar or {}).get("_oran_surumu") != ORAN_SURUMU:
+            _oranlari_oku(session, d)
+    return decls
+
+
+def _oranlari_oku(session, d: Declaration) -> None:
+    """Önceki sürümle yüklenmiş KDV beyannamesinin oran tablolarını saklanan PDF'ten yeniden okur."""
+    from pathlib import Path
+
+    from .importer import beyanname
+
+    a = dict(d.alanlar or {})
+    sf = session.get(SourceFile, d.source_file_id) if d.source_file_id else None
+    try:
+        if sf:
+            a.update({k: v for k, v in beyanname.parse(Path(sf.stored_path).read_bytes()).alanlar.items()
+                      if k.endswith("oranlar") or k == "istisnalar"})
+    except (OSError, beyanname.BeyannameHatasi):
+        pass
+    a["_oran_surumu"] = ORAN_SURUMU
+    d.alanlar = a
+    session.flush()
 
 
 def bul(decls, tur: str, yil: int, ay: int) -> Declaration | None:

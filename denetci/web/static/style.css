@@ -339,3 +339,13 @@ form.inline { display: inline; margin-left: 8px; }
 .bot-upload { margin-top: 14px; }
 .bot-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; } .bot-actions .bot-back { margin: 0 0 0 auto; }
 @media (max-width: 900px) { .bot-grid { grid-template-columns: 1fr; } .bot { flex-direction: column; } }
+
+/* ---- KDV oran tablosu ---- */
+.tile-hi.pay { border-color: #f3c98b; background: var(--amber-soft); }
+.tile-hi.carry { border-color: #a9d8bf; background: #ecf8f1; }
+.tbl-h { font-size: 14px; font-weight: 650; margin: 18px 0 8px; color: var(--ink-2); }
+.block-head + .tbl-h, .card > p + .tbl-h { margin-top: 4px; }
+table.rates td .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+table.rates th.num, table.rates td.num { text-align: right; white-space: nowrap; }
+.tag.ok { background: var(--green-soft); color: var(--green-ink); }
+.small-note { font-size: 12.5px; margin: 10px 0 0; }

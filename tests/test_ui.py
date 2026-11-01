@@ -337,3 +337,13 @@ def test_client_list_alphabetical(app_client):
     page = tc.get("/").text
     pos = [page.index(n) for n in ("Ahmet Ticaret", "Bora Ltd", "Çınar İnşaat", "Şeker Gıda")]
     assert pos == sorted(pos)
+
+
+def test_kdv_page_rate_table(app_client):
+    tc = app_client
+    login(tc)
+    loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    page = tc.get(loc + "/kdv").text
+    for text in ("KDV hesap özeti", "Ödenecek KDV", "Oranlara göre matrah ve KDV", "Hesaplanan KDV (satışlar)",
+                 "İndirilecek KDV (alışlar)", "Uyumlu", "305.000,00", "61.000,00", "K-25", "K-26"):
+        assert text in page, text
