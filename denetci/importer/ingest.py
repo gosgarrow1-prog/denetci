@@ -14,8 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..parsing import kurus_str
-from ..models import Client, Declaration, ImportBatch, Period
-from . import beyanname, luca
+from ..models import Client, Declaration, ImportBatch, InvoiceList, InvoiceRow, Period
+from . import beyanname, fatura, luca
 from .load import DuplicateFile, ImportError_, confirm, create_draft, store_file
 from .tables import read_tables
 
@@ -28,6 +28,7 @@ class Outcome:
     batch: ImportBatch | None = None
     period: Period | None = None
     declaration: Declaration | None = None
+    fatura: InvoiceList | None = None
 
 
 def peek(filename: str, content: bytes) -> dict:
@@ -107,6 +108,53 @@ def ingest_beyanname(session: Session, client: Client, filename: str, content: b
     return Outcome(filename, "aktarildi", msg + ".", declaration=d)
 
 
+def _fatura_listesi(filename: str, content: bytes):
+    if Path(filename).suffix.lower() != ".xlsx":
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dosya.xlsx"
+            path.write_bytes(content)
+            sn = fatura.sniff(read_tables(path))
+    except Exception:
+        return None
+    return fatura.parse(*sn) if sn else None
+
+
+def ingest_fatura(session: Session, client: Client, filename: str, content: bytes, rows) -> Outcome:
+    """e-Fatura listesini kaydeder. Yönü (gelen/giden) defterdeki kayıtlarla eşleşmeden bulunur."""
+    from ..efatura import yon_bul
+
+    if not rows:
+        return Outcome(filename, "hata", "Fatura listesinde okunabilir fatura satırı yok.")
+    try:
+        with session.begin_nested():
+            sf = store_file(session, client, filename, content)
+    except DuplicateFile as exc:
+        return Outcome(filename, "tekrar", f"Daha önce yüklenmiş ({exc.existing.orig_name}); tekrar alınmadı.")
+    except ImportError_ as exc:
+        return Outcome(filename, "hata", str(exc))
+    lst = InvoiceList(client_id=client.id, source_file_id=sf.id, baslangic=min(r.tarih for r in rows),
+                      bitis=max(r.tarih for r in rows), adet=len(rows))
+    session.add(lst)
+    session.flush()
+    for r in rows:
+        session.add(InvoiceRow(list_id=lst.id, client_id=client.id, satir=r.satir, tarih=r.tarih, no=r.no[:64],
+                               tip=(r.tip or "")[:32] or None, vkn=(r.vkn or "")[:16] or None, unvan=(r.unvan or "")[:256] or None,
+                               tevkifat=(r.tevkifat or "")[:16] or None, ozel_matrah=r.ozel_matrah,
+                               kdv={str(k): v for k, v in r.kdv.items()}, matrah={str(k): v for k, v in r.matrah.items()},
+                               toplam=r.toplam))
+    session.flush()
+    lst.yon = yon_bul(session, client, rows)
+    lst.yon_kaynak = "defter" if lst.yon else None
+    ad = {"giden": "giden (satış)", "gelen": "gelen (alış)"}.get(lst.yon)
+    msg = (f"Fatura listesi okundu: {len(rows)} fatura, {lst.baslangic:%d.%m.%Y} – {lst.bitis:%d.%m.%Y}, KDV toplamı "
+           f"{_tl(sum(r.kdv_toplam for r in rows))} TL")
+    msg += f"; defterle eşleşmeye göre {ad} faturalar." if ad else \
+        "; gelen mi giden mi olduğu defterden anlaşılamadı, Belgeler sayfasında seçin."
+    return Outcome(filename, "aktarildi", msg, fatura=lst)
+
+
 def _tl(kurus) -> str:
     return kurus_str(kurus or 0)
 
@@ -114,6 +162,8 @@ def _tl(kurus) -> str:
 def ingest(session: Session, client: Client, filename: str, content: bytes, period: Period | None) -> Outcome:
     if Path(filename).suffix.lower() == ".pdf":
         return ingest_beyanname(session, client, filename, content)
+    if (fl := _fatura_listesi(filename, content)) is not None:
+        return ingest_fatura(session, client, filename, content, fl)
     rng = peek_range(filename, content)
     if rng:
         period = find_or_create_period(session, client, *rng)

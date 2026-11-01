@@ -40,7 +40,7 @@ class Analysis:
         return "eksik" if self.missing else "hazir"
 
 
-KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24", "K-25", "K-26")
+KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24", "K-25", "K-26", "K-30")
 GECICI_RULES = ("K-27", "K-28", "K-29")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
@@ -71,6 +71,9 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              "veya önceki ayın Luca dosyalarını yükleyin."),
         Need("Bu ayın KDV beyannamesi", ayin_beyani,
              "Beyan verildiyse PDF'ini yükleyin; beyandaki tutarlar defterle karşılaştırılır.", optional=True),
+        Need("e-Fatura / e-Arşiv listesi", bool(ctx and ctx.faturalar),
+             "GİB'den veya entegratörden gelen ve giden fatura listesini Excel olarak yükleyin; her fatura defterle eşleştirilir.",
+             optional=True),
         Need("Önceki aylar (oran karşılaştırması)", bool(ctx and ctx.previous),
              "Hesaplanan KDV / satış oranını önceki aylarla karşılaştırmak için.", optional=True),
     ]

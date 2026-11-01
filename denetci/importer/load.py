@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import IZINLI_UZANTILAR, MAX_YUKLEME_BAYT, data_dir
-from ..models import Client, Declaration, ImportBatch, JournalLine, OpeningBalance, Period, RawRow, SourceFile, TrialBalanceLine
+from ..models import Client, Declaration, ImportBatch, InvoiceList, JournalLine, OpeningBalance, Period, RawRow, SourceFile, TrialBalanceLine
 from ..parsing import ParseError, code_segments, detect_number_format, is_empty, parse_account_code, parse_amount, parse_date
 from . import luca
 from .tables import DOC_FIELDS, REQUIRED, Sheet, UnsupportedFile, classify_row, detect, read_tables
@@ -47,6 +47,8 @@ def store_file(session: Session, client: Client, filename: str, content: bytes, 
                                                           ImportBatch.status != "iptal"))
         active = active or session.scalar(select(Declaration).where(Declaration.source_file_id == existing.id,
                                                                     Declaration.durum == "aktif"))
+        active = active or session.scalar(select(InvoiceList).where(InvoiceList.source_file_id == existing.id,
+                                                                    InvoiceList.durum == "aktif"))
         if active:
             raise DuplicateFile(existing)
         return existing

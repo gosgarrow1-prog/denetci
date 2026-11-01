@@ -34,6 +34,25 @@
   {% else %}<p class="muted">Henüz beyanname yüklenmedi. GİB beyanname sisteminden indirdiğiniz KDV veya geçici vergi beyannamesi PDF'ini yukarıdaki alana bırakın.</p>{% endif %}
 </section>
 
+<section class="card" id="faturalar">
+  <div class="block-head"><h2>e-Fatura / e-Arşiv listeleri</h2><span class="muted">Fatura fatura defterle eşleştirilir</span></div>
+  {% if fatura_listeleri %}
+  <div class="scroll"><table class="grid">
+    <thead><tr><th>Liste</th><th>Tarih aralığı</th><th class="num">Fatura</th><th>Dosya</th><th></th></tr></thead><tbody>
+    {% for l in fatura_listeleri %}
+    <tr><td>{% if l.yon == 'giden' %}<span class="decl-tag">Giden (satış)</span>{% elif l.yon == 'gelen' %}<span class="decl-tag gv">Gelen (alış)</span>{% else %}<span class="tag warn">Yönü seçilmedi</span>{% endif %}
+        <div class="muted">{{ 'defterden bulundu' if l.yon_kaynak == 'defter' else ('siz seçtiniz' if l.yon_kaynak == 'secildi' else '') }}</div></td>
+      <td>{{ l.baslangic.strftime('%d.%m.%Y') }} – {{ l.bitis.strftime('%d.%m.%Y') }}</td><td class="num">{{ l.adet }}</td>
+      <td>{{ decl_files[l.source_file_id].orig_name }}</td>
+      <td><form method="post" action="/mukellef/{{ c.id }}/fatura/{{ l.id }}" class="inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          {% if l.yon != 'giden' %}<button class="link" name="islem" value="giden">Giden yap</button>{% endif %}
+          {% if l.yon != 'gelen' %}<button class="link" name="islem" value="gelen">Gelen yap</button>{% endif %}
+          <button class="link" name="islem" value="geri-al" onclick="return confirm('Bu fatura listesi kaldırılsın mı?')">Geri al</button></form></td></tr>
+    {% endfor %}</tbody></table></div>
+  {% else %}<p class="muted">Henüz fatura listesi yüklenmedi. GİB'den veya entegratörden aldığınız gelen/giden fatura listesini (Excel) yukarıdaki alana bırakın.</p>{% endif %}
+</section>
+
 <section class="block">
   <div class="block-head"><h2>Analizlerin İhtiyaç Duyduğu Belgeler</h2></div>
   <div class="a-grid">{% for a in analyses %}{{ analysis_card(a, c, p) }}{% endfor %}</div>

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..config import ENGINE_VERSION, RULESET_VERSION
 from .. import beyannameler
 from ..importer.load import latest_batch
-from ..models import AnalysisRun, ImportBatch, Client, Finding, FindingCase, FindingEvidence, JournalLine, OpeningBalance, Period, TrialBalanceLine
+from ..models import AnalysisRun, ImportBatch, Client, Finding, FindingCase, FindingEvidence, InvoiceList, InvoiceRow, JournalLine, OpeningBalance, Period, TrialBalanceLine
 from .registry import ALL_RULES
 from .rules import Context
 
@@ -100,6 +100,12 @@ def build_context(session: Session, client: Client, period: Period):
             ctx.kdv_beyan = d.alanlar
     if d := beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month):
         ctx.gv_beyan = d.alanlar
+    for lst in session.scalars(select(InvoiceList).where(InvoiceList.client_id == client.id, InvoiceList.durum == "aktif",
+                                                         InvoiceList.yon.is_not(None), InvoiceList.baslangic <= period.bitis,
+                                                         InvoiceList.bitis >= period.baslangic)):
+        rows = session.scalars(select(InvoiceRow).where(InvoiceRow.list_id == lst.id, InvoiceRow.tarih >= period.baslangic,
+                                                        InvoiceRow.tarih <= period.bitis))
+        ctx.faturalar.setdefault(lst.yon, []).extend(rows)
     if mizan_b and mizan_b.summary.get("bakiye_turu") == "hareket":
         ctx.mizan_hareket = True
     for d in ("mizan", "yevmiye", "kebir", "muavin"):

@@ -21,12 +21,12 @@ from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
-from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, Period, RawRow,
+from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
 from ..checks import kdv_oran
-from .. import gv_adimlar
+from .. import efatura, gv_adimlar
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
@@ -79,6 +79,7 @@ templates.env.filters["donem_adi"] = donem_adi
 templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.filters["id_of"] = id
+templates.env.globals["efatura_neden"] = lambda e, yon: __import__("denetci.efatura", fromlist=["neden"]).neden(e, yon)
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
@@ -539,6 +540,9 @@ def create_app() -> FastAPI:
                 v["prev_ratios"] = {r.key: r for r in v["prev_fin"].oranlar}
         v["decls"] = beyannameler.aktif(s, c.id)
         v["decl_files"] = {d.source_file_id: s.get(SourceFile, d.source_file_id) for d in v["decls"]}
+        v["fatura_listeleri"] = list(s.scalars(select(InvoiceList).where(InvoiceList.client_id == c.id, InvoiceList.durum == "aktif")
+                                               .order_by(InvoiceList.baslangic.desc())))
+        v["decl_files"].update({x.source_file_id: s.get(SourceFile, x.source_file_id) for x in v["fatura_listeleri"]})
         v["analyses"] = build_analyses(p, v["latest"], ctx, v["fin"], prev_exists, v["decls"])
         v["ratios"] = {r.key: r for r in v["fin"].oranlar} if v["fin"] else {}
         return v
@@ -827,6 +831,9 @@ def create_app() -> FastAPI:
             if o.declaration:
                 audit(s, user, "beyanname_yukle", cid, f"declaration={o.declaration.id}")
                 decl_added = True
+            if getattr(o, "fatura", None):
+                audit(s, user, "fatura_listesi_yukle", cid, f"list={o.fatura.id}")
+                decl_added = True
             if o.status == "aktarildi" and o.period:
                 touched[o.period.id] = o.period
         for p in touched.values():
@@ -885,6 +892,8 @@ def create_app() -> FastAPI:
                     if o.declaration:
                         audit(s, user, "beyanname_yukle", target.id, f"declaration={o.declaration.id} firma_uyarisi_onaylandi")
                         decl_clients[target.id] = target
+                    if getattr(o, "fatura", None):
+                        decl_clients[target.id] = target
                     if o.status == "aktarildi" and o.period:
                         touched[(target.id, o.period.id)] = (target, o.period)
             else:
@@ -936,6 +945,29 @@ def create_app() -> FastAPI:
         request.session["flash"] = [{"filename": sf.orig_name, "status": "aktarildi",
                                      "message": "Yükleme geri alındı; kontroller kalan belgelerle yeniden çalıştı."}]
         return _redirect(s, back)
+
+    @app.post("/mukellef/{cid}/fatura/{lid}")
+    async def invoice_list_action(cid: int, lid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        """Fatura listesinin yönünü seçer (giden/gelen) veya listeyi kaldırır."""
+        c = s.get(Client, cid) or _404()
+        lst = owned(s, InvoiceList, lid, cid)
+        form = await form_checked(request)
+        islem = str(form.get("islem", ""))
+        if islem == "geri-al":
+            lst.durum = "iptal"
+            msg = "Fatura listesi kaldırıldı; açık dönemlerin kontrolleri yeniden çalıştı."
+        elif islem in ("giden", "gelen"):
+            lst.yon, lst.yon_kaynak = islem, "secildi"
+            msg = f"Liste {'giden (satış)' if islem == 'giden' else 'gelen (alış)'} faturalar olarak işaretlendi; eşleştirme yapıldı."
+        else:
+            _404()
+        s.flush()
+        _rerun_open(s, c)
+        audit(s, user, "fatura_listesi_" + islem, cid, f"list={lid}")
+        sf = s.get(SourceFile, lst.source_file_id)
+        request.session["flash"] = [{"filename": sf.orig_name, "status": "aktarildi", "message": msg}]
+        geri = str(form.get("geri", ""))
+        return _redirect(s, geri if geri.startswith(f"/mukellef/{cid}") else f"/mukellef/{cid}/belgeler#faturalar")
 
     @app.post("/mukellef/{cid}/beyanname/{did}/geri-al")
     async def declaration_undo(cid: int, did: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -1227,6 +1259,11 @@ def _kdv_view(s, c, p, v) -> None:
         v["kdv_dokum"] = d
         v["kdv_durum"] = {id(r): kdv_oran.durum(ctx, r) for r in d.hesaplanan + d.indirilecek}
         v["kdv_yorum"] = [(r, y) for r in d.hesaplanan + d.indirilecek if (y := kdv_oran.yorum(ctx, r))]
+    v["efatura"] = [(yon, sonuc) for yon in ("giden", "gelen") if (rows := ctx.faturalar.get(yon))
+                    and (sonuc := efatura.eslestir(ctx, rows, yon))]
+    v["efatura_belirsiz"] = list(s.scalars(select(InvoiceList).where(
+        InvoiceList.client_id == c.id, InvoiceList.durum == "aktif", InvoiceList.yon.is_(None),
+        InvoiceList.baslangic <= p.bitis, InvoiceList.bitis >= p.baslangic)))
     if beyannameler.tek_ay(p.baslangic, p.bitis):
         v.setdefault("kdv_bu", beyannameler.bul(v.get("decls") or beyannameler.aktif(s, c.id), "kdv", p.bitis.year, p.bitis.month))
 

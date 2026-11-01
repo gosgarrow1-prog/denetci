@@ -1,0 +1,46 @@
+{% from "_icons.html" import icon %}
+{% if efatura_belirsiz %}
+<div class="alert-row lv-dikkat"><span class="al-ic">{{ icon('info', 22) }}</span>
+  <span class="al-text">Yüklenen fatura listesinin gelen mi giden mi olduğu defterden anlaşılamadı. Seçin, eşleştirme hemen yapılsın:</span>
+  {% for l in efatura_belirsiz %}
+  <form method="post" action="/mukellef/{{ c.id }}/fatura/{{ l.id }}" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="geri" value="{{ request.url.path }}?donem={{ p.id }}">
+    <button class="btn sm" name="islem" value="giden">Giden (satış)</button>
+    <button class="btn sm" name="islem" value="gelen">Gelen (alış)</button></form>
+  {% endfor %}
+</div>
+{% endif %}
+{% for yon, sn in efatura or [] %}
+<section class="card" id="efatura-{{ yon }}">
+  <div class="block-head"><h2>e-Fatura eşleştirmesi · {{ 'Giden (satış)' if yon == 'giden' else 'Gelen (alış)' }}</h2>
+    <span class="muted">{{ sn.eslesmeler|length }} fatura · yevmiye ile fatura fatura</span></div>
+  <div class="tiles ef-tiles">
+    <div class="tile"><span class="tl">Eşleşti</span><span class="tv">{{ sn.say('eslesti') }}</span><span class="ts">numara veya tutarla</span></div>
+    <div class="tile {{ 'tile-hi pay' if sn.say('tutar') }}"><span class="tl">Tutarı farklı</span><span class="tv">{{ sn.say('tutar') }}</span><span class="ts">KDV veya matrah</span></div>
+    <div class="tile {{ 'tile-hi pay' if sn.say('yok') }}"><span class="tl">Defterde yok</span><span class="tv">{{ sn.say('yok') }}</span><span class="ts">listede var, yevmiyede bulunamadı</span></div>
+    <div class="tile"><span class="tl">Listede yok</span><span class="tv">{{ sn.defter_fazla|length }}</span><span class="ts">KDV'li fiş, listede karşılığı yok</span></div>
+  </div>
+  <div class="scroll"><table class="grid small rates">
+    <thead><tr><th>Fatura</th><th>Karşı taraf</th><th class="num">Fatura KDV</th><th class="num">Defter KDV</th><th class="num">Fatura matrahı</th><th class="num">Defter matrahı</th><th>Durum</th></tr></thead>
+    <tbody>
+    {% for e in sn.eslesmeler %}{% set f = e.fatura %}
+    <tr><td><strong>{{ f.no }}</strong><div class="sub">{{ f.tarih.strftime('%d.%m.%Y') }}{% if f.tip and f.tip != 'SATIS' %} · {{ f.tip }}{% endif %}{% if e.fis %} · fiş {{ e.fis.no }}{% endif %}</div></td>
+      <td>{{ f.unvan or '—' }}<div class="sub">{{ f.vkn or '' }}</div></td>
+      <td class="num">{{ f.kdv_toplam|tl }}<div class="sub">{% for o, k in f.kdv.items() %}%{{ o }} {% endfor %}</div></td>
+      <td class="num">{{ e.defter_kdv|tl if e.defter_kdv is not none else '—' }}</td>
+      <td class="num">{{ f.matrah_toplam|tl }}</td>
+      <td class="num">{{ e.defter_matrah|tl if e.defter_matrah is not none else '—' }}</td>
+      <td>{% if e.durum == 'eslesti' %}<span class="tag ok">{{ icon('check', 13) }}Eşleşti</span>{% if e.yontem == 'tutar' %}<div class="sub">tutarla</div>{% endif %}
+        {% elif e.durum == 'tutar' %}<span class="tag warn">Tutar farklı</span>{% else %}<span class="tag bad">Defterde yok</span>{% endif %}</td></tr>
+    {% if e.durum != 'eslesti' %}<tr class="ef-neden"><td colspan="7"><ul>{% for n in efatura_neden(e, yon) %}<li>{{ n }}</li>{% endfor %}</ul></td></tr>{% endif %}
+    {% endfor %}
+    </tbody></table></div>
+  {% if sn.defter_fazla %}
+  <h3 class="tbl-h">Defterde olup listede olmayan KDV'li fişler</h3>
+  <div class="scroll"><table class="grid small rates"><thead><tr><th>Fiş</th><th>Tarih</th><th>Açıklama</th><th class="num">KDV</th></tr></thead><tbody>
+    {% for fs in sn.defter_fazla[:30] %}<tr><td>{{ fs.no }}</td><td>{{ fs.tarih.strftime('%d.%m.%Y') }}</td><td>{{ (fs.lines|map(attribute='aciklama')|select|first or '')[:90] }}</td><td class="num">{{ fs.kdv(yon)|tl }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p class="muted small-note">Bunlar e-Arşiv, kâğıt fatura, ithalat veya iade kaydı olabilir. Satışsa e-Arşiv listesini de yükleyin; değilse belgesini kontrol edin.</p>
+  {% endif %}
+</section>
+{% endfor %}

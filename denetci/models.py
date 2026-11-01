@@ -254,3 +254,45 @@ class Declaration(Base):
     alanlar: Mapped[dict] = mapped_column(JSON, default=dict)
     durum: Mapped[str] = mapped_column(String(16), default="aktif")  # aktif, iptal
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class InvoiceList(Base):
+    """Yüklenen e-Fatura / e-Arşiv fatura listesi. yon: giden (satış), gelen (alış) veya None (henüz belli değil)."""
+
+    __tablename__ = "invoice_lists"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    source_file_id: Mapped[int] = mapped_column(ForeignKey("source_files.id"))
+    yon: Mapped[str | None] = mapped_column(String(8))
+    yon_kaynak: Mapped[str | None] = mapped_column(String(16))  # defter (eşleşmeden bulundu) veya secildi
+    baslangic: Mapped[date] = mapped_column(Date)
+    bitis: Mapped[date] = mapped_column(Date)
+    adet: Mapped[int] = mapped_column(Integer, default=0)
+    durum: Mapped[str] = mapped_column(String(16), default="aktif")  # aktif, iptal
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class InvoiceRow(Base):
+    __tablename__ = "invoice_rows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("invoice_lists.id"), index=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    satir: Mapped[int] = mapped_column(Integer, default=0)
+    tarih: Mapped[date] = mapped_column(Date, index=True)
+    no: Mapped[str] = mapped_column(String(64))
+    tip: Mapped[str | None] = mapped_column(String(32))
+    vkn: Mapped[str | None] = mapped_column(String(16))
+    unvan: Mapped[str | None] = mapped_column(String(256))
+    tevkifat: Mapped[str | None] = mapped_column(String(16))
+    ozel_matrah: Mapped[int] = mapped_column(Integer, default=0)
+    kdv: Mapped[dict] = mapped_column(JSON, default=dict)  # {"20": kuruş}
+    matrah: Mapped[dict] = mapped_column(JSON, default=dict)
+    toplam: Mapped[int] = mapped_column(Integer, default=0)
+
+    @property
+    def kdv_toplam(self) -> int:
+        return sum((self.kdv or {}).values())
+
+    @property
+    def matrah_toplam(self) -> int:
+        return sum((self.matrah or {}).values()) + (self.ozel_matrah or 0)
