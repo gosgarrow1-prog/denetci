@@ -10,6 +10,7 @@ istisna tablosu. Tutarlar kuruştur.
 """
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..parsing import fold, kurus_str
@@ -53,6 +54,7 @@ class Satir:
     hesaplar: list = field(default_factory=list)
     kanit: list = field(default_factory=list)
     karsilastir: bool = True
+    cikarim: list = field(default_factory=list)  # oranı adından değil kayıtlardan bulunan satış hesapları
     taraf: str = "hes"  # hes: hesaplanan (satış), ind: indirilecek (alış)
 
     @property
@@ -107,6 +109,46 @@ def _ad(t: str, o) -> str:
             "ithal": f"İthalat %{o}" if o else "İthalat", "sorumlu": "Sorumlu sıfatıyla (tevkifat)"}[t]
 
 
+def _belirsiz_satis(code: str, name) -> bool:
+    return code.startswith(("600", "602")) and tur(code, name) == "normal" and oran(code, name) is None
+
+
+def fis_oranlari(ctx: Context, m) -> dict:
+    """Adında oran olmayan satış hesapları için oranı aynı fişteki 391 kayıtlarından bulur: {kod: {oran: tutar}}.
+
+    Fişte tek oranlı 391 varsa satışın tamamı o orana yazılır; birden çok oran varsa satış tutarı × oran, o orandaki
+    KDV'ye eşitse eşleştirilir."""
+    lines = ctx.yevmiye if m.source == "yevmiye" else (ctx.kebir if m.source == "defteri kebir" else None)
+    if not lines:
+        return {}
+    fisler = defaultdict(list)
+    for j in lines:
+        if m.window[0] <= j.tarih <= m.window[1]:
+            fisler[(j.fis_no, j.tarih)].append(j)
+    out: dict = defaultdict(lambda: defaultdict(int))
+    for fl in fisler.values():
+        kdv = defaultdict(int)
+        for j in fl:
+            if j.hesap_kodu.startswith("391") and j.alacak and tur(j.hesap_kodu, j.hesap_adi) == "normal":
+                o = oran(j.hesap_kodu, j.hesap_adi)
+                if o:
+                    kdv[o] += j.alacak
+        satis = [j for j in fl if j.alacak and _belirsiz_satis(j.hesap_kodu, j.hesap_adi)]
+        if not kdv or not satis:
+            continue
+        if len(kdv) == 1:
+            o = next(iter(kdv))
+            for j in satis:
+                out[j.hesap_kodu][o] += j.alacak
+            continue
+        for j in satis:
+            for o, k in kdv.items():
+                if abs(round(j.alacak * o / 100) - k) <= max(ctx.tolerance, k // 1000):
+                    out[j.hesap_kodu][o] += j.alacak
+                    break
+    return out
+
+
 def dokum(ctx: Context) -> Dokum | None:
     m = movements(ctx)
     if m is None:
@@ -115,8 +157,24 @@ def dokum(ctx: Context) -> Dokum | None:
     hes: dict = {}
     ind: dict = {}
     oran_var = False
+    bulunan = fis_oranlari(ctx, m)
     for code in sorted(set(m.borc) | set(m.alacak)):
         name = m.names.get(code)
+        if code.startswith(("600", "602")) and code in bulunan and m.alacak.get(code):
+            kalan = m.alacak[code]
+            for o, tutar in sorted(bulunan[code].items()):
+                r = _satir(hes, ("normal", o), _ad("normal", o), o)
+                r.matrah += tutar
+                kalan -= tutar
+                r.hesaplar.append(code + " (oran kayıttan)")
+                r.cikarim.append(code)
+                r.kanit += m.rows[code][:10]
+            if kalan:
+                r = _satir(hes, ("belirsiz",), "Oranı belirsiz", None)
+                r.karsilastir = False
+                r.matrah += kalan
+                r.hesaplar.append(code)
+            continue
         if code.startswith(("600", "601", "602", "391")):
             t, o = tur(code, name), oran(code, name)
             if t == "normal" and o is None:
@@ -192,6 +250,20 @@ def dokum(ctx: Context) -> Dokum | None:
     for r in ind.values():
         if r.anahtar == ("sorumlu",):
             r.beyan_matrah = None
+
+    # Fişten bulunamadıysa (ör. yalnızca mizan): oranı belirsiz satışlar, satışı olmayan tek oranlı KDV satırının
+    # matrahı × oranıyla %2 içinde tutuyorsa o orana yazılır.
+    bel = hes.get(("belirsiz",))
+    if bel and bel.matrah:
+        aday = [r for r in hes.values() if r.anahtar[0] == "normal" and r.oran and r.kdv and not r.matrah]
+        if len(aday) == 1 and abs(bel.matrah * aday[0].oran / 100 - aday[0].kdv) <= aday[0].kdv * 0.02:
+            r = aday[0]
+            r.matrah, r.cikarim = bel.matrah, [h for h in bel.hesaplar]
+            r.hesaplar += [h + " (oran tutardan)" for h in bel.hesaplar]
+            del hes[("belirsiz",)]
+    for r in list(hes.values()):
+        if r.anahtar == ("belirsiz",) and not r.matrah and not r.kdv:
+            del hes[r.anahtar]
 
     sira = {"normal": 0, "ihrac": 1, "istisna": 2, "sorumlu": 3, "belirsiz": 4}
 

@@ -292,3 +292,14 @@ def test_rate_difference_comments():
     r = kdv_oran.dokum(ctx).hesaplanan[0]
     y = kdv_oran.yorum(ctx, r)
     assert y and y[0]["tutar"] == 100_000 and "391.01.010" in y[0]["yapilacak"]
+
+
+def test_rate_inferred_from_same_voucher():
+    from denetci.checks import kdv_oran
+    a, b = _nl("600.01.001", "YURTİÇİ SATIŞLAR", alacak=1_000_000), _nl("391.01.010", "%10 HESAPLANAN KDV", alacak=100_000)
+    c, d = _nl("600.01.001", "YURTİÇİ SATIŞLAR", alacak=500_000), _nl("391.01.020", "%20 HESAPLANAN KDV", alacak=100_000)
+    c.fis_no = d.fis_no = "2"
+    ctx = Context("THP_VUK", date(2026, 8, 1), date(2026, 8, 31), None, [a, b, c, d])
+    rows = {x.ad: x for x in kdv_oran.dokum(ctx).hesaplanan}
+    assert rows["%10"].matrah == 1_000_000 and rows["%20"].matrah == 500_000 and "Oranı belirsiz" not in rows
+    assert kdv_oran.k25(ctx).status == "gecti"

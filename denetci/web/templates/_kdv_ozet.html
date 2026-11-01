@@ -42,6 +42,7 @@
     <tr class="total"><td>Toplam</td><td class="num">{{ t.matrah|tl }}</td><td class="num">{{ t.beklenen|tl }}</td><td class="num">{{ t.hes|tl }}</td>
       {% if d.beyan %}<td></td><td class="num">{{ (kdv_bu.alanlar.get('hesaplanan') if kdv_bu else none)|tl }}</td>{% endif %}<td></td></tr>
     </tbody></table></div>
+  {% if d.hesaplanan|selectattr('cikarim')|list %}<p class="muted small-note">Adında oran yazmayan satış hesaplarının oranı, aynı fişteki 391 kaydından (ya da tutar oranından) bulundu; satırda "oran kayıttan" diye işaretli. Luca'da alt hesap adına oranı yazarsanız bu tahmine gerek kalmaz.</p>{% endif %}
   {% if d.diger_hesaplanan %}<p class="muted small-note">Beyannamede orana bağlı olmayan {{ d.diger_hesaplanan|tl }} TL hesaplanan KDV var (kur farkı, gider yansıtması gibi "diğer işlemler").</p>{% endif %}
 
   <h3 class="tbl-h">İndirilecek KDV (alışlar)</h3>
