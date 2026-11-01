@@ -12,7 +12,7 @@
 {% endif %}
 {% for yon, sn in efatura or [] %}
 <section class="card" id="efatura-{{ yon }}">
-  <div class="block-head"><h2>e-Fatura eşleştirmesi · {{ 'Giden (satış)' if yon == 'giden' else 'Gelen (alış)' }}</h2>
+  <div class="block-head"><h2>Fatura mutabakatı · {{ 'Giden (satış)' if yon == 'giden' else 'Gelen (alış)' }}</h2>
     <span class="muted">{{ sn.eslesmeler|length }} fatura · yevmiye ile fatura fatura</span></div>
   <div class="tiles ef-tiles">
     <div class="tile"><span class="tl">Eşleşti</span><span class="tv">{{ sn.say('eslesti') }}</span><span class="ts">numara veya tutarla</span></div>

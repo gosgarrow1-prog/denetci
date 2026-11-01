@@ -5,8 +5,8 @@ from ..parsing import kurus_str
 from .kdv import KDV_DAYANAK
 from .rules import D0, Context, Draft, Evidence, Result, Rule
 
-K30 = Rule("K-30", "1.0", "e-Fatura listesi ile defter",
-           "Yüklenen gelen/giden fatura listesindeki her fatura, yevmiyedeki kayıtla fatura numarasından (bulunamazsa KDV "
+K30 = Rule("K-30", "1.0", "Fatura listesi ile defter (fatura mutabakatı)",
+           "Yüklenen gelen/giden fatura listesindeki (e-Fatura, e-Arşiv) her fatura, yevmiyedeki kayıtla fatura numarasından (bulunamazsa KDV "
            "tutarı ve tarihten) eşleştirilir; deftere işlenmemiş veya KDV/matrahı farklı kaydedilmiş faturalar listelenir.",
            "K", ("THP_VUK",), (), KDV_DAYANAK, False,
            "İptal edilen veya reddedilen faturalar listede kalabilir; fatura sonraki aya kaydedilmiş olabilir; açıklamasında "

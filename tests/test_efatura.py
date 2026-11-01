@@ -60,7 +60,7 @@ def test_invoice_list_matching(app_client, tmp_path):
         assert lst.yon == "giden" and lst.yon_kaynak == "defter"
     pid = re.search(r"donem=(\d+)", r.url.query.decode() if isinstance(r.url.query, bytes) else str(r.url)).group(1)
     page = tc.get(f"/mukellef/{cid}/kdv?donem={pid}").text
-    for text in ("e-Fatura eşleştirmesi · Giden (satış)", "Eşleşti", "Tutar farklı", "Defterde yok", "K-30",
+    for text in ("Fatura mutabakatı · Giden (satış)", "Eşleşti", "Tutar farklı", "Defterde yok", "K-30",
                  "Defterde olup listede olmayan KDV'li fişler", "PERAKENDE SATIŞ"):
         assert text in page, text
     assert "Giden (satış): 3 faturadan 1 eşleşti" in page
@@ -68,3 +68,4 @@ def test_invoice_list_matching(app_client, tmp_path):
     tc.post(f"/mukellef/{cid}/fatura/{lst.id}", data={"csrf": tok, "islem": "geri-al"})
     with db.SessionLocal() as s:
         assert s.get(InvoiceList, lst.id).durum == "iptal"
+    assert tc.get(f"/mukellef/{cid}/fatura-mutabakati?donem={pid}").status_code == 200

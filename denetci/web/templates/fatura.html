@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, upload_zone, alert_row, rule_row %}
+{% block content %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('receipt', 24) }}</span>
+  <div class="ph-text"><h1>Fatura Mutabakatı</h1>
+    <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. e-Fatura, e-Arşiv ve diğer fatura listelerinin defterle fatura fatura karşılaştırılması.</p></div>
+</div>
+{{ flash_list(flash) }}
+{% if not p %}
+<section class="card"><p>Önce bu mükellef için Luca yevmiyesini yükleyin; dönem dosyadan belirlenir.</p></section>
+{% else %}
+<section class="card">
+  <div class="block-head"><h2>Fatura listesi yükle</h2><span class="muted">Gelen ve giden listeler ayrı dosya olabilir</span></div>
+  <p class="muted">GİB e-Fatura / e-Arşiv portalından veya entegratörünüzden aldığınız fatura listesini Excel olarak bırakın. Gelen mi giden mi olduğu defterden (bulunamazsa fatura serilerinden) anlaşılır. Eşleştirme için aynı dönemin yevmiyesi yüklü olmalı.</p>
+  {{ upload_zone(c, p, csrf) }}
+</section>
+{% include '_efatura.html' %}
+{% if not efatura and not efatura_belirsiz %}
+<div class="alert-row lv-bilgi"><span class="al-ic">{{ icon('info', 22) }}</span><span class="al-text">Bu dönem için henüz fatura listesi yok. Liste yüklenince eşleştirme burada görünür.</span></div>
+{% endif %}
+{% if k30_findings %}
+<section class="block"><div class="block-head"><h2>Bulgular</h2></div><div class="alerts">
+{% for f in k30_findings %}{{ alert_row({'level': 'dikkat', 'text': f.title, 'detail': f.rule_id, 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
+</div></section>{% endif %}
+{% if k30 %}<section class="card"><div class="chks">{{ rule_row(k30) }}</div></section>{% endif %}
+{% endif %}
+{% endblock %}

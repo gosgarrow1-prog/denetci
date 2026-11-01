@@ -748,6 +748,18 @@ def create_app() -> FastAPI:
         base = geri if geri.startswith(f"/mukellef/{cid}") and "?" not in geri and "//" not in geri else f"/mukellef/{cid}"
         return _redirect(s, f"{base}?donem={p.id}")
 
+    @app.get("/mukellef/{cid}/fatura-mutabakati", response_class=HTMLResponse)
+    def fatura_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        c = s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        if p:
+            _kdv_view(s, c, p, v)
+        a = next(x for x in v["analyses"] if x.key == "kdv")
+        v["k30"] = next((r for r in v["results"] if r["id"] == "K-30"), None)
+        v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
+        return render(request, "fatura.html", active="fatura", analysis=a, **v)
+
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
