@@ -108,7 +108,7 @@ def test_kdv_asks_for_devreden_and_uses_it(app_client, data_root):
                 files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=False)
     pid = int(r.headers["location"].split("donem=")[1])
     page = tc.get(f"/mukellef/{cid}/kdv?donem={pid}").text
-    assert "Önceki ayın devreden KDV" in page and "eksik" in page
+    assert "devreden KDV" in page and "eksik" in page
     # Tutarın yanlış girilmesi bulgu üretir, boşaltınca kontrol yine uygulanmaz.
     tc.post(f"/mukellef/{cid}/donem/{pid}/devreden-kdv", data={"csrf": tok, "tutar": "999.999,99"})
     with db.SessionLocal() as s:
@@ -362,3 +362,16 @@ def test_gecici_steps(app_client):
     cid = re.search(r"/mukellef/(\d+)", loc).group(1)
     tc.post(f"/mukellef/{cid}/donem/{pid}/gv-adim", data={"csrf": csrf(tc, "/"), "adim": "degerleme", "deger": "1"})
     assert "İşareti kaldır" in tc.get(f"/mukellef/{cid}/gecici-vergi?donem={pid}").text
+
+
+def test_eksik_aylar_adlariyla():
+    from datetime import date
+    from types import SimpleNamespace
+    from denetci import analyses
+    p = SimpleNamespace(baslangic=date(2026, 7, 1), bitis=date(2026, 9, 30), devreden_kdv=None, gv={})
+    d = SimpleNamespace(tur="kdv", yil=2026, ay=8)
+    k = analyses.build(p, {}, None, None, False, [d])[0]
+    n = {x.label: x for x in k.needs}
+    b = n["KDV beyannameleri (Temmuz–Eylül 2026)"]
+    assert not b.ok and "Eksik: Temmuz ve Eylül 2026" in b.hint
+    assert "Haziran 2026 devreden KDV'si" in n

@@ -45,6 +45,40 @@ GECICI_RULES = ("K-27", "K-28", "K-29")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
 
+AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+
+def _ay(y, m):
+    return f"{AYLAR[m - 1]} {y}"
+
+
+def _aylar(period):
+    """Dönemdeki (yıl, ay) çiftleri."""
+    if period is None:
+        return []
+    out, y, m = [], period.baslangic.year, period.baslangic.month
+    while (y, m) <= (period.bitis.year, period.bitis.month):
+        out.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return out
+
+
+def _aralik(aylar):
+    a, b = aylar[0], aylar[-1]
+    return f"{AYLAR[a[1] - 1]}–{_ay(*b)}" if a[0] == b[0] else f"{_ay(*a)}–{_ay(*b)}"
+
+
+def _liste(aylar):
+    """Eksik ayları yıla göre gruplayarak yazar: 'Temmuz ve Eylül 2026'."""
+    by = {}
+    for y, m in aylar:
+        by.setdefault(y, []).append(AYLAR[m - 1])
+    parca = []
+    for y, ad in by.items():
+        parca.append((", ".join(ad[:-1]) + " ve " + ad[-1] if len(ad) > 1 else ad[0]) + f" {y}")
+    return "; ".join(parca)
+
+
 def _has(batches, doc):
     return bool(batches and batches.get(doc))
 
@@ -58,19 +92,25 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
     # --- KDV ---
     prev_adjacent = bool(ctx and ctx.previous and ctx.previous[0].period_end == ctx.period_start - timedelta(days=1))
     aylik = period is not None and beyannameler.tek_ay(period.baslangic, period.bitis)
+    aylar = _aylar(period)
+    onceki = (period.baslangic - timedelta(days=1)) if period is not None else None
+    onceki_ad = _ay(onceki.year, onceki.month) if onceki else "Önceki ay"
     devreden_girildi = period is not None and (
-        period.devreden_kdv is not None or (aylik and beyannameler.onceki_ay_kdv(decls, period.baslangic) is not None))
-    ayin_beyani = aylik and beyannameler.bul(decls, "kdv", period.bitis.year, period.bitis.month) is not None
+        period.devreden_kdv is not None or beyannameler.onceki_ay_kdv(decls, period.baslangic) is not None)
+    eksik_beyan = [(y, m) for y, m in aylar if beyannameler.bul(decls, "kdv", y, m) is None]
+    beyan_etiket = (f"{_ay(*aylar[0])} KDV beyannamesi" if len(aylar) == 1 else
+                    f"KDV beyannameleri ({_aralik(aylar)})") if aylar else "Bu ayın KDV beyannamesi"
+    beyan_ipucu = ((f"Eksik: {_liste(eksik_beyan)}. " if eksik_beyan else "Tümü yüklü. ")
+                   + "Beyan verildiyse GİB'den PDF'ini yükleyin; beyandaki tutarlar defterle karşılaştırılır.")
     k = Analysis("kdv", "KDV Ön Kontrol", KDV_RULES, link="kdv")
     k.needs = [
         Need("Dönem mizanı, defteri kebir veya yılbaşından yevmiye", has_mizan or has_kebir or bool(ctx and ctx.ytd),
              "191, 391, 190 ve 360 hesaplarının bakiyeleri buradan okunur."),
         Need("Yevmiye defteri", has_yev, "Ay içindeki KDV hareketleri ve mahsup fişi için.", optional=True),
-        Need("Önceki ayın devreden KDV'si", devreden_girildi or prev_adjacent,
-             "Önceki ayın KDV beyannamesini (PDF) yükleyin, 'sonraki döneme devreden KDV' tutarını girin "
-             "veya önceki ayın Luca dosyalarını yükleyin."),
-        Need("Bu ayın KDV beyannamesi", ayin_beyani,
-             "Beyan verildiyse PDF'ini yükleyin; beyandaki tutarlar defterle karşılaştırılır.", optional=True),
+        Need(f"{onceki_ad} devreden KDV'si", devreden_girildi or prev_adjacent,
+             f"{onceki_ad} KDV beyannamesini (PDF) yükleyin, 'sonraki döneme devreden KDV' tutarını girin "
+             f"veya {onceki_ad} Luca dosyalarını yükleyin."),
+        Need(beyan_etiket, not eksik_beyan and bool(aylar), beyan_ipucu, optional=True),
         Need("e-Fatura / e-Arşiv listesi", bool(ctx and ctx.faturalar),
              "GİB'den veya entegratörden gelen ve giden fatura listesini Excel olarak yükleyin; her fatura defterle eşleştirilir.",
              optional=True),
@@ -109,10 +149,10 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              "Mart, Haziran veya Eylül sonuyla biten dönemin dosyalarını yükleyin."),
         Need("KKEG, istisna ve indirimler", bool(gv.get("kaydedildi")),
              "Geçici Vergi sayfasında girin; girilmezse sıfır kabul edilir.", optional=True),
-        Need("Önceki dönemin geçici vergi beyannamesi", bool(gv.get("onceki_odenen")) or
+        Need(f"Önceki dönemin geçici vergi beyannamesi{_gv_onceki(period)}", bool(gv.get("onceki_odenen")) or
              (period is not None and (donem_no(period.bitis) == 1 or beyannameler.onceki_gv(decls, period.bitis) is not None)),
              "Mahsup için önceki dönemin beyannamesini (PDF) yükleyin veya hesaplanan vergiyi elle girin.", optional=True),
-        Need("Bu dönemin geçici vergi beyannamesi", period is not None and
+        Need(f"Bu dönemin geçici vergi beyannamesi{_gv_bu(period)}", period is not None and
              beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month) is not None,
              "Beyan verildiyse PDF'ini yükleyin; beyandaki kâr defterle karşılaştırılır.", optional=True),
     ]
@@ -127,3 +167,15 @@ def kdv_amounts(ctx: Context | None) -> dict:
     if mv is None:
         return {}
     return {"hesaplanan": mv.total(("391",), "alacak"), "indirilecek": mv.total(("191",), "borc")}
+
+
+def _gv_bu(period):
+    if period is None:
+        return ""
+    return f" (Ocak–{_ay(period.bitis.year, period.bitis.month)})"
+
+
+def _gv_onceki(period):
+    if period is None or period.bitis.month < 6:
+        return ""
+    return f" (Ocak–{_ay(period.bitis.year, period.bitis.month - 3)})"
