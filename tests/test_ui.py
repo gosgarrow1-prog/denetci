@@ -22,7 +22,7 @@ def test_demo_dashboard(app_client):
     r = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False)
     loc = r.headers["location"]
     page = tc.get(loc).text
-    for text in ("Gösterge Paneli", "Dönem özeti", "Dikkat Gerektirenler", "Analizler ve Gereken Belgeler", "KDV Ön Kontrol",
+    for text in ("Gösterge Paneli", "Dönem özeti", "Dikkat Gerektirenler", "KDV hesap özeti", "Oranlara göre matrah ve KDV", "Analizler ve Gereken Belgeler", "KDV Ön Kontrol",
                  "Kontroller", "Net satışlar", "ÖNEMLİ"):
         assert text in page, text
     assert "Fiş denkliği" in page or "denk değil" in page

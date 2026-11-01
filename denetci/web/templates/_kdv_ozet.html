@@ -1,0 +1,78 @@
+{% from "_icons.html" import icon %}
+{% if kdv_ozet %}{% set z = kdv_ozet %}{% set zb = z.beyan %}
+<section class="block kdv-ozet">
+  <div class="block-head"><h2>KDV hesap özeti</h2><span class="muted">{{ z.kaynak|capitalize }}, {{ z.pencere[0].strftime('%d.%m.%Y') }} – {{ z.pencere[1].strftime('%d.%m.%Y') }}</span></div>
+  <div class="tiles">
+    <div class="tile"><span class="tl">Hesaplanan KDV</span><span class="tv">₺ {{ z.hes|tl }}</span>
+      <span class="ts">391 alacak{% if zb and zb.hes is not none %} · beyanname {{ zb.hes|tl }}{% endif %}</span></div>
+    <div class="tile"><span class="tl">İndirilecek KDV (bu dönem)</span><span class="tv">₺ {{ z.ind|tl }}</span>
+      <span class="ts">191 borç{% if zb %} · beyanname {{ zb.ind|tl }}{% endif %}</span></div>
+    <div class="tile"><span class="tl">Önceki dönemden devreden</span><span class="tv">{% if z.dev is not none %}₺ {{ z.dev|tl }}{% else %}—{% endif %}</span>
+      <span class="ts">{% if z.dev_kaynak == 'beyanname' %}önceki ayın beyannamesinden{% elif z.dev_kaynak == 'girildi' %}elle girildi{% else %}girilmedi{% endif %}</span></div>
+    <div class="tile tile-hi {{ 'pay' if z.sonuc > 0 else 'carry' }}"><span class="tl">{{ 'Ödenecek KDV' if z.sonuc > 0 else 'Sonraki döneme devreden' }} (defterden)</span>
+      <span class="tv">₺ {{ (z.sonuc if z.sonuc > 0 else -z.sonuc)|tl }}</span>
+      <span class="ts">{% if zb %}beyanname: {% if (zb.odenecek or 0) > 0 %}ödenecek {{ zb.odenecek|tl }}{% else %}devreden {{ (zb.devreden or 0)|tl }}{% endif %}{% else %}hesaplanan − indirilecek − devreden{% endif %}</span></div>
+  </div>
+  {% if z.dev is none %}<p class="muted small-note">Devreden KDV girilmediği için sonuç devreden hariç hesaplandı.</p>{% endif %}
+</section>
+{% endif %}
+
+{% if kdv_dokum %}{% set d = kdv_dokum %}
+<section class="card" id="oranlar">
+  <div class="block-head"><h2>Oranlara göre matrah ve KDV</h2>
+    <span class="muted">{% if d.beyan %}defter ve beyanname{% else %}defterden · beyanname yüklenince yan yana karşılaştırılır{% endif %}</span></div>
+  {% if not d.oran_bulundu %}
+  <p class="muted">Hesap adlarında KDV oranı bulunamadı. Luca'da alt hesap adlarına oranı yazarsanız (ör. "600.01.020 %20 SATIŞLAR", "391.01.020 %20 HESAPLANAN KDV") bu tablo oran oran dolar.</p>
+  {% endif %}
+  <h3 class="tbl-h">Hesaplanan KDV (satışlar)</h3>
+  <div class="scroll"><table class="grid small rates">
+    <thead><tr><th>Oran</th><th class="num">Satış matrahı</th><th class="num">Matrah × oran</th><th class="num">Defterdeki KDV (391)</th>
+      {% if d.beyan %}<th class="num">Beyan matrahı</th><th class="num">Beyan KDV</th>{% endif %}<th>Durum</th></tr></thead>
+    <tbody>
+    {% for r in d.hesaplanan %}{% set st = kdv_durum[r|id_of] %}
+    <tr><td><strong>{{ r.ad }}</strong>{% if r.hesaplar %}<div class="sub">{{ r.hesaplar|join(', ') }}</div>{% endif %}</td>
+      <td class="num">{{ r.matrah|tl if r.matrah else '—' }}</td>
+      <td class="num">{{ r.beklenen|tl if r.beklenen is not none else '—' }}</td>
+      <td class="num">{{ r.kdv|tl if r.kdv else ('0,00' if r.anahtar[0] == 'istisna' else '—') }}</td>
+      {% if d.beyan %}<td class="num">{{ r.beyan_matrah|tl if r.beyan_matrah is not none else '—' }}</td>
+      <td class="num">{{ r.beyan_kdv|tl if r.beyan_kdv is not none else '—' }}</td>{% endif %}
+      <td>{% if st == 'ok' %}<span class="tag ok">{{ icon('check', 13) }}Uyumlu</span>{% elif st == 'fark' %}<span class="tag warn">Fark var</span>{% elif not r.karsilastir %}<span class="tag">Oran yok</span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>
+    {% endfor %}
+    {% set t = d.toplam %}
+    <tr class="total"><td>Toplam</td><td class="num">{{ t.matrah|tl }}</td><td class="num">{{ t.beklenen|tl }}</td><td class="num">{{ t.hes|tl }}</td>
+      {% if d.beyan %}<td></td><td class="num">{{ (kdv_bu.alanlar.get('hesaplanan') if kdv_bu else none)|tl }}</td>{% endif %}<td></td></tr>
+    </tbody></table></div>
+  {% if d.diger_hesaplanan %}<p class="muted small-note">Beyannamede orana bağlı olmayan {{ d.diger_hesaplanan|tl }} TL hesaplanan KDV var (kur farkı, gider yansıtması gibi "diğer işlemler").</p>{% endif %}
+
+  <h3 class="tbl-h">İndirilecek KDV (alışlar)</h3>
+  <div class="scroll"><table class="grid small rates">
+    <thead><tr><th>Oran</th><th class="num">Defterdeki KDV (191)</th><th class="num">KDV'den bulunan bedel</th>
+      {% if d.beyan %}<th class="num">Beyan bedeli</th><th class="num">Beyan KDV</th>{% endif %}<th>Durum</th></tr></thead>
+    <tbody>
+    {% for r in d.indirilecek %}{% set st = kdv_durum[r|id_of] %}
+    <tr><td><strong>{{ r.ad }}</strong>{% if r.hesaplar %}<div class="sub">{{ r.hesaplar|join(', ') }}</div>{% endif %}</td>
+      <td class="num">{{ r.kdv|tl if r.kdv else '—' }}</td>
+      <td class="num">{{ r.matrah|tl if r.oran and r.matrah else '—' }}</td>
+      {% if d.beyan %}<td class="num">{{ r.beyan_matrah|tl if r.beyan_matrah is not none else '—' }}</td>
+      <td class="num">{{ r.beyan_kdv|tl if r.beyan_kdv is not none else '—' }}</td>{% endif %}
+      <td>{% if st == 'ok' %}<span class="tag ok">{{ icon('check', 13) }}Uyumlu</span>{% elif st == 'fark' %}<span class="tag warn">Fark var</span>{% elif not r.karsilastir %}<span class="tag">Oran yok</span>{% else %}<span class="muted">—</span>{% endif %}</td></tr>
+    {% endfor %}
+    <tr class="total"><td>Toplam</td><td class="num">{{ d.toplam.ind|tl }}</td><td></td>{% if d.beyan %}<td></td><td></td>{% endif %}<td></td></tr>
+    </tbody></table></div>
+  {% if kdv_yorum %}
+  <h3 class="tbl-h">Farkların olası nedenleri</h3>
+  <div class="yorumlar">
+  {% for r, ys in kdv_yorum %}{% for y in ys %}
+    <div class="yorum">
+      <div class="yorum-h"><span class="tag warn">{{ r.ad }} · {{ 'satış' if r.taraf == 'hes' else 'alış' }}</span>
+        <strong>{{ y.baslik }}</strong><span class="muted">fark {{ y.tutar|tl }} TL</span></div>
+      <ul>{% for n in y.nedenler %}<li>{{ n }}</li>{% endfor %}</ul>
+      <p class="yapilacak">{{ icon('arrow', 14) }} <strong>Ne yapmalı:</strong> {{ y.yapilacak }}</p>
+    </div>
+  {% endfor %}{% endfor %}
+  </div>
+  {% endif %}
+  <p class="muted small-note">Oran, Luca'daki alt hesap adından okunur. Satış matrahı 600–602 alacak hareketidir; iadeler (610) ayrıca değerlendirilmelidir. Farklar K-25 ve K-26 kontrollerinde bulgu olarak listelenir.</p>
+</section>
+{% endif %}
+

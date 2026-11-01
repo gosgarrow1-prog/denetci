@@ -349,3 +349,10 @@ table.rates td .sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
 table.rates th.num, table.rates td.num { text-align: right; white-space: nowrap; }
 .tag.ok { background: var(--green-soft); color: var(--green-ink); }
 .small-note { font-size: 12.5px; margin: 10px 0 0; }
+.yorumlar { display: grid; gap: 10px; }
+.yorum { border: 1px solid #f3d9a8; background: #fffaf0; border-radius: 10px; padding: 12px 14px; }
+.yorum-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.yorum ul { margin: 8px 0 6px; padding-left: 20px; font-size: 13.5px; }
+.yorum li { margin: 3px 0; }
+.yapilacak { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.yapilacak svg { vertical-align: -2px; }

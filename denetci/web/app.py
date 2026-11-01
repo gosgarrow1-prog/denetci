@@ -580,6 +580,8 @@ def create_app() -> FastAPI:
             else:
                 av["secenekler"] = asistan_secenekler(g, _today())
         v["asistan"] = av
+        if p:
+            _kdv_view(s, c, p, v)
         return render(request, "client.html", active="panel", **v)
 
     @app.get("/mukellef/{cid}/belgeler", response_class=HTMLResponse)
@@ -739,13 +741,7 @@ def create_app() -> FastAPI:
             v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
             v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
         if p and key == "kdv":
-            ctx = build_context(s, c, p)[0]
-            if ctx is not None:
-                v["kdv_ozet"] = kdv_oran.ozet(ctx)
-                d = kdv_oran.dokum(ctx)
-                if d is not None:
-                    v["kdv_dokum"] = d
-                    v["kdv_durum"] = {id(r): kdv_oran.durum(ctx, r) for r in d.hesaplanan + d.indirilecek}
+            _kdv_view(s, c, p, v)
         return render(request, "analysis.html", active=keys[key], **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")
@@ -1198,6 +1194,21 @@ def _oneri(info: dict, ref: str, others):
         if by_vkn:
             return by_vkn
     return firma_en_iyi(ref, others)
+
+
+def _kdv_view(s, c, p, v) -> None:
+    """KDV hesap özeti ve oran tablosu (KDV sayfası ve gösterge paneli)."""
+    ctx = build_context(s, c, p)[0]
+    if ctx is None:
+        return
+    v["kdv_ozet"] = kdv_oran.ozet(ctx)
+    d = kdv_oran.dokum(ctx)
+    if d is not None:
+        v["kdv_dokum"] = d
+        v["kdv_durum"] = {id(r): kdv_oran.durum(ctx, r) for r in d.hesaplanan + d.indirilecek}
+        v["kdv_yorum"] = [(r, y) for r in d.hesaplanan + d.indirilecek if (y := kdv_oran.yorum(ctx, r))]
+    if beyannameler.tek_ay(p.baslangic, p.bitis):
+        v.setdefault("kdv_bu", beyannameler.bul(v.get("decls") or beyannameler.aktif(s, c.id), "kdv", p.bitis.year, p.bitis.month))
 
 
 def _rerun_open(s, c, skip=()):

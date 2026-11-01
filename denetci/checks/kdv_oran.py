@@ -334,3 +334,70 @@ def k26(ctx: Context) -> Result:
 
 
 ORAN_RULES = [(K25, k25), (K26, k26)]
+
+
+# ---- Fark yorumları -------------------------------------------------------------------
+
+def yorum(ctx: Context, r: Satir) -> list[dict]:
+    """Fark çıkan satır için olası nedenler ve yapılacaklar: [{baslik, tutar, nedenler, yapilacak}]."""
+    out = []
+    hes = ", ".join(r.hesaplar) or "ilgili alt hesaplar"
+    if r.taraf == "hes":
+        if r.fark is not None and abs(r.fark) > _tol(ctx, r.beklenen):
+            if r.fark > 0:
+                nedenler = ["Başka oranlı bir satışın KDV'si bu oranın 391 alt hesabına kaydedilmiş olabilir.",
+                            "600–602 dışındaki bir gelirin (sabit kıymet satışı, kur farkı, gider yansıtması, avans "
+                            "faturası) KDV'si bu hesapta olabilir; bu durumda fark normaldir.",
+                            "Satış iadesi veya iskontosu matrahtan düşülmüş ama KDV'si düşülmemiş olabilir.",
+                            "Satış tutarı yanlış oranlı satış alt hesabına kaydedilmiş olabilir."]
+            else:
+                nedenler = ["Bu orandaki satışların KDV'si başka oranlı bir 391 alt hesabına kaydedilmiş olabilir.",
+                            "İstisnalı, tevkifatlı veya KDV'siz bir satış bu oranın satış hesabına kaydedilmiş olabilir.",
+                            "Bir faturada KDV kaydı unutulmuş ya da KDV dahil tutar satış hesabına yazılmış olabilir."]
+            out.append({"baslik": f"Matrah × oran ile defterdeki KDV farklı", "tutar": r.fark, "nedenler": nedenler,
+                        "yapilacak": f"Luca'da {hes} muavinlerini aynı tarih aralığıyla açın; satış faturalarını KDV "
+                                     f"tutarına göre karşılaştırıp matrahın %{r.oran}'si tutmayan fişleri bulun."})
+        elif r.anahtar[0] == "normal" and r.oran and not r.matrah and r.kdv > ctx.tolerance:
+            out.append({"baslik": "KDV var, aynı oranlı satış yok", "tutar": r.kdv,
+                        "nedenler": ["Sabit kıymet satışı (679), kira veya diğer olağan gelirler 600 dışında kaydedilmiş olabilir.",
+                                     "Satış hesabının adında oran yazmıyor olabilir; bu durumda satış 'oranı belirsiz' satırındadır."],
+                        "yapilacak": f"{hes} hesabının karşı kayıtlarına bakın; gelir 600 dışındaysa fark normaldir."})
+        bf = r.beyan_fark if r.anahtar[0] != "istisna" else None
+        if bf is not None and abs(bf) > _tol(ctx, r.beyan_kdv):
+            if bf > 0:
+                nedenler = ["Beyanname verildikten sonra deftere satış faturası eklenmiş olabilir (düzeltme beyannamesi gerekebilir).",
+                            "Beyannamede bu tutar başka bir oran ya da 'diğer işlemler' satırında gösterilmiş olabilir.",
+                            "İptal edilen veya iade alınan bir fatura defterde ters kayıtla düzeltilmemiş olabilir."]
+            else:
+                nedenler = ["Beyannamedeki bir satış faturası deftere işlenmemiş ya da sonraki aya kaydedilmiş olabilir.",
+                            "Beyannamede tevkifatlı veya ihraç kayıtlı satış bu oran satırına eklenmiş olabilir.",
+                            "Fatura defterde yanlış oranlı alt hesaba kaydedilmiş olabilir; diğer oran satırlarında ters yönde fark var mı bakın."]
+            out.append({"baslik": "Beyannameyle defter farklı", "tutar": bf, "nedenler": nedenler,
+                        "yapilacak": "e-Fatura/e-Arşiv giden fatura listesini (GİB veya entegratör) bu ayın satış kayıtlarıyla "
+                                     "karşılaştırın; eksik veya fazla faturayı bulun."})
+        if r.anahtar[0] == "istisna" and r.beyan_matrah_fark is not None and abs(r.beyan_matrah_fark) > _tol(ctx, r.beyan_matrah):
+            out.append({"baslik": "İhracat tutarı beyannameyle farklı", "tutar": r.beyan_matrah_fark,
+                        "nedenler": ["İhracat faturası ile gümrük beyannamesinin kapanış tarihi farklı aylarda olabilir.",
+                                     "Fatura ve beyanname tarihlerindeki döviz kurları farklı olabilir (kur farkı).",
+                                     "Navlun, sigorta veya ihracat iadesi faturaları 601'e kaydedilmiş olabilir."],
+                        "yapilacak": "Ayın ihracat faturalarını gümrük beyannamesi (GÇB) tarih ve tutarlarıyla karşılaştırın."})
+    else:
+        bf = r.beyan_fark
+        if bf is not None and abs(bf) > _tol(ctx, r.beyan_kdv):
+            if r.anahtar == ("sorumlu",):
+                nedenler = ["Tevkifatlı alımlarda sorumlu sıfatıyla ödenen KDV (2 no.lu beyanname) ile 191'deki tutar farklı.",
+                            "Tevkifat oranı (ör. 5/10, 9/10) faturada ve kayıtta farklı uygulanmış olabilir."]
+            elif bf > 0:
+                nedenler = ["Beyannamede bu tutarın bir kısmı başka satırda gösterilmiş olabilir (ithalat, sorumlu sıfatıyla ödenen KDV).",
+                            "İndirimi kabul edilmeyen KDV (binek araç, KKEG) 191'de bırakılmış olabilir; KKEG'e alınmalı.",
+                            "Beyannameden sonra deftere alış faturası eklenmiş olabilir.",
+                            "Fatura başka oranlı alt hesaba kaydedilmiş olabilir; diğer oranlarda ters yönde fark var mı bakın."]
+            else:
+                nedenler = ["Beyanda indirilen bir alış faturası deftere işlenmemiş olabilir.",
+                            "Fatura başka oranlı 191 alt hesabına kaydedilmiş olabilir; diğer oranlarda ters yönde fark var mı bakın.",
+                            "KDV, 191 yerine gider veya stok hesabına (KDV dahil) yazılmış olabilir.",
+                            "Fatura sonraki ayda kaydedilmiş ama bu ayın beyanında indirilmiş olabilir."]
+            out.append({"baslik": "Beyannameyle defter farklı", "tutar": bf, "nedenler": nedenler,
+                        "yapilacak": f"Luca'da {hes} muavinini açıp gelen e-Fatura listesi ve indirilecek KDV listesiyle "
+                                     "(beyannameye eklenen liste) fatura fatura karşılaştırın."})
+    return out

@@ -283,3 +283,12 @@ def test_rate_check_needs_rate_in_account_names():
     ctx = Context("THP_VUK", date(2026, 8, 1), date(2026, 8, 31), None,
                   [_line("600.01", alacak=1_000_000), _line("391.01", alacak=200_000)])
     assert kdv_oran.k25(ctx).status == "uygulanmadi"
+
+
+def test_rate_difference_comments():
+    from denetci.checks import kdv_oran
+    lines = [_nl("600.01.010", "%10 SATIŞLAR", alacak=1_000_000), _nl("391.01.010", "%10 HESAPLANAN KDV", alacak=200_000)]
+    ctx = Context("THP_VUK", date(2026, 8, 1), date(2026, 8, 31), None, lines)
+    r = kdv_oran.dokum(ctx).hesaplanan[0]
+    y = kdv_oran.yorum(ctx, r)
+    assert y and y[0]["tutar"] == 100_000 and "391.01.010" in y[0]["yapilacak"]
