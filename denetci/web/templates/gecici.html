@@ -28,8 +28,36 @@
   <span class="al-text">Seçili dönem bir geçici vergi dönem sonu (Mart, Haziran, Eylül) değil. Hesaplama yine de yılbaşından {{ p.bitis.strftime('%d.%m.%Y') }} tarihine kadar bilgi amaçlı yapılır.</span></div>
 {% endif %}
 
+{% if gv_adimlar %}{% set tamam = gv_adimlar|selectattr('durum', 'equalto', 'tamam')|list|length %}
+<section class="card steps" id="adimlar">
+  <div class="block-head"><h2>Hazırlık aşamaları</h2><span class="muted">{{ tamam }} / {{ gv_adimlar|length }} tamam</span></div>
+  <div class="steps-bar"><span style="width: {{ (tamam * 100 / gv_adimlar|length)|round }}%"></span></div>
+  {% set sira = gv_adimlar|rejectattr('durum', 'equalto', 'tamam')|first %}
+  <ol class="step-list">
+  {% for st in gv_adimlar %}
+    <li class="step st-{{ st.durum }} {{ 'now' if sira and st.key == sira.key }}">
+      <span class="step-n">{% if st.durum == 'tamam' %}{{ icon('check', 16) }}{% elif st.durum == 'uyari' %}!{% else %}{{ loop.index }}{% endif %}</span>
+      <div class="step-b">
+        <div class="step-t">{{ st.baslik }}{% if sira and st.key == sira.key %}<span class="tag warn">Sıradaki adım</span>{% endif %}</div>
+        <p>{{ st.metin }}</p>
+        <div class="step-a">
+          {% if st.link %}<a class="btn sm" href="{{ st.link }}">{{ st.eylem }} {{ icon('arrow', 14) }}</a>{% endif %}
+          {% if st.elle and not p.kesin %}
+          <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gv-adim">
+            <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="adim" value="{{ st.key }}">
+            <input type="hidden" name="deger" value="{{ '0' if st.isaretli else '1' }}">
+            <button class="btn sm {{ '' if st.isaretli else 'primary' }}">{{ 'İşareti kaldır' if st.isaretli else 'Yapıldı olarak işaretle' }}</button>
+          </form>{% endif %}
+        </div>
+      </div>
+    </li>
+  {% endfor %}
+  </ol>
+</section>
+{% endif %}
+
 <div class="two">
-  <section class="card">
+  <section class="card" id="hesap">
     <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}{% if gv_src and gv_src.id != p.id %} ({{ gv_src|donem_adi }} dosyalarından){% endif %}</span>{% endif %}</div>
     {% if gv.ticari_kar is not none %}
     <table class="grid">
@@ -61,7 +89,7 @@
     {% if gv.notlar %}<ul class="notes">{% for n in gv.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
   </section>
 
-  <section class="card">
+  <section class="card" id="duzeltmeler">
     <div class="block-head"><h2>Düzeltmeler</h2><span class="muted">Tutarlar TL, yılbaşından kümülatif</span></div>
     {% set saved = p.gv or {} %}
     <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gecici-vergi" class="form-stack">
@@ -92,7 +120,7 @@
 </div>
 
 {% if gv.beyanname %}{% set b = gv.beyanname %}
-<section class="card">
+<section class="card" id="karsilastirma">
   <div class="block-head"><h2>Verilen beyanname ile karşılaştırma</h2><span class="muted">Bu dönemin yüklenen beyannamesi</span></div>
   <table class="grid small">
     <thead><tr><th></th><th class="num">Beyanname</th><th class="num">Defterden hesaplanan</th></tr></thead>
@@ -109,7 +137,7 @@
 </section>
 {% endif %}
 
-<section class="block">
+<section class="block" id="kontroller">
   <div class="block-head"><h2>Dönem sonu kontrolleri</h2><span class="muted">{{ a_findings|length }} açık bulgu</span></div>
   {% if a_findings %}
   <div class="alerts">

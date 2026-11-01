@@ -26,6 +26,7 @@ from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, Findi
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
 from ..checks import kdv_oran
+from .. import gv_adimlar
 from ..checks.engine import build_context
 from ..importer.clients import ClientRow, ListError, mark_existing, parse_client_list
 from ..importer.tables import UnsupportedFile
@@ -641,7 +642,26 @@ def create_app() -> FastAPI:
                  GV_DONEM=GV_DONEM_ADI, GV_MALIYET=GV_MALIYET, gv_src=src,
                  a_results=[r for r in results if r["id"] in a.rules],
                  a_findings=[f for f in findings if f.rule_id in a.rules])
+        if p and v["gv"] is not None:
+            v["gv_adimlar"] = gv_adimlar.adimlar(c, p, v["gv"], v["a_results"], v["a_findings"])
         return render(request, "gecici.html", active="gecici", **v)
+
+    @app.post("/mukellef/{cid}/donem/{pid}/gv-adim")
+    async def gv_adim(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        p = owned(s, Period, pid, cid)
+        form = await form_checked(request)
+        back = f"/mukellef/{cid}/gecici-vergi?donem={pid}"
+        if (r := _guard(request, p, cid, back)):
+            return r
+        key = str(form.get("adim", ""))
+        if key in gv_adimlar.ELLE:
+            gv = dict(p.gv or {})
+            ad = dict(gv.get("adimlar") or {})
+            ad[key] = form.get("deger") == "1"
+            gv["adimlar"] = ad
+            p.gv = gv
+            audit(s, user, "gv_adim", cid, f"period={pid} {key}={ad[key]}")
+        return _redirect(s, back + "#adimlar")
 
     @app.post("/mukellef/{cid}/donem/{pid}/gecici-vergi")
     async def gv_save(cid: int, pid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -651,7 +671,7 @@ def create_app() -> FastAPI:
         back = f"/mukellef/{cid}/gecici-vergi?donem={pid}"
         if (r := _guard(request, p, cid, back)):
             return r
-        gv, bad = {"kaydedildi": True}, []
+        gv, bad = {"kaydedildi": True, "adimlar": (p.gv or {}).get("adimlar") or {}}, []
         for key, label, _ in GV_ALANLAR:
             raw = str(form.get(key, "")).replace("₺", "").replace("TL", "").strip()
             try:

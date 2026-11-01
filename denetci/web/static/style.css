@@ -356,3 +356,23 @@ table.rates th.num, table.rates td.num { text-align: right; white-space: nowrap;
 .yorum li { margin: 3px 0; }
 .yapilacak { margin: 0; font-size: 13.5px; color: var(--ink-2); }
 .yapilacak svg { vertical-align: -2px; }
+
+/* ---- Geçici vergi hazırlık aşamaları ---- */
+.steps-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; margin: 4px 0 14px; }
+.steps-bar span { display: block; height: 100%; background: var(--green); border-radius: 999px; }
+.step-list { list-style: none; margin: 0; padding: 0; }
+.step { display: flex; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); position: relative; }
+.step:first-child { border-top: none; }
+.step-n { flex: none; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; background: var(--surface-2); color: var(--muted); border: 2px solid var(--line); }
+.st-tamam .step-n { background: var(--green-soft); color: var(--green-ink); border-color: var(--green-soft); }
+.st-uyari .step-n { background: var(--amber-soft); color: var(--amber-ink); border-color: #f3c98b; }
+.step.now .step-n { border-color: var(--navy); color: var(--navy); background: #e6ebf2; }
+.step-b { flex: 1; min-width: 0; }
+.step-t { font-weight: 650; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.step-b p { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-2); }
+.st-tamam .step-b p { color: var(--muted); }
+.step-a { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.step-a:empty { display: none; }
+.step-a form { margin: 0; }
+.step.now { background: linear-gradient(90deg, #f3f6fa, transparent); margin: 0 -12px; padding-left: 12px; padding-right: 12px; border-radius: 8px; }

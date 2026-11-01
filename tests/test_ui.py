@@ -347,3 +347,18 @@ def test_kdv_page_rate_table(app_client):
     for text in ("KDV hesap özeti", "Ödenecek KDV", "Oranlara göre matrah ve KDV", "Hesaplanan KDV (satışlar)",
                  "İndirilecek KDV (alışlar)", "Uyumlu", "305.000,00", "61.000,00", "K-25", "K-26"):
         assert text in page, text
+
+
+def test_gecici_steps(app_client):
+    tc = app_client
+    login(tc)
+    loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    r = tc.get(loc + "/gecici-vergi")
+    page = r.text
+    for text in ("Hazırlık aşamaları", "Yılbaşından mizan veya yevmiye", "Değerleme ve tahakkuklar", "Sıradaki adım",
+                 "Yapıldı olarak işaretle"):
+        assert text in page, text
+    pid = re.search(r'/donem/(\d+)/gv-adim', page).group(1)
+    cid = re.search(r"/mukellef/(\d+)", loc).group(1)
+    tc.post(f"/mukellef/{cid}/donem/{pid}/gv-adim", data={"csrf": csrf(tc, "/"), "adim": "degerleme", "deger": "1"})
+    assert "İşareti kaldır" in tc.get(f"/mukellef/{cid}/gecici-vergi?donem={pid}").text
