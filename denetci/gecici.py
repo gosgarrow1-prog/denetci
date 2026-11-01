@@ -44,11 +44,11 @@ def oran(tur: str, yil: int) -> float | None:
     return table.get(yil)
 
 
-def beyan_tarihi(end: date) -> date:
+def beyan_tarihi(end: date, gun: str = "beyan_gunu") -> date:
     m = end.month + GECICI_VERGI["beyan_ay_sonra"]
     y = end.year + (m - 1) // 12
     m = (m - 1) % 12 + 1
-    return date(y, m, GECICI_VERGI["beyan_gunu"])
+    return date(y, m, GECICI_VERGI[gun])
 
 
 @dataclass
@@ -68,6 +68,7 @@ class Hesap:
     pesin_193: int | None = None
     mahsup_kaynak: str | None = None  # "girildi" veya beyanname dönemi adı
     beyan: date | None = None
+    odeme: date | None = None
     beyanname: dict | None = None  # aynı dönemin yüklenmiş beyannamesi (alanlar)
     gecmis_zarar_kalan: int | None = None  # önceki beyannamedeki toplam geçmiş yıl zararı (bilgi)
     tur: str = "kurum"
@@ -183,6 +184,7 @@ def hesapla(ctx, period, client, decls=()) -> Hesap:
     h.tur = (period.gv or {}).get("tur") or mukellef_turu(client.sirket_turu, client.unvan)
     h.girdiler = {k: int((period.gv or {}).get(k) or 0) for k, _, _ in ALANLAR}
     h.beyan = beyan_tarihi(period.bitis) if h.donem_no else None
+    h.odeme = beyan_tarihi(period.bitis, "odeme_gunu") if h.donem_no else None
     if h.girdiler["onceki_odenen"]:
         h.mahsup_kaynak = "girildi"
     elif (og := beyannameler.onceki_gv(decls, period.bitis)):

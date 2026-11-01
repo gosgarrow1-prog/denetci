@@ -123,8 +123,8 @@ def build(fin, prev_fin=None, findings=(), gv=None, period=None) -> list[Oneri]:
                              "dönem sonu stok sayımına göre maliyet kaydının yapılması gerekir.", "Tahmini maliyet"))
         if gv.odenecek and gv.beyan:
             out.append(Oneri("bilgi", "Vergi", "Geçici vergi ödemesi için nakit ayırın",
-                             f"Tahmini ödenecek geçici vergi {kurus_str(gv.odenecek)} TL; son gün {gv.beyan:%d.%m.%Y} "
-                             "(parametre tablosuna göre).", "Geçici vergi ön hesaplaması"))
+                             f"Tahmini ödenecek geçici vergi {kurus_str(gv.odenecek)} TL; beyan son günü {gv.beyan:%d.%m.%Y}, "
+                             f"ödeme son günü {(gv.odeme or gv.beyan):%d.%m.%Y}.", "Geçici vergi ön hesaplaması"))
     if fin and fin.has_balance and k.get("net_satis") and k.get("devreden_kdv", 0) > k["net_satis"] * 0.1:
         out.append(Oneri("bilgi", "Vergi", "Devreden KDV birikmiş",
                          f"190 Devreden KDV {kurus_str(k['devreden_kdv'])} TL. İhracat, indirimli oranlı satış veya "
