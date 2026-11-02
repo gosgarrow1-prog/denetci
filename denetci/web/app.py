@@ -614,6 +614,19 @@ def create_app() -> FastAPI:
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], gv, p)
         return render(request, "finance.html", active="finansal", **v)
 
+    @app.get("/mukellef/{cid}/ceyrek", response_class=HTMLResponse)
+    def ceyrek_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        from .. import ceyrek
+        c = s.get(Client, cid) or _404()
+        periods, p = _period_of(s, cid, donem)
+        v = _view(s, c, p, request)
+        v["cy"] = ceyrek.analiz(s, c, p.bitis) if p else None
+        # Çeyrek dönemlerine geçiş bağlantıları
+        v["cy_donemler"] = [x for x in sorted(periods, key=lambda x: x.baslangic)
+                            if x.baslangic.day == 1 and x.baslangic.month in (1, 4, 7, 10)
+                            and (x.bitis.month - x.baslangic.month) == 2 and x.baslangic.year == x.bitis.year]
+        return render(request, "ceyrek.html", active="ceyrek", **v)
+
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
     def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()

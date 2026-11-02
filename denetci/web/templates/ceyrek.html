@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% from "_ui.html" import flash_list, alert_row %}
+{% macro pct(x) -%}{% if x is none %}—{% else %}%{{ ('%.1f'|format(x * 100)).replace('.', ',') }}{% endif %}{%- endmacro %}
+{% macro deg(a, b) -%}{% if b %}{% set d = ((a|abs) - (b|abs)) / (b|abs) %}<span class="{{ 'up' if a > b else 'down' }}" title="Yeşil: kâra olumlu etki">{{ '+' if d > 0 }}{{ ('%.0f'|format(d * 100)) }}%</span>{% else %}—{% endif %}{%- endmacro %}
+{% block content %}
+{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('panel', 24) }}</span>
+  <div class="ph-text"><h1>Çeyrek Analizi</h1>
+    <p>{{ c.unvan }}{% if cy %} · {{ cy.ad }}{% endif %}. Yalnızca seçilen 3 ayın kayıtları: ay ay gelir tablosu, önceki çeyrek ve geçen yılın aynı çeyreğiyle karşılaştırma, düzenli giderlerdeki boşluklar, bilanço hareketleri ve KDV. Geçici vergiden farklı olarak yılbaşından değil, yalnızca bu çeyreği gösterir.</p></div>
+</div>
+{{ flash_list(flash) }}
+
+{% if cy_donemler %}
+<div class="seg">{% for x in cy_donemler %}<a class="seg-i {{ 'on' if cy and x.baslangic == cy.bas }}" href="/mukellef/{{ c.id }}/ceyrek?donem={{ x.id }}">{{ x.baslangic.month // 3 + 1 }}. çeyrek {{ x.baslangic.year }}</a>{% endfor %}</div>
+{% endif %}
+
+{% if not cy %}
+<section class="card"><p>Bu çeyrek için yüklenmiş yevmiye yok. Çeyreğin aylarını kapsayan Luca yevmiyesini yükleyin (ör. Ocak–Eylül yevmiyesi tüm çeyrekleri kapsar).</p>
+  <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a></section>
+{% else %}
+{% set t = cy.toplam %}{% set o = cy.onceki %}{% set g = cy.gecen_yil %}
+
+<section class="block">
+  <div class="tiles">
+    <div class="tile"><span class="tl">Net satışlar</span><span class="tv">₺ {{ t.kal.net_satis|tl }}</span>
+      <span class="ts">önceki çeyrek {% if o.var %}{{ o.kal.net_satis|tl }} · {{ deg(t.kal.net_satis, o.kal.net_satis) }}{% else %}yok{% endif %}</span></div>
+    <div class="tile"><span class="tl">Brüt kâr oranı</span><span class="tv">{{ pct(t.oran('brut')) }}</span>
+      <span class="ts">önceki çeyrek {{ pct(o.oran('brut')) if o.var else 'yok' }}{% if g.var %} · geçen yıl {{ pct(g.oran('brut')) }}{% endif %}</span></div>
+    <div class="tile"><span class="tl">Faaliyet giderleri / satış</span><span class="tv">{{ pct(t.oran('faaliyet_gider')) }}</span>
+      <span class="ts">önceki çeyrek {{ pct(o.oran('faaliyet_gider')) if o.var else 'yok' }}</span></div>
+    <div class="tile tile-hi {{ 'carry' if t.kal.donem_kari >= 0 else 'pay' }}"><span class="tl">Çeyreğin kârı (vergi öncesi)</span><span class="tv">₺ {{ t.kal.donem_kari|tl }}</span>
+      <span class="ts">net kâr oranı {{ pct(t.oran('net')) }}{% if o.var %} · önceki çeyrek {{ o.kal.donem_kari|tl }}{% endif %}</span></div>
+  </div>
+</section>
+
+<section class="block">
+  <div class="block-head"><h2>Dikkat edilecekler</h2><span class="muted">Olası nedenler; kesin hata değildir</span></div>
+  <div class="alerts">
+  {% for u in cy.uyarilar %}{{ alert_row({'level': u.seviye, 'text': u.metin, 'detail': u.neden, 'amount': none}) }}{% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <div class="block-head"><h2>Gelir tablosu</h2><span class="muted">TL · her sütun yalnızca kendi aralığının kayıtları</span></div>
+  <div class="scroll"><table class="grid small qtable">
+    <thead><tr><th></th>
+      {% for k in cy.aylar %}<th class="num">{{ k.ad }}{% if not k.var %}<div><span class="tag warn">yüklenmedi</span></div>{% elif k.kal.net_satis > 0 and k.smm <= 0 %}<div><span class="tag warn">maliyet yok</span></div>{% endif %}</th>{% endfor %}
+      <th class="num col-hi">Çeyrek</th><th class="num">Önceki çeyrek<div class="muted">{{ o.ad }}</div></th><th class="num">Değişim</th>
+      <th class="num">Geçen yıl<div class="muted">{{ g.ad }}</div></th></tr></thead>
+    <tbody>
+    {% for i in range(t.satirlar|length) %}{% set ln = t.satirlar[i] %}
+      {% if ln.value or ln.kind != 'kalem' or (o.var and o.satirlar[i].value) %}
+      <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td>
+        {% for k in cy.aylar %}<td class="num {{ 'cell-warn' if k.var and k.kal.net_satis > 0 and k.smm <= 0 and ln.label == 'Satışların maliyeti' }}">{{ k.satirlar[i].value|tl if k.var else '—' }}</td>{% endfor %}
+        <td class="num col-hi">{{ ln.value|tl }}</td>
+        <td class="num muted">{{ o.satirlar[i].value|tl if o.var else '—' }}</td>
+        <td class="num">{{ deg(ln.value, o.satirlar[i].value) if o.var else '—' }}</td>
+        <td class="num muted">{{ g.satirlar[i].value|tl if g.var else '—' }}</td></tr>
+      {% if ln.label == 'Brüt satış kârı' %}
+      <tr class="muted-row"><td>Brüt kâr oranı</td>{% for k in cy.aylar %}<td class="num {{ 'cell-warn' if k.var and k.kal.net_satis > 0 and k.smm <= 0 }}">{{ pct(k.oran('brut')) if k.var else '—' }}</td>{% endfor %}
+        <td class="num col-hi">{{ pct(t.oran('brut')) }}</td><td class="num">{{ pct(o.oran('brut')) if o.var else '—' }}</td><td></td><td class="num">{{ pct(g.oran('brut')) if g.var else '—' }}</td></tr>
+      {% endif %}
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if not g.var %}<p class="muted">Geçen yılın aynı çeyreğinin yevmiyesi yüklenirse o sütun da dolar.</p>{% endif %}
+</section>
+
+<div class="two">
+  <section class="card">
+    <div class="block-head"><h2>Bilanço hareketleri</h2><span class="muted">{{ cy.bas.strftime('%d.%m.%Y') }} başı → {{ cy.bit.strftime('%d.%m.%Y') }} sonu</span></div>
+    {% if cy.bilanco %}
+    <table class="grid small">
+      <thead><tr><th></th><th class="num">Çeyrek başı</th><th class="num">Çeyrek sonu</th><th class="num">Değişim</th></tr></thead>
+      <tbody>{% for b in cy.bilanco %}
+        <tr><td>{{ b.ad }}</td><td class="num">{{ b.bas|tl }}</td><td class="num">{{ b.bit|tl }}</td><td class="num">{{ ('+' if b.degisim > 0 else '') ~ (b.degisim|tl) }}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    <p class="muted">{{ cy.bilanco_kaynak|capitalize }}. Borç ve alacaklar bakiye yönüne göre pozitif gösterilir.</p>
+    {% else %}
+    <p class="muted">Çeyrek başı ve sonu bakiyeleri için 1 Ocak'tan başlayan (açılış fişi dahil) yevmiye gerekir.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="block-head"><h2>KDV özeti</h2><span class="muted">Defterden, aylara göre</span></div>
+    <table class="grid small">
+      <thead><tr><th></th><th class="num">Hesaplanan (391)</th><th class="num">İndirilecek (191)</th><th class="num">Fark</th></tr></thead>
+      <tbody>{% for k in cy.aylar %}
+        <tr><td>{{ k.ad }}</td>{% if k.var %}<td class="num">{{ k.hes_kdv|tl }}</td><td class="num">{{ k.ind_kdv|tl }}</td><td class="num">{{ (k.hes_kdv - k.ind_kdv)|tl }}</td>{% else %}<td class="num" colspan="3">yüklenmedi</td>{% endif %}</tr>
+      {% endfor %}
+        <tr class="total"><td>Çeyrek</td><td class="num">{{ t.hes_kdv|tl }}</td><td class="num">{{ t.ind_kdv|tl }}</td><td class="num">{{ (t.hes_kdv - t.ind_kdv)|tl }}</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Fark, devreden KDV düşülmeden önceki tutardır. Ayrıntı ve beyanname karşılaştırması için <a href="/mukellef/{{ c.id }}/kdv{{ q }}">KDV Ön Kontrol</a>.</p>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

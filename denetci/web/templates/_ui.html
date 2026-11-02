@@ -44,7 +44,7 @@
   <span class="lv-pill">{{ {'onemli': 'ÖNEMLİ', 'dikkat': 'DİKKAT', 'bilgi': 'BİLGİ'}[al.level] }}</span>
   <span class="al-text">{{ al.text }}{% if al.amount is not none %} <span class="muted">· {{ al.amount|tl }} TL</span>{% endif %}
     {% if al.detail %}<span class="al-detail">{{ al.detail }}</span>{% endif %}</span>
-  <a class="al-act" href="{{ al.href }}">{{ al.action }} →</a>
+  {% if al.href %}<a class="al-act" href="{{ al.href }}">{{ al.action }} →</a>{% endif %}
 </div>
 {%- endmacro %}
 

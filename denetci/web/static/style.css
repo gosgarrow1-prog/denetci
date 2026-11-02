@@ -385,3 +385,10 @@ tr.ef-neden ul { margin: 0; padding: 4px 0 4px 18px; font-size: 12.5px; color: v
 .qtable th .tag { margin-top: 4px; display: inline-block; }
 .qtable td.cell-warn { background: var(--amber-soft); color: var(--amber-ink); font-weight: 600; }
 .qtable tr.muted-row td { color: var(--muted, #64748b); font-style: italic; }
+
+/* Çeyrek analizi */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+.seg-i { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: inherit; text-decoration: none; font-size: 13px; }
+.seg-i.on { background: var(--navy, #0f2747); color: #fff; border-color: transparent; }
+.qtable th.col-hi, .qtable td.col-hi { background: #eef3fb; font-weight: 600; }
+.qtable .up { color: var(--green-ink); } .qtable .down { color: var(--red); }
