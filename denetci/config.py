@@ -31,3 +31,15 @@ def data_dir() -> Path:
     path = Path(os.environ.get("DENETCI_VERI", Path.home() / "DenetciVeri"))
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def arsiv_dir() -> Path:
+    """Yüklenen belgelerin kopyalandığı, mükellef/yıl/ay düzenindeki arşiv klasörü."""
+    if os.environ.get("DENETCI_ARSIV"):
+        path = Path(os.environ["DENETCI_ARSIV"])
+    elif os.environ.get("DENETCI_VERI"):
+        path = data_dir() / "Belgeler"
+    else:
+        path = Path.home() / "Documents" / "Denetçi Belgeleri"
+    path.mkdir(parents=True, exist_ok=True)
+    return path

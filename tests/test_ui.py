@@ -375,3 +375,19 @@ def test_eksik_aylar_adlariyla():
     b = n["KDV beyannameleri (Temmuz–Eylül 2026)"]
     assert not b.ok and "Eksik: Temmuz ve Eylül 2026" in b.hint
     assert "Haziran 2026 devreden KDV'si" in n
+
+
+def test_yuklenen_dosya_arsive_kopyalanir(app_client, data_root, monkeypatch, tmp_path):
+    monkeypatch.setenv("DENETCI_ARSIV", str(tmp_path / "arsiv"))
+    tc = app_client
+    login(tc)
+    tok = csrf(tc, "/")
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": "DEMO ARŞİV A.Ş."}, follow_redirects=False)
+    cid = int(r.headers["location"].rsplit("/", 1)[1])
+    files = synthetic_luca.generate(data_root / "ar", mizan=True)
+    tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
+            files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=False)
+    kopyalar = list((tmp_path / "arsiv" / "DEMO ARŞİV A.Ş").rglob("*.xlsx"))
+    assert len(kopyalar) == len(files)
+    assert any(k.name.startswith("Yevmiye - ") for k in kopyalar)
+    assert "arsiv" in tc.get(f"/mukellef/{cid}/belgeler").text

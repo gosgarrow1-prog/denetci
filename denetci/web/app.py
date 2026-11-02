@@ -593,7 +593,8 @@ def create_app() -> FastAPI:
     def documents_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
-        return render(request, "documents.html", active="belgeler", **_view(s, c, p, request))
+        from ..config import arsiv_dir
+        return render(request, "documents.html", active="belgeler", arsiv_yolu=str(arsiv_dir()), **_view(s, c, p, request))
 
     @app.get("/mukellef/{cid}/finansal", response_class=HTMLResponse)
     def finance_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):

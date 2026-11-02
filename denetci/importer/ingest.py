@@ -170,6 +170,13 @@ def _tl(kurus) -> str:
 
 
 def ingest(session: Session, client: Client, filename: str, content: bytes, period: Period | None) -> Outcome:
+    o = _ingest(session, client, filename, content, period)
+    from .. import arsiv
+    arsiv.kaydet(client, o, content)
+    return o
+
+
+def _ingest(session: Session, client: Client, filename: str, content: bytes, period: Period | None) -> Outcome:
     if Path(filename).suffix.lower() == ".pdf":
         return ingest_beyanname(session, client, filename, content)
     if (fl := _fatura_listesi(filename, content)) is not None:
