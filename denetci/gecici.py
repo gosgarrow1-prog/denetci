@@ -74,6 +74,15 @@ class Hesap:
     tur: str = "kurum"
     notlar: list = field(default_factory=list)
     maliyet: "Maliyet | None" = None
+    ceyrekler: list = field(default_factory=list)  # Ceyrek listesi (dönem dönem gelir tablosu)
+    kkeg_defter: int = 0  # adında KKEG geçen hesaplardaki yılbaşından tutar
+    kkeg_kaynak: str | None = None  # "defter" ise KKEG defterden alındı
+    mahsup_tahmini: bool = False  # önceki dönem vergisi beyannameden değil defterden tahmin edildi
+    normal_vergi: int | None = None
+    asgari_matrah: int | None = None
+    asgari_vergi: int | None = None
+    asgari_uygulandi: bool = False
+    stok_defter: int | None = None  # 150-153, 157 bakiyeleri + yansıtılmamış üretim maliyetleri
 
     @property
     def tahmini_kar(self):
@@ -115,7 +124,7 @@ def _gv_beyan_orani(decls, yil: int):
     return None
 
 
-def maliyet_tahmini(ctx, period, decls, bal, kal) -> Maliyet:
+def maliyet_tahmini(ctx, period, decls, bal, kal, ceyrekler=()) -> Maliyet:
     """Dönem sonu satış maliyeti kaydı yapılmamışsa kâr için tahmini maliyet.
 
     - Brüt kâr oranı: hedef maliyet = net satış × (1 − oran); kâra eklenen = hedef − kayıtlı maliyet.
@@ -133,16 +142,23 @@ def maliyet_tahmini(ctx, period, decls, bal, kal) -> Maliyet:
     win_satis = mv.total(("600", "601", "602"), "alacak") - mv.total(("610", "611", "612"), "borc") if mv else 0
     win_smm = mv.total(("620", "621", "622", "623"), "borc") if mv else 0
     m.eksik = win_satis > 0 and win_smm == 0
+    son = ceyrekler[-1] if ceyrekler else None
+    if son is not None:
+        # Yılbaşından dönemde önceki aylarda maliyet kaydı olunca dönem geneli "kayıt var" görünür; asıl bakılacak
+        # yer son 3 aylık dönemdir.
+        win_satis, win_smm = son.net_satis, son.smm
+        m.eksik = son.maliyet_yok
     if m.yontem == "yok" or m.net_satis <= 0:
         return m
     if m.yontem == "stok":
         if gv.get("donem_sonu_stok") is None:
             m.aciklama = "Dönem sonu stok tutarı girilmedi; maliyet tahmini yapılmadı."
             return m
-        m.ek = (bal.get("153") or 0) - int(gv["donem_sonu_stok"])
-        m.kaynak = "153 bakiyesi − girilen dönem sonu stoku"
-        m.aciklama = (f"Tahmini ek satış maliyeti {kurus_str(m.ek)} TL: 153 Ticari Mallar bakiyesi "
-                      f"{kurus_str(bal.get('153') or 0)} TL − girilen dönem sonu stoku {kurus_str(int(gv['donem_sonu_stok']))} TL.")
+        defter = stok_defter(bal)
+        m.ek = defter - int(gv["donem_sonu_stok"])
+        m.kaynak = "defterdeki stoklar − girilen dönem sonu stoku"
+        m.aciklama = (f"Tahmini ek satış maliyeti {kurus_str(m.ek)} TL: defterdeki stoklar ve yansıtılmamış üretim maliyetleri "
+                      f"{kurus_str(defter)} TL − girilen dönem sonu stoku {kurus_str(int(gv['donem_sonu_stok']))} TL.")
         return m
     if m.yontem == "oran":
         if gv.get("brut_kar_orani") is None:
@@ -153,20 +169,102 @@ def maliyet_tahmini(ctx, period, decls, bal, kal) -> Maliyet:
         if not m.eksik:
             return m
         onceki_satis = m.net_satis - win_satis
-        if m.kayitli_smm > 0 and onceki_satis > 0:
-            m.oran, m.kaynak = 1 - m.kayitli_smm / onceki_satis, "bu yılın maliyeti kaydedilmiş önceki ayları"
+        onceki_smm = m.kayitli_smm - win_smm
+        if onceki_smm > 0 and onceki_satis > 0:
+            ad = f"{ceyrekler[0].ad.split('–')[0]}–{ceyrekler[-2].ad.split('–')[1]}" if len(ceyrekler) > 1 else "önceki aylar"
+            m.oran, m.kaynak = 1 - onceki_smm / onceki_satis, f"maliyeti kaydedilmiş önceki dönem ({ad})"
         elif (b := _gv_beyan_orani(decls, period.bitis.year)):
             m.oran, m.kaynak = b
         else:
             m.aciklama = ("Dönemde satış var ama satışların maliyeti kaydı yok, kâr olduğundan yüksek görünebilir. "
                           "Tahmin için Düzeltmeler bölümünde brüt kâr oranını veya dönem sonu stokunu girin.")
             return m
+    if m.yontem == "otomatik" and son is not None:
+        # Yalnızca maliyeti kaydedilmemiş son 3 ayın satışına oran uygulanır.
+        hedef = round(win_satis * (1 - m.oran))
+        m.ek = max(hedef - win_smm, 0)
+        m.aciklama = (f"{son.ad} döneminde {kurus_str(win_satis)} TL satış var ama satışların maliyeti kaydı yok. "
+                      f"Tahmini maliyet {kurus_str(m.ek)} TL: {kurus_str(win_satis)} TL × (1 − brüt kâr oranı "
+                      f"%{oran_str(m.oran)}). Oran kaynağı: {m.kaynak}. Kesin tutar için dönem sonu stok sayımını girin.")
+        return m
     hedef = round(m.net_satis * (1 - m.oran))
     m.ek = max(hedef - m.kayitli_smm, 0)
     m.aciklama = (f"Tahmini ek satış maliyeti {kurus_str(m.ek)} TL: net satış {kurus_str(m.net_satis)} TL × "
                   f"(1 − brüt kâr oranı %{oran_str(m.oran)}) = {kurus_str(hedef)} TL; kayıtlı maliyet "
                   f"{kurus_str(m.kayitli_smm)} TL. Oran kaynağı: {m.kaynak}.")
     return m
+
+
+def stok_defter(bal) -> int:
+    """Defterdeki stok bakiyeleri (150-153, 157) + 710-730'da kalmış (yansıtılmamış) üretim maliyetleri."""
+    uretim = sum(v for k, v in bal.items() if k in ("710", "711", "720", "721", "730", "731"))
+    return sum(bal.get(k) or 0 for k in STOK_HESAPLARI) + uretim
+
+
+CEYREK_ADI = {3: "Ocak–Mart", 6: "Nisan–Haziran", 9: "Temmuz–Eylül", 12: "Ekim–Aralık"}
+STOK_HESAPLARI = ("150", "151", "152", "153", "157")
+KKEG_RE = re.compile(r"\bkkeg\b|k\s*k\s*e\s*g|kanunen kabul edilmeyen")
+
+
+@dataclass
+class Ceyrek:
+    ad: str
+    bas: date
+    bit: date
+    satirlar: list  # gelir tablosu satırları
+    kal: dict
+
+    @property
+    def net_satis(self):
+        return self.kal["net_satis"]
+
+    @property
+    def smm(self):
+        return self.kal["net_satis"] - self.kal["brut_kar"]
+
+    @property
+    def brut_oran(self):
+        return self.kal["brut_kar"] / self.kal["net_satis"] if self.kal["net_satis"] > 0 else None
+
+    @property
+    def maliyet_yok(self):
+        return self.net_satis > 0 and self.smm <= 0
+
+
+def _hareketler(ctx):
+    """Tarihli kayıtlar: yılbaşından yevmiye, yoksa defteri kebir."""
+    return ctx.ytd or ctx.kebir or None
+
+
+def ceyrek_tablosu(ctx) -> list:
+    """Yılbaşından dönem sonuna her 3 aylık dönemin gelir tablosu (yalnızca o 3 ayın hareketleri)."""
+    lines = _hareketler(ctx)
+    if not lines:
+        return []
+    end, y = ctx.period_end, ctx.period_end.year
+    out = []
+    for m in (3, 6, 9, 12):
+        bas = date(y, m - 2, 1)
+        if bas > end:
+            break
+        bit = min(date(y, m, 30 if m in (6, 9) else 31), end)
+        net = {}
+        for j in lines:
+            if bas <= j.tarih <= bit and j.hesap_kodu[:1] in ("6", "7"):
+                net[j.hesap_kodu[:3]] = net.get(j.hesap_kodu[:3], 0) + j.alacak - j.borc
+        satirlar, kal, _ = income_statement(net)
+        ad = CEYREK_ADI[m] if bit.month == m else f"{CEYREK_ADI[m].split('–')[0]}–{bit:%d.%m}"
+        out.append(Ceyrek(ad, bas, bit, satirlar, kal))
+    return out
+
+
+def kkeg_defterden(ctx) -> int:
+    """Adında KKEG / kanunen kabul edilmeyen geçen hesaplara yılbaşından yapılan net borç kaydı."""
+    lines = _hareketler(ctx)
+    if not lines:
+        return 0
+    return max(sum(j.borc - j.alacak for j in lines
+                   if j.tarih <= ctx.period_end and KKEG_RE.search(fold(getattr(j, "hesap_adi", None) or ""))), 0)
 
 
 def ticari_kar(ctx):
@@ -205,8 +303,14 @@ def hesapla(ctx, period, client, decls=()) -> Hesap:
     h.ytd = True
     h.notlar += notes
     h.pesin_193 = bal.get("193")
+    h.stok_defter = stok_defter(bal)
+    h.ceyrekler = ceyrek_tablosu(ctx)
     g = h.girdiler
-    h.maliyet = maliyet_tahmini(ctx, period, decls, bal, kal)
+    saved = period.gv or {}
+    h.kkeg_defter = kkeg_defterden(ctx)
+    if saved.get("kkeg") is None and h.kkeg_defter:
+        g["kkeg"], h.kkeg_kaynak = h.kkeg_defter, "defter"
+    h.maliyet = maliyet_tahmini(ctx, period, decls, bal, kal, h.ceyrekler)
     if h.maliyet.aciklama:
         h.notlar.append(h.maliyet.aciklama)
     h.matrah = max(h.ticari_kar - h.maliyet.ek + g["kkeg"] - g["istisna"] - g["gecmis_zarar"] - g["indirim"], 0)
@@ -218,10 +322,38 @@ def hesapla(ctx, period, client, decls=()) -> Hesap:
     if h.oran is None:
         h.notlar.append(f"{period.bitis.year} yılı için oran parametre tablosunda yok; oranı elle girin.")
         return h
-    h.hesaplanan = round(h.matrah * h.oran)
+    h.normal_vergi = h.hesaplanan = round(h.matrah * h.oran)
+    asgari_oran = GECICI_VERGI.get("asgari_kv_orani", {}).get(period.bitis.year)
+    if h.tur == "kurum" and asgari_oran and saved.get("asgari") != "yok":
+        # İndirim ve istisnalar düşülmeden önceki kurum kazancı = ticari kâr + KKEG; geçmiş yıl zararı düşülmez.
+        h.asgari_matrah = max(h.ticari_kar - h.maliyet.ek + g["kkeg"] - int(saved.get("asgari_indirim") or 0), 0)
+        h.asgari_vergi = round(h.asgari_matrah * asgari_oran)
+        if h.asgari_vergi > h.normal_vergi:
+            h.hesaplanan, h.asgari_uygulandi = h.asgari_vergi, True
+            h.notlar.append(f"Asgari kurumlar vergisi uygulandı: kurum kazancı {kurus_str(h.asgari_matrah)} TL × %10 = "
+                            f"{kurus_str(h.asgari_vergi)} TL, normal hesaplanan {kurus_str(h.normal_vergi)} TL'den yüksek (KVK 32/C).")
+    if donem_no(period.bitis) and donem_no(period.bitis) > 1 and not h.mahsup_kaynak and h.ceyrekler:
+        _onceki_defterden(h, period)
     h.mahsup = g["onceki_odenen"]
     h.odenecek = max(h.hesaplanan - h.mahsup, 0)
-    if h.ticari_kar + g["kkeg"] < 0:
+    if h.tahmini_kar + g["kkeg"] < 0:
         h.notlar.append("Dönem zararla sonuçlanıyor; geçici vergi çıkmaz.")
-    h.notlar.append("Ön hesaplamadır, beyan değildir. Asgari kurumlar vergisi, yatırım indirimi ve özel durumlar dikkate alınmadı.")
+    h.notlar.append("Ön hesaplamadır, beyan değildir. Yatırım indirimi ve özel oranlar dikkate alınmadı.")
     return h
+
+
+def _onceki_defterden(h: Hesap, period):
+    """Önceki geçici vergi beyannamesi yoksa önceki dönemin vergisini defterden tahmin eder."""
+    onceki = h.ceyrekler[:-1]
+    if not onceki:
+        return
+    kar = sum(c.kal["donem_kari"] for c in onceki)
+    ad = f"Ocak–{CEYREK_ADI[onceki[-1].bit.month].split('–')[1]}"
+    h.mahsup_tahmini = True
+    if kar <= 0:
+        h.girdiler["onceki_odenen"] = 0
+        h.mahsup_kaynak = f"defterden: {ad} döneminde zarar ({kurus_str(kar)} TL), önceki dönemde vergi çıkmamış"
+    else:
+        h.girdiler["onceki_odenen"] = round(kar * h.oran)
+        h.mahsup_kaynak = (f"defterden tahmini: {ad} kârı {kurus_str(kar)} TL × oran. KKEG ve düzeltmeler bilinmediği için "
+                           "önceki beyannameyi yükleyip doğrulayın")

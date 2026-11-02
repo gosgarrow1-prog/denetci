@@ -19,6 +19,10 @@ GECICI_VERGI = {
                 "Banka/finans kurumları (%30), ihracat (5 puan indirim) ve 2027'den itibaren üretim kazancı (%12,5) için "
                 "farklı oranlar uygulanmaz; bu mükelleflerde oranı ayrıca kontrol edin."),
     "dogrulandi": True,
+    # Yurt içi asgari kurumlar vergisi (KVK 32/C): indirim ve istisnalar düşülmeden önceki kurum kazancının
+    # (ticari kâr + KKEG) %10'u; geçici vergi dönemlerinde de uygulanır (fıkra 4); ilk 3 hesap dönemi uygulanmaz (fıkra 5).
+    # Geçmiş yıl zararı bu matrahtan düşülmez. Vergino'dan 02.11.2026'da kontrol edildi.
+    "asgari_kv_orani": {2025: 0.10, 2026: 0.10},
 }
 
 KURUM_ISARETLERI = ("a.s", "as", "anonim", "ltd", "limited", "sti", "sirketi", "koop", "kooperatif")

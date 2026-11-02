@@ -198,7 +198,7 @@ def test_missing_cost_is_estimated():
     assert h.ticari_kar == 800_00 and h.maliyet.eksik
     # Önceki ayların brüt kâr oranı %30 -> hedef maliyet 1.050, kayıtlı 700, ek 350.
     assert h.maliyet.ek == 350_00 and h.tahmini_kar == 450_00 and h.matrah == 450_00
-    assert "önceki ayları" in h.maliyet.kaynak
+    assert "önceki dönem" in h.maliyet.kaynak
     h = _gv_case({"maliyet": "oran", "brut_kar_orani": 0.2})
     assert h.maliyet.ek == 500_00  # 1.500 × 0,8 − 700
     h = _gv_case({"maliyet": "stok", "donem_sonu_stok": 900_00})
@@ -303,3 +303,30 @@ def test_rate_inferred_from_same_voucher():
     rows = {x.ad: x for x in kdv_oran.dokum(ctx).hesaplanan}
     assert rows["%10"].matrah == 1_000_000 and rows["%20"].matrah == 500_000 and "Oranı belirsiz" not in rows
     assert kdv_oran.k25(ctx).status == "gecti"
+
+
+def test_son_ceyrekte_maliyet_yoksa_tahmin_edilir():
+    from denetci.gecici import hesapla
+    kebir = [_line("600", alacak=1000_00, d=date(2026, 2, 1)), _line("621", borc=700_00, d=date(2026, 3, 31)),
+             _line("600", alacak=500_00, d=date(2026, 8, 1))]
+    ctx = Context("THP_VUK", date(2026, 1, 1), date(2026, 9, 30), None, None, kebir=kebir)
+    period = SimpleNamespace(bitis=date(2026, 9, 30), baslangic=date(2026, 1, 1), gv=None)
+    h = hesapla(ctx, period, SimpleNamespace(sirket_turu=None, unvan="Örnek Ltd. Şti."))
+    assert [c.maliyet_yok for c in h.ceyrekler] == [False, False, True]
+    assert h.maliyet.ek == 350_00  # 500 × (1 − %30)
+    # Önceki dönem (Ocak–Haziran) kârı 300 → defterden tahmini mahsup 75
+    assert h.mahsup_tahmini and h.mahsup == 75_00
+
+
+def test_asgari_kurumlar_vergisi():
+    from denetci.gecici import hesapla
+    kebir = [_line("600", alacak=1000_00, d=date(2026, 2, 1))]
+    ctx = Context("THP_VUK", date(2026, 1, 1), date(2026, 3, 31), None, None, kebir=kebir)
+    client = SimpleNamespace(sirket_turu=None, unvan="Örnek A.Ş.")
+    period = SimpleNamespace(bitis=date(2026, 3, 31), baslangic=date(2026, 1, 1),
+                             gv={"maliyet": "yok", "gecmis_zarar": 900_00})
+    h = hesapla(ctx, period, client)
+    assert h.matrah == 100_00 and h.normal_vergi == 25_00
+    assert h.asgari_vergi == 100_00 and h.asgari_uygulandi and h.hesaplanan == 100_00
+    period.gv["asgari"] = "yok"
+    assert hesapla(ctx, period, client).hesaplanan == 25_00

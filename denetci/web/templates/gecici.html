@@ -28,6 +28,131 @@
   <span class="al-text">Seçili dönem bir geçici vergi dönem sonu (Mart, Haziran, Eylül) değil. Hesaplama yine de yılbaşından {{ p.bitis.strftime('%d.%m.%Y') }} tarihine kadar bilgi amaçlı yapılır.</span></div>
 {% endif %}
 
+
+{% if gv.ticari_kar is not none %}
+<section class="block">
+  <div class="tiles">
+    <div class="tile"><span class="tl">Defterdeki kâr (yılbaşından)</span><span class="tv">₺ {{ gv.ticari_kar|tl }}</span>
+      <span class="ts">{{ gv.kaynak }}</span></div>
+    {% if gv.maliyet and gv.maliyet.ek %}
+    <div class="tile"><span class="tl">Maliyet düzeltmesiyle kâr</span><span class="tv">₺ {{ gv.tahmini_kar|tl }}</span>
+      <span class="ts">kaydı yapılmamış maliyet −{{ gv.maliyet.ek|tl }}</span></div>
+    {% endif %}
+    <div class="tile"><span class="tl">Geçici vergi matrahı</span><span class="tv">₺ {{ gv.matrah|tl }}</span>
+      <span class="ts">KKEG +{{ gv.girdiler.kkeg|tl }}{% if gv.girdiler.gecmis_zarar %} · geçmiş zarar −{{ gv.girdiler.gecmis_zarar|tl }}{% endif %}</span></div>
+    <div class="tile tile-hi {{ 'pay' if gv.odenecek else 'carry' }}"><span class="tl">Ödenecek geçici vergi</span>
+      <span class="tv">₺ {{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</span>
+      <span class="ts">{% if gv.asgari_uygulandi %}asgari kurumlar vergisi uygulandı{% elif gv.hesaplanan %}hesaplanan {{ gv.hesaplanan|tl }} − önceki {{ gv.mahsup|tl }}{% elif gv.tahmini_kar is not none and gv.tahmini_kar + gv.girdiler.kkeg < 0 %}dönem zararlı, vergi çıkmaz{% else %}vergi çıkmıyor{% endif %}</span></div>
+  </div>
+</section>
+{% endif %}
+
+{% if gv.ceyrekler %}{% set cs = gv.ceyrekler %}
+<section class="card" id="donemler">
+  <div class="block-head"><h2>Dönem dönem gelir tablosu</h2><span class="muted">Her sütun yalnızca o 3 ayın kayıtları · TL</span></div>
+  <div class="scroll"><table class="grid small qtable">
+    <thead><tr><th></th>{% for c_ in cs %}<th class="num">{{ c_.ad }}{% if c_.maliyet_yok %}<div><span class="tag warn">maliyet kaydı yok</span></div>{% endif %}</th>{% endfor %}<th class="num">Yılbaşından</th></tr></thead>
+    <tbody>
+    {% for i in range(gv.gelir_tablosu|length) %}{% set ln = gv.gelir_tablosu[i] %}
+      {% if ln.value or ln.kind != 'kalem' or cs|map(attribute='satirlar')|map(attribute=i)|map(attribute='value')|select|list %}
+      <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td>
+        {% for c_ in cs %}<td class="num {{ 'cell-warn' if c_.maliyet_yok and ln.label == 'Satışların maliyeti' }}">{{ c_.satirlar[i].value|tl }}</td>{% endfor %}
+        <td class="num">{{ ln.value|tl }}</td></tr>
+      {% if ln.label == 'Brüt satış kârı' %}
+      <tr class="muted-row"><td>Brüt kâr oranı</td>{% for c_ in cs %}<td class="num {{ 'cell-warn' if c_.maliyet_yok }}">{{ pct(c_.brut_oran) if c_.brut_oran is not none else '—' }}</td>{% endfor %}
+        {% set nt = gv.gelir_tablosu[2].value %}<td class="num">{{ pct(ln.value / nt) if nt > 0 else '—' }}</td></tr>
+      {% endif %}
+      {% endif %}
+    {% endfor %}
+    {% if gv.maliyet and gv.maliyet.ek %}
+      <tr><td>Tahmini maliyet (kaydı yapılmamış)</td>{% for c_ in cs %}<td class="num">{{ ('−' ~ (gv.maliyet.ek|tl)) if loop.last else '' }}</td>{% endfor %}<td class="num">−{{ gv.maliyet.ek|tl }}</td></tr>
+      <tr class="total"><td>Maliyet düzeltmesiyle kâr</td>{% for c_ in cs %}<td class="num">{{ (c_.kal.donem_kari - gv.maliyet.ek)|tl if loop.last else c_.kal.donem_kari|tl }}</td>{% endfor %}<td class="num">{{ gv.tahmini_kar|tl }}</td></tr>
+    {% endif %}
+    </tbody>
+  </table></div>
+  {% set eksik = cs|selectattr('maliyet_yok')|list %}
+  {% if eksik %}<p class="muted">{{ eksik|map(attribute='ad')|join(', ') }} döneminde satış var ama satışların maliyeti kaydı yok; bu yüzden o dönemin brüt kâr oranı %100 görünüyor. Maliyet kaydı yapılana kadar uygulama maliyeti tahmin eder (aşağıda "Satış maliyeti kaydı yapılmadıysa" seçeneği).</p>{% endif %}
+</section>
+{% endif %}
+
+<div class="two">
+  <section class="card" id="hesap">
+    <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}{% if gv_src and gv_src.id != p.id %} ({{ gv_src|donem_adi }} dosyalarından){% endif %}</span>{% endif %}</div>
+    {% if gv.ticari_kar is not none %}
+    <table class="grid">
+      <tbody>
+        {% if gv.maliyet and gv.maliyet.ek %}
+        <tr><td>Defterdeki kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+        <tr><td>− Tahmini satış maliyeti (kaydı yapılmamış)<div class="muted">{{ gv.maliyet.kaynak }}{% if gv.maliyet.oran is not none %} · brüt kâr oranı %{{ '%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') }}{% endif %}</div></td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>
+        <tr class="subtotal"><td>Tahmini ticari kâr</td><td class="num">{{ gv.tahmini_kar|tl }}</td></tr>
+        {% else %}
+        <tr class="subtotal"><td>Ticari kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
+        {% endif %}
+        {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' %}
+        <tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}{% if key == 'kkeg' and gv.kkeg_kaynak == 'defter' %}<div class="muted">defterden: adında KKEG geçen hesaplar</div>{% endif %}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>
+        {% endif %}{% endfor %}
+        <tr class="subtotal"><td>Tahmini geçici vergi matrahı</td><td class="num">{{ gv.matrah|tl }}</td></tr>
+        <tr><td>Oran ({{ 'kurum kazancı' if gv.tur == 'kurum' else 'gelir vergisi mükellefi' }}{% if gv.oran_girildi %}, elle girildi{% endif %})</td>
+          <td class="num">{{ pct(gv.oran) if gv.oran is not none else '—' }}</td></tr>
+        {% if gv.asgari_vergi is not none %}
+        <tr><td>Normal hesaplanan (matrah × oran)</td><td class="num">{{ gv.normal_vergi|tl }}</td></tr>
+        <tr><td>Asgari kurumlar vergisi (kurum kazancı {{ gv.asgari_matrah|tl }} × %10)<div class="muted">KVK 32/C · geçmiş yıl zararı bu tutardan düşülmez</div></td><td class="num">{{ gv.asgari_vergi|tl }}</td></tr>
+        {% endif %}
+        <tr><td>Hesaplanan geçici vergi{% if gv.asgari_vergi is not none %}<div class="muted">{{ 'asgari vergi daha yüksek, o alındı' if gv.asgari_uygulandi else 'ikisinden yüksek olan' }}</div>{% endif %}</td><td class="num">{{ gv.hesaplanan|tl if gv.hesaplanan is not none else '—' }}</td></tr>
+        <tr><td>− Önceki dönemlerde hesaplanan geçici vergi{% if gv.mahsup_tahmini %}<div class="muted">{{ gv.mahsup_kaynak }}</div>{% elif gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' %}<div class="muted">{{ gv.mahsup_kaynak }}nden okundu</div>{% endif %}</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
+        <tr class="total"><td>Ödenecek geçici vergi (tahmini)</td><td class="num">{{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</td></tr>
+      </tbody>
+    </table>
+    {% if gv.gecmis_zarar_kalan %}<p class="muted">Bilgi: önceki dönem beyannamesindeki toplam geçmiş yıl zararı {{ gv.gecmis_zarar_kalan|tl }} TL.</p>{% endif %}
+    {% if gv.pesin_193 %}<p class="muted">Bilgi: 193 Peşin ödenen vergiler bakiyesi {{ gv.pesin_193|tl }} TL (stopajlar dahil olabilir).</p>{% endif %}
+    {% else %}
+    <ul class="needs">{% for n in a.needs[:1] %}{{ need_row(n) }}{% endfor %}</ul>
+    <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a>
+    {% endif %}
+    {% if gv.notlar %}<ul class="notes">{% for n in gv.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+  </section>
+
+  <section class="card" id="duzeltmeler">
+    <div class="block-head"><h2>Düzeltmeler</h2><span class="muted">Tutarlar TL, yılbaşından kümülatif</span></div>
+    {% set saved = p.gv or {} %}
+    <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gecici-vergi" class="form-stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for key, label, sign in GV_ALANLAR %}
+      <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="{% if key == 'onceki_odenen' and gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' %}{{ gv.girdiler[key]|tl }} ({{ 'defterden' if gv.mahsup_tahmini else 'beyannameden' }}){% elif key == 'kkeg' and gv.kkeg_kaynak == 'defter' %}{{ gv.kkeg_defter|tl }} (defterdeki KKEG hesaplarından){% else %}0,00{% endif %}" value="{{ saved[key]|tl if saved.get(key) is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
+      {% endfor %}
+      <label>Satış maliyeti kaydı yapılmadıysa
+        <select name="maliyet" {{ 'disabled' if p.kesin }}>
+          {% for k, v in GV_MALIYET.items() %}<option value="{{ k }}" {{ 'selected' if (saved.get('maliyet') or 'otomatik') == k }}>{{ v }}</option>{% endfor %}
+        </select></label>
+      <div class="row">
+        <label>Brüt kâr oranı (%) <input name="brut_kar_orani" inputmode="decimal" placeholder="{{ ('%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') ~ ' (otomatik)') if gv.maliyet and gv.maliyet.oran is not none and not saved.get('brut_kar_orani') else 'ör. 24' }}" value="{{ ('%.2f'|format(saved.brut_kar_orani * 100)|replace('.', ',')) if saved.get('brut_kar_orani') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
+        <label>Dönem sonu stok, sayım (TL) <input name="donem_sonu_stok" inputmode="decimal" placeholder="{{ ('defterde ' ~ (gv.stok_defter|tl)) if gv.stok_defter else 'sayım veya tahmin' }}" value="{{ saved.donem_sonu_stok|tl if saved.get('donem_sonu_stok') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
+      </div>
+      {% if gv.stok_defter %}<p class="muted small-note">Defterdeki stoklar (150–153, 157) ve maliyete aktarılmamış üretim giderleri (710–730) toplamı {{ gv.stok_defter|tl }} TL. Maliyet kaydı yapılmadıysa bu tutar alışları da içerir; sayımla bulunan dönem sonu stoku girerseniz aradaki fark satışların maliyeti sayılır.</p>{% endif %}
+      {% if gv.tur == 'kurum' %}
+      <div class="row">
+        <label>Asgari kurumlar vergisi
+          <select name="asgari" {{ 'disabled' if p.kesin }}>
+            <option value="uygula" {{ 'selected' if saved.get('asgari') != 'yok' }}>Karşılaştır (KVK 32/C)</option>
+            <option value="yok" {{ 'selected' if saved.get('asgari') == 'yok' }}>Uygulanmaz (ilk 3 hesap dönemi vb.)</option>
+          </select></label>
+        <label>Asgari vergide düşülecek istisna/indirim <input name="asgari_indirim" inputmode="decimal" placeholder="0,00" value="{{ saved.asgari_indirim|tl if saved.get('asgari_indirim') else '' }}" {{ 'disabled' if p.kesin }}></label>
+      </div>
+      {% endif %}
+      <div class="row">
+        <label>Mükellef türü
+          <select name="tur" {{ 'disabled' if p.kesin }}>
+            <option value="kurum" {{ 'selected' if gv.tur == 'kurum' }}>Kurum (A.Ş., Ltd. Şti. …)</option>
+            <option value="sahis" {{ 'selected' if gv.tur == 'sahis' }}>Gelir vergisi mükellefi (şahıs)</option>
+          </select></label>
+        <label>Oran (boşsa parametre tablosundan) <input name="oran" inputmode="decimal" placeholder="ör. 25" value="{{ (saved.oran * 100)|round(2) if saved.get('oran') else '' }}" {{ 'disabled' if p.kesin }}></label>
+      </div>
+      {% if p.kesin %}<p class="muted">Dönem kesinleştirildiği için değiştirilemez.</p>{% else %}<div><button class="btn primary">Kaydet ve hesapla</button></div>{% endif %}
+    </form>
+    <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'ü, ödeme {{ GV_PARAM.odeme_gunu }}'si. {{ GV_PARAM.dayanak }}</p>
+  </section>
+</div>
+
 {% if gv_adimlar %}{% set tamam = gv_adimlar|selectattr('durum', 'equalto', 'tamam')|list|length %}
 <section class="card steps" id="adimlar">
   <div class="block-head"><h2>Hazırlık aşamaları</h2><span class="muted">{{ tamam }} / {{ gv_adimlar|length }} tamam</span></div>
@@ -55,69 +180,6 @@
   </ol>
 </section>
 {% endif %}
-
-<div class="two">
-  <section class="card" id="hesap">
-    <div class="block-head"><h2>Tahmini matrah ve vergi</h2>{% if gv.kaynak %}<span class="muted">01.01 – {{ p.bitis.strftime('%d.%m.%Y') }} · {{ gv.kaynak }}{% if gv_src and gv_src.id != p.id %} ({{ gv_src|donem_adi }} dosyalarından){% endif %}</span>{% endif %}</div>
-    {% if gv.ticari_kar is not none %}
-    <table class="grid">
-      <tbody>
-        {% if gv.maliyet and gv.maliyet.ek %}
-        <tr><td>Defterdeki kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
-        <tr><td>− Tahmini satış maliyeti (kaydı yapılmamış)<div class="muted">{{ gv.maliyet.kaynak }}{% if gv.maliyet.oran is not none %} · brüt kâr oranı %{{ '%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') }}{% endif %}</div></td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>
-        <tr class="subtotal"><td>Tahmini ticari kâr</td><td class="num">{{ gv.tahmini_kar|tl }}</td></tr>
-        {% else %}
-        <tr class="subtotal"><td>Ticari kâr (vergi öncesi, yılbaşından)</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
-        {% endif %}
-        {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' %}
-        <tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>
-        {% endif %}{% endfor %}
-        <tr class="subtotal"><td>Tahmini geçici vergi matrahı</td><td class="num">{{ gv.matrah|tl }}</td></tr>
-        <tr><td>Oran ({{ 'kurum kazancı' if gv.tur == 'kurum' else 'gelir vergisi mükellefi' }}{% if gv.oran_girildi %}, elle girildi{% endif %})</td>
-          <td class="num">{{ pct(gv.oran) if gv.oran is not none else '—' }}</td></tr>
-        <tr><td>Hesaplanan geçici vergi</td><td class="num">{{ gv.hesaplanan|tl if gv.hesaplanan is not none else '—' }}</td></tr>
-        <tr><td>− Önceki dönemlerde hesaplanan geçici vergi{% if gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' %}<div class="muted">{{ gv.mahsup_kaynak }}nden okundu</div>{% endif %}</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
-        <tr class="total"><td>Ödenecek geçici vergi (tahmini)</td><td class="num">{{ gv.odenecek|tl if gv.odenecek is not none else '—' }}</td></tr>
-      </tbody>
-    </table>
-    {% if gv.gecmis_zarar_kalan %}<p class="muted">Bilgi: önceki dönem beyannamesindeki toplam geçmiş yıl zararı {{ gv.gecmis_zarar_kalan|tl }} TL.</p>{% endif %}
-    {% if gv.pesin_193 %}<p class="muted">Bilgi: 193 Peşin ödenen vergiler bakiyesi {{ gv.pesin_193|tl }} TL (stopajlar dahil olabilir).</p>{% endif %}
-    {% else %}
-    <ul class="needs">{% for n in a.needs[:1] %}{{ need_row(n) }}{% endfor %}</ul>
-    <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler{{ q }}">{{ icon('upload', 16) }}Dosya yükle</a>
-    {% endif %}
-    {% if gv.notlar %}<ul class="notes">{% for n in gv.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
-  </section>
-
-  <section class="card" id="duzeltmeler">
-    <div class="block-head"><h2>Düzeltmeler</h2><span class="muted">Tutarlar TL, yılbaşından kümülatif</span></div>
-    {% set saved = p.gv or {} %}
-    <form method="post" action="/mukellef/{{ c.id }}/donem/{{ p.id }}/gecici-vergi" class="form-stack">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      {% for key, label, sign in GV_ALANLAR %}
-      <label>{{ label }} <input name="{{ key }}" inputmode="decimal" placeholder="{{ (gv.girdiler[key]|tl ~ ' (beyannameden)') if key == 'onceki_odenen' and gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' else '0,00' }}" value="{{ saved[key]|tl if saved.get(key) else '' }}" {{ 'disabled' if p.kesin }}></label>
-      {% endfor %}
-      <label>Satış maliyeti kaydı yapılmadıysa
-        <select name="maliyet" {{ 'disabled' if p.kesin }}>
-          {% for k, v in GV_MALIYET.items() %}<option value="{{ k }}" {{ 'selected' if (saved.get('maliyet') or 'otomatik') == k }}>{{ v }}</option>{% endfor %}
-        </select></label>
-      <div class="row">
-        <label>Brüt kâr oranı (%) <input name="brut_kar_orani" inputmode="decimal" placeholder="{{ ('%.1f'|format(gv.maliyet.oran * 100)|replace('.', ',') ~ ' (otomatik)') if gv.maliyet and gv.maliyet.oran is not none and not saved.get('brut_kar_orani') else 'ör. 24' }}" value="{{ ('%.2f'|format(saved.brut_kar_orani * 100)|replace('.', ',')) if saved.get('brut_kar_orani') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
-        <label>Dönem sonu stok, 153 (TL) <input name="donem_sonu_stok" inputmode="decimal" placeholder="sayım veya tahmin" value="{{ saved.donem_sonu_stok|tl if saved.get('donem_sonu_stok') is not none else '' }}" {{ 'disabled' if p.kesin }}></label>
-      </div>
-      <div class="row">
-        <label>Mükellef türü
-          <select name="tur" {{ 'disabled' if p.kesin }}>
-            <option value="kurum" {{ 'selected' if gv.tur == 'kurum' }}>Kurum (A.Ş., Ltd. Şti. …)</option>
-            <option value="sahis" {{ 'selected' if gv.tur == 'sahis' }}>Gelir vergisi mükellefi (şahıs)</option>
-          </select></label>
-        <label>Oran (boşsa parametre tablosundan) <input name="oran" inputmode="decimal" placeholder="ör. 25" value="{{ (saved.oran * 100)|round(2) if saved.get('oran') else '' }}" {{ 'disabled' if p.kesin }}></label>
-      </div>
-      {% if p.kesin %}<p class="muted">Dönem kesinleştirildiği için değiştirilemez.</p>{% else %}<div><button class="btn primary">Kaydet ve hesapla</button></div>{% endif %}
-    </form>
-    <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'ü, ödeme {{ GV_PARAM.odeme_gunu }}'si. {{ GV_PARAM.dayanak }}</p>
-  </section>
-</div>
 
 {% if gv.beyanname %}{% set b = gv.beyanname %}
 <section class="card" id="karsilastirma">

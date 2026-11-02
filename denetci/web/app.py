@@ -679,8 +679,10 @@ def create_app() -> FastAPI:
         gv, bad = {"kaydedildi": True, "adimlar": (p.gv or {}).get("adimlar") or {}}, []
         for key, label, _ in GV_ALANLAR:
             raw = str(form.get(key, "")).replace("₺", "").replace("TL", "").strip()
+            if not raw:
+                continue  # boş: girilmedi (defterden veya beyannameden bulunan tutar kullanılır)
             try:
-                val = parse_amount(raw, "tr") if raw else 0
+                val = parse_amount(raw, "tr")
             except ParseError:
                 val = None
             if val is None or val < 0:
@@ -704,6 +706,13 @@ def create_app() -> FastAPI:
                 gv["donem_sonu_stok"] = parse_amount(stok, "tr")
             except ParseError:
                 bad.append("Dönem sonu stok")
+        gv["asgari"] = "yok" if form.get("asgari") == "yok" else "uygula"
+        ai = str(form.get("asgari_indirim", "")).replace("₺", "").replace("TL", "").strip()
+        if ai:
+            try:
+                gv["asgari_indirim"] = parse_amount(ai, "tr")
+            except ParseError:
+                bad.append("Asgari vergide düşülecek istisna ve indirimler")
         oran_raw = str(form.get("oran", "")).replace("%", "").replace(",", ".").strip()
         if oran_raw:
             try:

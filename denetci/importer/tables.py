@@ -1,6 +1,7 @@
 """Dosyayı satırlara çevirir; başlık satırını, belge türünü ve kolon eşlemesini önerir."""
 
 import csv
+import hashlib
 import io
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,10 +22,18 @@ class UnsupportedFile(ValueError):
     pass
 
 
+_CACHE: dict = {}
+
+
 def read_tables(path: Path) -> list[Sheet]:
     suffix = path.suffix.lower()
     if suffix == ".xlsx":
-        return _read_xlsx(path)
+        # Aynı dosya bir yüklemede birkaç kez okunur (tür tanıma, dönem, aktarma); son okunan saklanır.
+        key = hashlib.sha256(path.read_bytes()).hexdigest()
+        if key not in _CACHE:
+            _CACHE.clear()
+            _CACHE[key] = _read_xlsx(path)
+        return [Sheet(sh.name, [(i, list(v)) for i, v in sh.rows]) for sh in _CACHE[key]]
     if suffix == ".csv":
         return [_read_csv(path)]
     raise UnsupportedFile("Bu dosya türü desteklenmiyor. Luca'dan .xlsx veya .csv olarak dışa aktarın.")
@@ -35,16 +44,22 @@ def _read_xlsx(path: Path) -> list[Sheet]:
         if fh.read(2) != b"PK":
             raise UnsupportedFile("Dosya geçerli bir .xlsx değil.")
     # data_only: formüllerin son hesaplanan değeri okunur. Makrolar hiçbir zaman çalıştırılmaz.
-    wb = load_workbook(path, data_only=True, read_only=False)
+    # read_only: büyük Luca dosyalarında birleştirilmiş hücre işleme çok yavaş (7 bin satır ~40 sn); salt okuma modu
+    # hücre değerlerini doğrudan akıtır.
+    wb = load_workbook(path, data_only=True, read_only=True)
     sheets = []
     for ws in wb.worksheets:
+        try:
+            ws.reset_dimensions()  # bazı programlar boyut bilgisini yanlış yazar; tüm satırlar okunsun
+        except AttributeError:
+            pass
         rows = []
         for idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
-            values = list(row)
+            values = [None if isinstance(v, str) and not v.strip() else v for v in row]
             while values and is_empty(values[-1]):
                 values.pop()
             rows.append((idx, values))
-        sheets.append(Sheet(ws.title, rows, [str(r) for r in ws.merged_cells.ranges]))
+        sheets.append(Sheet(ws.title, rows))
     wb.close()
     return sheets
 

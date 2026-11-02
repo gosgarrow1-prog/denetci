@@ -49,6 +49,12 @@ def adimlar(c, p, gv, results, findings) -> list[Adim]:
     elif gv.mahsup_kaynak == "girildi":
         out.append(Adim("onceki", "Önceki dönem beyannamesi", "tamam",
                         f"Önceki dönemlerde hesaplanan vergi elle girildi: {kurus_str(gv.mahsup)} TL."))
+    elif gv.mahsup_tahmini:
+        zarar = gv.girdiler.get("onceki_odenen") == 0
+        out.append(Adim("onceki", "Önceki dönem beyannamesi", "tamam" if zarar else "uyari",
+                        f"Beyanname yüklenmedi; {gv.mahsup_kaynak}. "
+                        + ("Yine de beyannameyi yüklerseniz kesinleşir." if zarar else ""),
+                        "Beyanname yükle", f"{base}/belgeler{q}"))
     elif gv.mahsup_kaynak:
         out.append(Adim("onceki", "Önceki dönem beyannamesi", "tamam",
                         f"{gv.mahsup_kaynak}nden okundu: {kurus_str(gv.mahsup)} TL mahsup edilecek."))

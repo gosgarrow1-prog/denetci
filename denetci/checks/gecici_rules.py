@@ -7,7 +7,7 @@ Bunlar hatırlatma niteliğindedir: kayıt "izinin" olup olmadığına bakılır
 import re
 
 from ..finance import ana_balances
-from ..gecici import donem_no, ticari_kar
+from ..gecici import ceyrek_tablosu, donem_no, ticari_kar
 from ..parsing import fold, kurus_str
 from .kdv import movements
 from .rules import D0, Context, Draft, Result, Rule
@@ -16,7 +16,7 @@ GV_DAYANAK = ("VUK değerleme hükümleri ve geçici vergi uygulaması (GVK mük
               "Dayanak kaynağı henüz kullanıcı tarafından doğrulanmadı.")
 DOVIZ_RE = re.compile(r"\b(usd|eur|euro|doviz|dolar|gbp|sterlin|chf|\$|€)\b")
 
-K27 = Rule("K-27", "1.0", "Geçici vergi dönem sonu hazırlığı",
+K27 = Rule("K-27", "1.1", "Geçici vergi dönem sonu hazırlığı",
            "Geçici vergi dönem sonunda amortisman, kur değerlemesi ve satılan malın maliyeti kayıtlarının izine bakılır.",
            "D", ("THP_VUK",), (), GV_DAYANAK, False,
            "Amortismana tabi varlık, dövizli hesap veya stoklu satış yoksa ilgili kayıt gerekmez. Kayıt başka hesaplarla "
@@ -76,7 +76,20 @@ def k27(ctx: Context) -> Result:
                                 "Dönem sonu kuruyla değerleme yapılıp yapılmadığını kontrol edin."))
     # Satılan malın maliyeti: satış varken 62x borç hareketi beklenir.
     satis = m.total(("600", "601"), "alacak")
-    if satis > 0:
+    ceyrek = ceyrek_tablosu(ctx)
+    if ceyrek and ceyrek[-1].net_satis > 0:
+        # Yılbaşından dönemde önceki aylardaki kayıt yetmez; son 3 ayda maliyet kaydı olmalı.
+        son = ceyrek[-1]
+        if not son.maliyet_yok:
+            ok.append("satış maliyeti")
+        else:
+            drafts.append(Draft(f"{son.ad} döneminde satışların maliyeti kaydı yok", K27.default_severity, "620", None, "smm",
+                                f"{son.bas:%d.%m.%Y} – {son.bit:%d.%m.%Y} arasında {kurus_str(son.net_satis)} TL net satış var; "
+                                "620-623 hesaplarına bu dönemde kayıt yok. Kâr, maliyet düşülmeden hesaplanmış olur.",
+                                "Maliyet yıl sonunda veya aralıklı envanterle hesaplanıyor olabilir; hizmet işletmelerinde 622 kullanılır.",
+                                "Dönem sonu stokunu belirleyip satışların maliyeti kaydını yapın; yapılmadıysa Geçici Vergi "
+                                "sayfası maliyeti önceki dönemin brüt kâr oranıyla tahmin eder."))
+    elif satis > 0:
         if m.total(("620", "621", "622", "623"), "borc") > 0:
             ok.append("satış maliyeti")
         else:
