@@ -519,6 +519,9 @@ def create_app() -> FastAPI:
             yb = latest.get("yevmiye")
             if yb is not None and yb.period_id != p.id:
                 v["turetilmis"] = (s.get(SourceFile, yb.source_file_id), s.get(Period, yb.period_id))
+            for b in latest.values():  # başka döneme yüklenmiş (geniş) yevmiyenin dosyası da listelensin
+                if b and b.source_file_id not in v["files"]:
+                    v["files"][b.source_file_id] = s.get(SourceFile, b.source_file_id)
             v.update(run=run, findings=open_f, cases=cases, latest={k: b for k, b in latest.items() if b},
                      sev_counts={k: sum(1 for f in open_f if f.severity == k) for k in ("Kritik", "Yüksek", "Orta", "Düşük")},
                      results=run.rule_results if run else [])

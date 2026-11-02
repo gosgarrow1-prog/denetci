@@ -62,6 +62,11 @@ def test_multi_upload_creates_period_and_runs(app_client, data_root):
         c = s.get(Client, cid)
         ctx, _ = build_context(s, c, aug)
         assert ctx.turetilmis and ctx.yevmiye and all(j.tarih.month == 8 for j in ctx.yevmiye)
+        pids = [p.id for p in periods]
+    # Ayrılan alt dönemler dahil her dönemde tüm sayfalar açılmalı (dönem raporu hatası 02.11.2026).
+    for pid in pids:
+        for x in ("", "/belgeler", "/kdv", "/mutabakat", "/finansal", "/ceyrek", "/gecici-vergi", "/fatura-mutabakati", "/rapor"):
+            assert tc.get(f"/mukellef/{cid}{x}?donem={pid}").status_code == 200, (x, pid)
     # Aynı dosyalar tekrar yüklenirse çoğalmaz.
     r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
                 files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=True)

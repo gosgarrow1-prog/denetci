@@ -57,7 +57,7 @@
   <table class="grid small"><thead><tr><th>Belge</th><th>Dosya</th><th>Sürüm</th><th class="num">Kayıt</th></tr></thead><tbody>
   {% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
     {% set b = latest.get(d) %}
-    <tr><td>{{ name }}</td><td>{{ files[b.source_file_id].orig_name if b else 'Yüklenmedi' }}</td><td>{{ b.version if b else '' }}</td>
+    <tr><td>{{ name }}</td><td>{% if b %}{{ files[b.source_file_id].orig_name if b.source_file_id in files else 'dosya' }}{% if b.period_id != p.id %} <span class="muted">(daha geniş dönem yevmiyesinden ayrıldı)</span>{% endif %}{% else %}Yüklenmedi{% endif %}</td><td>{{ b.version if b else '' }}</td>
       <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b else '' }}</td></tr>
   {% endfor %}
   </tbody></table>
