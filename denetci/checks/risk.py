@@ -317,8 +317,9 @@ def _gunluk(ctx: Context, hesaplar: tuple):
 K14 = Rule("K-14", "1.0", "Ortaklardan alacaklar ve adat (faiz) hesabı",
            "131 ve 231 Ortaklardan Alacaklar hesabı dönem içinde borç bakiyesi verdiyse şirket ortağa para kullandırmış "
            "sayılır; bu tutar için faiz (adat) hesaplanıp fatura edilmesi beklenir. Günlük bakiyelerden adat tutarı hesaplanır.",
-           "K", ("THP_VUK",), (), "KVK 13 (transfer fiyatlandırması yoluyla örtülü kazanç dağıtımı); faiz için KDV de hesaplanır. "
-           "Uygulanacak faiz oranı emsale göre belirlenir. Doğrulayın.", False,
+           "K", ("THP_VUK",), (), "KVK 13/1-2: ortaklar ilişkili kişidir ve ödünç para verilmesi mal veya hizmet satımı sayılır; "
+           "emsallere uygun faiz alınmazsa kazanç örtülü olarak dağıtılmış sayılır. Faiz oranı emsale göre belirlenir. "
+           "Vergino'dan 11.11.2026'da kontrol edildi.", True,
            "Faiz dönem sonunda toplu hesaplanıyor olabilir; bakiye ortağın sermaye taahhüdünden ya da kısa süreli bir "
            "avanstan kaynaklanıyor olabilir.", D0, "Orta")
 

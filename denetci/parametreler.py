@@ -47,18 +47,23 @@ DINI_BAYRAMLAR = {
 }
 
 # Örtülü sermaye (KVK 12): ortaklardan ve ilişkili kişilerden alınan borç, dönem başı öz sermayenin bu katını aşarsa
-# aşan kısım örtülü sermaye sayılır.
+# aşan kısım örtülü sermaye sayılır. Vergino'dan 11.11.2026'da kontrol edildi.
 ORTULU_SERMAYE = {
     "kat": 3,
-    "dayanak": "KVK 12 (örtülü sermaye): borç, hesap dönemi başındaki öz sermayenin üç katını aşarsa aşan kısım. Doğrulayın.",
-    "dogrulandi": False,
+    "dayanak": ("KVK 12: ortaklardan veya ortaklarla ilişkili kişilerden temin edilen borçların, hesap dönemi içinde herhangi bir "
+                "tarihte kurumun hesap dönemi başındaki öz sermayesinin üç katını aşan kısmı örtülü sermaye sayılır. Bu kısma "
+                "isabet eden faiz, kur farkı ve benzeri giderler indirilemez (KVK 11/1-b). Vergino'dan 11.11.2026'da kontrol edildi."),
+    "dogrulandi": True,
 }
 
 # Binek otomobil giderlerinde kanunen kabul edilmeyen kısım (GVK 40/5): giderlerin en fazla %70'i indirilebilir.
-# Kiralama ve amortismandaki yıllık tutar sınırları burada yoktur.
+# 2026 tutar sınırları (332 Seri No.lu GVK Genel Tebliği): aylık kira 46.000 TL; ÖTV+KDV toplamı 1.200.000 TL;
+# amortismanda ÖTV ve KDV hariç bedel 1.380.000 TL, vergiler dahil ya da ikinci el 2.600.000 TL. Bu sınırlar kontrol edilmez.
 BINEK_OTO = {
     "kkeg_orani": 0.30,
-    "dayanak": ("GVK 40/1, 40/5, 40/7 ve KVK 8: binek otomobil giderlerinin en fazla %70'i indirilebilir; kalan %30 "
-                "kanunen kabul edilmeyen giderdir. Kiralama, amortisman ve ÖTV+KDV için yıllık tutar sınırları ayrıca uygulanır. Doğrulayın."),
-    "dogrulandi": False,
+    "dayanak": ("GVK 40/5: binek otomobillere ilişkin giderlerin en fazla %70'i indirilebilir (binek otomobil kiralama ya da "
+                "işletme faaliyetinde kullanılanlar hariç); kalan %30 kanunen kabul edilmeyen giderdir. Kiralama (GVK 40/1; 2026: "
+                "aylık 46.000 TL), ÖTV+KDV (2026: 1.200.000 TL) ve amortisman (GVK 40/7; 2026: 1.380.000 / 2.600.000 TL) için "
+                "tutar sınırları ayrıca uygulanır. Vergino'dan 11.11.2026'da kontrol edildi."),
+    "dogrulandi": True,
 }
