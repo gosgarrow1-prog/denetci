@@ -427,7 +427,7 @@ def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):
     assert "Örnek Müşavirlik\n0212 000 0000" in rapor
     # Tanımlı olmayan kullanıcıda kullanıcı adı yazılır; tanımlıysa ad ve unvan.
     import re as _re
-    hazir = _re.search(r'r-imza-alan">(.*?)</div>\s*</div>', rapor, _re.S).group(1)
+    hazir = _re.search(r'r-hazirlayan">(.*?)</div>\s*</div>', rapor, _re.S).group(1)
     assert "Örnek Müşavirlik" in hazir and "<strong>burak</strong>" in hazir and "Başka Kişi" not in hazir
     from denetci import buro
     assert buro.hazirlayan("x") == {"ad": "Başka Kişi", "unvan": ""}

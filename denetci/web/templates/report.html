@@ -161,7 +161,7 @@
   {% endif %}
 
   <div class="r-imza">
-    <div><span class="muted">Hazırlayan</span><div class="r-imza-alan">{% if bu.get('unvan') %}<div>{{ bu.unvan }}</div>{% endif %}<strong>{{ (hazirlayan.unvan ~ ' ' ~ hazirlayan.ad)|trim }}</strong></div></div>
+    <div><span class="muted">Hazırlayan</span><div class="r-imza-alan r-hazirlayan">{% if bu.get('unvan') %}<div>{{ bu.unvan }}</div>{% endif %}<strong>{{ (hazirlayan.unvan ~ ' ' ~ hazirlayan.ad)|trim }}</strong></div></div>
     <div><span class="muted">Kaşe / İmza</span><div class="r-imza-alan"></div></div>
   </div>
   <footer class="r-foot">Bu rapor, yüklenen muhasebe kayıtları üzerinde yapılan otomatik ön kontrollerin sonucudur. Denetim görüşü, tasdik veya beyan yerine geçmez; bulgular mesleki değerlendirme gerektirir.{% if bu.get('unvan') %}<div class="r-foot-buro">{{ bu.unvan }}{% if bu.get('telefonlar') %} · {{ bu.telefonlar|join(' · ') }}{% endif %}{% if bu.get('eposta') %} · {{ bu.eposta }}{% endif %}{% if bu.get('web') %} · {{ bu.web }}{% endif %}</div>{% endif %}</footer>
