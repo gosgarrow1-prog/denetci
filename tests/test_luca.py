@@ -8,6 +8,10 @@ from denetci.importer.load import confirm, create_draft
 from denetci.models import Finding, FindingEvidence, JournalLine, OpeningBalance, RawRow, TrialBalanceLine
 
 
+# Risk taraması (K-10..K-13) tests/test_risk.py'de sınanır; buradaki testler temel kurallara bakar.
+TEMEL = Finding.rule_id.not_in(("K-10", "K-11", "K-12", "K-13"))
+
+
 def _import(session, c, p, files):
     batches = {}
     for kind, path in files.items():
@@ -59,14 +63,14 @@ def test_luca_clean_analysis(session, client_period, data_root):
     assert status["K-01"] == "calistirilamadi"  # mizan yok
     assert run.reliability == "kismen"
     assert set(run.source_batches) == {"yevmiye", "kebir", "muavin"}
-    assert not list(session.scalars(select(Finding).where(Finding.run_id == run.id)))
+    assert not list(session.scalars(select(Finding).where(Finding.run_id == run.id, TEMEL)))
 
 
 def test_luca_known_errors(session, client_period, data_root):
     c, p = client_period
     _import(session, c, p, synthetic_luca.generate(data_root / "luca_h", hatali=True))
     run = run_analysis(session, c, p)
-    findings = list(session.scalars(select(Finding).where(Finding.run_id == run.id)))
+    findings = list(session.scalars(select(Finding).where(Finding.run_id == run.id, TEMEL)))
     found = {(f.rule_id, f.hesap_kodu or f.title) for f in findings}
     yev = session.scalar(select(JournalLine).where(JournalLine.aciklama == "Genel gider banka ödemesi"))
     assert found == {
@@ -86,7 +90,7 @@ def test_luca_partial_coverage(session, client_period, data_root):
     c, p = client_period
     _import(session, c, p, synthetic_luca.generate(data_root / "luca_k", kismi=True))
     run = run_analysis(session, c, p)
-    found = {(f.rule_id, f.title) for f in session.scalars(select(Finding).where(Finding.run_id == run.id))}
+    found = {(f.rule_id, f.title) for f in session.scalars(select(Finding).where(Finding.run_id == run.id, TEMEL))}
     assert found == {("K-00", "Yevmiye defteri dönemin tamamını kapsamıyor")}
     res = {r["id"]: r for r in run.rule_results}
     # Karşılaştırma yalnızca ortak aralıkta yapılır, bu yüzden kısmi yevmiye fark üretmez.

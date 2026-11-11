@@ -789,7 +789,7 @@ def create_app() -> FastAPI:
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
-        keys = {"kdv": "kdv", "mutabakat": "mutabakat"}
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk"}
         if key not in keys:
             _404()
         c = s.get(Client, cid) or _404()

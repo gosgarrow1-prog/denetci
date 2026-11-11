@@ -42,6 +42,7 @@ class Analysis:
 
 KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24", "K-25", "K-26", "K-30")
 GECICI_RULES = ("K-27", "K-28", "K-29")
+RISK_RULES = ("K-10", "K-11", "K-12", "K-13")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
 
@@ -127,6 +128,15 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
         Need("Mizan", has_mizan, "Mizan denkliği ve yevmiye–mizan karşılaştırması için.", optional=True),
     ]
 
+    # --- Hata ve risk taraması ---
+    r = Analysis("risk", "Hata ve Risk Taraması", RISK_RULES, link="risk")
+    r.needs = [
+        Need("Yevmiye defteri", has_yev or has_kebir or has_muavin,
+             "Kasa hareketleri, tatil günü giderleri ve mükerrer fatura kayıtları buradan taranır."),
+        Need("Dönem sonu bakiyeleri", bool(fin and fin.has_balance),
+             "Ters bakiye kontrolü için yılbaşından alınmış mizan, defteri kebir veya yılbaşından yevmiye.", optional=True),
+    ]
+
     # --- Finansal analiz ---
     f = Analysis("finansal", "Finansal Analiz", (), link="finansal")
     balance_hint = ("Yüklenen mizan yalnızca ayın hareketlerini içeriyor; yılbaşından alınmış mizan veya defteri kebir yükleyin."
@@ -156,7 +166,7 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month) is not None,
              "Beyan verildiyse PDF'ini yükleyin; beyandaki kâr defterle karşılaştırılır.", optional=True),
     ]
-    return [k, m, f, g]
+    return [k, m, r, f, g]
 
 
 def kdv_amounts(ctx: Context | None) -> dict:

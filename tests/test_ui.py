@@ -29,6 +29,10 @@ def test_demo_dashboard(app_client):
     fin = tc.get(loc + "/finansal").text
     for text in ("Gelir tablosu özeti", "Bilanço özeti", "Oranlar", "<svg"):
         assert text in fin, text
+    risk = tc.get(loc + "/risk").text
+    for text in ("Hata ve Risk Taraması", "Ters bakiye veren hesaplar", "Kasadan yüksek tutarlı tahsilat ve ödeme",
+                 "Tatil günü gider kayıtları", "Mükerrer fatura kaydı"):
+        assert text in risk, text
     for sub in ("/kdv", "/mutabakat", "/gecici-vergi", "/belgeler"):
         assert tc.get(loc + sub).status_code == 200, sub
     assert tc.get(loc + "/olmayan").status_code == 404

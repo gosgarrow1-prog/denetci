@@ -26,3 +26,22 @@ GECICI_VERGI = {
 }
 
 KURUM_ISARETLERI = ("a.s", "as", "anonim", "ltd", "limited", "sti", "sirketi", "koop", "kooperatif")
+
+
+# Tahsilat ve ödemelerin banka/PTT aracılığıyla yapılması (tevsik) zorunluluğunun tutar sınırı (kuruş).
+TEVSIK = {
+    "limit": 30_000_00,
+    "dayanak": ("VUK Genel Tebliği (Sıra No: 459) ve değişiklikleri: belirlenen tutarı aşan tahsilat ve ödemeler banka, "
+                "ödeme kuruluşu veya PTT aracılığıyla yapılmalıdır. Tutar sınırı 30.000 TL olarak girildi; "
+                "güncel tebliğden doğrulayın."),
+    "dogrulandi": False,
+}
+
+# Resmî ve dinî bayram günleri (hafta sonu dışında tatil sayılan günler). Dinî bayram tarihleri yıla göre değişir;
+# listede olmayan yıllarda yalnızca pazar günleri ve sabit resmî tatiller kullanılır.
+SABIT_TATILLER = [(1, 1), (4, 23), (5, 1), (5, 19), (7, 15), (8, 30), (10, 29)]
+DINI_BAYRAMLAR = {
+    2025: [("2025-03-30", 3), ("2025-06-06", 4)],
+    2026: [("2026-03-20", 3), ("2026-05-27", 4)],
+    2027: [("2027-03-09", 3), ("2027-05-16", 4)],
+}
