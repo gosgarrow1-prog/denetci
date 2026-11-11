@@ -481,4 +481,91 @@ def k16(ctx: Context) -> Result:
     return Result(K16, "bulgu", f"Taşıt giderleri {kurus_str(toplam)} TL; KKEG ayrımı {kurus_str(eksik)} TL eksik görünüyor.", [d])
 
 
-RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16)]
+# ---- K-17 Birikmiş amortisman ile duran varlık uyumu ------------------------
+
+K17 = Rule("K-17", "1.0", "Birikmiş amortisman ile duran varlık uyumu",
+           "257 Birikmiş Amortismanlar, maddi duran varlıkların (252–256) toplamını; 268 Birikmiş Amortismanlar, maddi olmayan "
+           "duran varlıkların (260–267) toplamını aşamaz. Varlık yokken birikmiş amortisman kalması da işaretlenir.",
+           "A", ("THP_VUK",), (), "VUK 313 ve devamı: amortisman, varlığın değeri üzerinden ayrılır; birikmiş amortisman "
+           "varlığın kayıtlı değerini aşamaz.", False,
+           "Satılan ya da hurdaya ayrılan varlığın birikmiş amortismanı henüz kapatılmamış olabilir; yeniden değerleme "
+           "farkları ayrı alt hesaplarda izleniyor olabilir.", D0, "Orta")
+
+AMORTISMAN_CIFT = (("257", ("252", "253", "254", "255", "256"), "maddi duran varlıklar (252–256)"),
+                   ("268", ("260", "261", "262", "263", "264", "267"), "maddi olmayan duran varlıklar (260–267)"))
+
+
+def k17(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    net, kaynak = ana_balances(ctx)
+    if net is None:
+        return Result(K17, "uygulanmadi", "Uygulanmadı: dönem sonu bakiyeleri için yılbaşından mizan, defteri kebir veya "
+                                          "yılbaşından yevmiye gerekli.")
+    drafts, bakilan = [], 0
+    for amort, varliklar, ad in AMORTISMAN_CIFT:
+        birikmis = -net.get(amort, 0)
+        maliyet = sum(net.get(v, 0) for v in varliklar)
+        if birikmis <= ctx.tolerance:
+            continue
+        bakilan += 1
+        if birikmis > maliyet + ctx.tolerance:
+            asan = birikmis - max(maliyet, 0)
+            drafts.append(Draft(f"{amort} birikmiş amortisman varlık tutarını aşıyor", ctx.rule_severity(asan), amort, asan,
+                                f"amortisman-{amort}",
+                                f"{amort} Birikmiş Amortismanlar {kurus_str(birikmis)} TL; {ad} toplamı {kurus_str(maliyet)} TL "
+                                f"({kaynak}). Birikmiş amortisman varlık tutarını {kurus_str(asan)} TL aşıyor.",
+                                "Bakiyeler aritmetik olarak kesin. Neden belirsiz: " + K17.exceptions,
+                                "Satılan veya kayıttan çıkan varlıkların birikmiş amortismanının kapatılıp kapatılmadığına ve "
+                                "amortisman tablosunun defterle uyumuna bakın."))
+    if drafts:
+        return Result(K17, "bulgu", f"{len(drafts)} hesapta birikmiş amortisman varlık tutarını aşıyor.", drafts)
+    if not bakilan:
+        return Result(K17, "gecti", f"Birikmiş amortisman bakiyesi yok ({kaynak}).")
+    return Result(K17, "gecti", f"Birikmiş amortismanlar varlık tutarlarını aşmıyor ({kaynak}).")
+
+
+# ---- K-18 Gider hesaplarının yansıtılması (7/A) -----------------------------
+
+K18 = Rule("K-18", "1.0", "Gider hesaplarının yansıtılması",
+           "7/A seçeneğinde gider hesapları (710, 720, 730, 740, 750, 760, 770, 780) dönem sonunda yansıtma hesaplarıyla "
+           "(711, 721, 731, 741, 751, 761, 771, 781) gelir tablosuna aktarılır. Yansıtılan tutar gider tutarından farklıysa "
+           "gelir tablosu eksik ya da fazla gider gösterir.",
+           "A", ("THP_VUK",), (), "Tekdüzen Hesap Planı 7/A seçeneği, maliyet hesaplarının işleyişi (1 Sıra No.lu MSUGT).", False,
+           "Yansıtma yalnızca yıl sonunda yapılıyorsa ara dönemlerde fark olağandır; bu durumda ara dönemde uyarı verilmez. "
+           "Yansıtmadan sonra girilen gider kayıtları fark yaratır.", D0, "Orta")
+
+YANSITMA = (("710", "711"), ("720", "721"), ("730", "731"), ("740", "741"), ("750", "751"), ("760", "761"),
+            ("770", "771"), ("780", "781"))
+
+
+def k18(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    net, kaynak = ana_balances(ctx)
+    if net is None:
+        return Result(K18, "uygulanmadi", "Uygulanmadı: yılbaşından bakiyeler için mizan, defteri kebir veya yılbaşından "
+                                          "yevmiye gerekli.")
+    gider = {g: net.get(g, 0) for g, _ in YANSITMA}
+    yans = {y: -net.get(y, 0) for _, y in YANSITMA}
+    if not any(abs(v) > ctx.tolerance for v in gider.values()):
+        return Result(K18, "gecti", f"7/A gider hesaplarında bakiye yok ({kaynak}).")
+    yil_sonu = (ctx.period_end.month, ctx.period_end.day) == (12, 31)
+    if not any(abs(v) > ctx.tolerance for v in yans.values()) and not yil_sonu:
+        return Result(K18, "bilgi", f"Yansıtma kaydı henüz yok; gider hesaplarında {kurus_str(sum(gider.values()))} TL duruyor "
+                                    f"({kaynak}). Yansıtma yıl sonunda yapılıyorsa olağandır.")
+    drafts = []
+    for g, y in YANSITMA:
+        fark = gider[g] - yans[y]
+        if abs(fark) <= ctx.tolerance:
+            continue
+        drafts.append(Draft(f"{g} gider hesabı tam yansıtılmamış", ctx.rule_severity(fark), g, fark, f"yansitma-{g}",
+                            f"{g} hesabında yılbaşından {kurus_str(gider[g])} TL gider var; {y} yansıtma hesabıyla aktarılan "
+                            f"{kurus_str(yans[y])} TL ({kaynak}). Fark {kurus_str(fark)} TL gelir tablosuna "
+                            + ("aktarılmamış." if fark > 0 else "fazla aktarılmış."),
+                            "Bakiyeler aritmetik olarak kesin. " + K18.exceptions,
+                            f"Yansıtma kaydını güncelleyin: {g} hesabının bakiyesi kadar {y} hesabı alacaklandırılmalı."))
+    if drafts:
+        return Result(K18, "bulgu", f"{len(drafts)} gider hesabında yansıtma tutarı gider tutarından farklı.", drafts)
+    return Result(K18, "gecti", f"Gider hesapları tam yansıtılmış ({kaynak}).")
+
+
+RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16), (K17, k17), (K18, k18)]

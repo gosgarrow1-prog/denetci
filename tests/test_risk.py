@@ -129,3 +129,17 @@ def test_binek_oto():
                 L("320.01", "SATICI", alacak=10_000_00)]
     assert k16(Y(ayrilmis)).status == "gecti"
     assert k16(Y(gider[1:])).status == "gecti"
+
+
+def test_amortisman_ve_yansitma():
+    from denetci.checks.risk import k17, k18
+    assert k17(C(mizan=[M("255.01", 100_000_00), M("257.01", -40_000_00)])).status == "gecti"
+    r = k17(C(mizan=[M("255.01", 100_000_00), M("257.01", -130_000_00)]))
+    assert r.status == "bulgu" and r.drafts[0].amount == 30_000_00
+    assert k17(C()).status == "uygulanmadi"
+    # Ara dönemde hiç yansıtma yoksa yalnızca bilgi; kısmi yansıtma bulgudur.
+    assert k18(C(mizan=[M("770.01", 50_000_00)])).status == "bilgi"
+    r = k18(C(mizan=[M("770.01", 50_000_00), M("771", -45_000_00), M("760.01", 10_000_00), M("761", -10_000_00)]))
+    assert r.status == "bulgu" and [(d.hesap_kodu, d.amount) for d in r.drafts] == [("770", 5_000_00)]
+    yil = Context("THP_VUK", date(2026, 12, 1), date(2026, 12, 31), [M("770.01", 50_000_00)], None)
+    assert k18(yil).status == "bulgu"

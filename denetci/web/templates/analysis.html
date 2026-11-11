@@ -9,7 +9,7 @@
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}.
     {% if a.key == 'kdv' %}Oranlara göre matrah ve KDV, mahsup kaydı, devreden KDV ve beyanname karşılaştırması. Beyan veya vergi görüşü yerine geçmez.
     {% elif a.key == 'mutabakat' %}Defterlerin kendi içinde ve birbirleriyle tutarlılığı.
-    {% elif a.key == 'risk' %}Ters bakiyeler, kasadan yüksek tutarlı nakit hareketleri, tatil günü giderleri, mükerrer fatura kayıtları, ortaklar cari hesapları ve taşıt giderleri. Bulgular kesin hata değildir; bakılması gereken kayıtları gösterir.
+    {% elif a.key == 'risk' %}Ters bakiyeler, kasadan yüksek tutarlı nakit hareketleri, tatil günü giderleri, mükerrer fatura kayıtları, ortaklar cari hesapları, taşıt giderleri, amortisman ve yansıtma uyumu. Bulgular kesin hata değildir; bakılması gereken kayıtları gösterir.
     {% else %}Geçici vergi matrahı ve beyanname karşılaştırmaları.{% endif %}</p></div>
   <div class="ph-actions">{{ status_pill(a) }}</div>
 </div>
