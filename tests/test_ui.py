@@ -400,3 +400,30 @@ def test_yuklenen_dosya_arsive_kopyalanir(app_client, data_root, monkeypatch, tm
     assert len(kopyalar) == len(files)
     assert any(k.name.startswith("Yevmiye - ") for k in kopyalar)
     assert "arsiv" in tc.get(f"/mukellef/{cid}/belgeler").text
+
+
+def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):
+    import json
+    tc = app_client
+    login(tc)
+    r = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False)
+    loc = r.headers["location"].split("?")[0]
+    # Büro klasörü yokken Denetçi adıyla çalışır.
+    monkeypatch.setenv("DENETCI_BURO", str(tmp_path / "yok"))
+    assert tc.get("/buro/logo-acik.png").status_code == 404
+    rapor = tc.get(loc + "/rapor").text
+    assert "Mükellefe gönderilecek kısa özet" in rapor and "konuya bakılması gerekiyor" in rapor
+    assert 'src="/buro/logo-acik.png"' not in rapor
+    # Büro bilgileri ve logo eklenince raporda ve menüde görünür.
+    d = tmp_path / "buro"
+    d.mkdir()
+    (d / "buro.json").write_text(json.dumps({"unvan": "Örnek Müşavirlik", "telefonlar": ["0212 000 0000"]}), encoding="utf-8")
+    (d / "logo-acik.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (d / "logo-koyu.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setenv("DENETCI_BURO", str(d))
+    rapor = tc.get(loc + "/rapor").text
+    assert 'src="/buro/logo-acik.png"' in rapor and "Örnek Müşavirlik" in rapor and "Kaşe / İmza" in rapor
+    assert "Örnek Müşavirlik\n0212 000 0000" in rapor
+    assert 'src="/buro/logo-koyu.png"' in tc.get(loc).text
+    assert tc.get("/buro/logo-koyu.png").status_code == 200
+    assert tc.get("/buro/logo-baska.png").status_code == 404

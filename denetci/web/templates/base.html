@@ -13,10 +13,18 @@
 {% set active = active if active is defined else '' %}
 <div class="app">
 <nav class="side" aria-label="Ana menü">
+  {% set bu = buro() %}
+  {% if bu.logolar.koyu %}
+  <a class="brand brand-logo" href="/" title="Denetçi · {{ bu.get('unvan', '') }}">
+    <img src="/buro/logo-koyu.png" alt="{{ bu.get('unvan', 'Büro logosu') }}">
+    <span class="brand-sub">{{ icon('shield', 14) }} Denetçi · kontrol paneli</span>
+  </a>
+  {% else %}
   <a class="brand" href="/">
     <span class="brand-mark">{{ icon('shield', 24) }}</span>
     <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
   </a>
+  {% endif %}
   {% if sc %}
   <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
   <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>

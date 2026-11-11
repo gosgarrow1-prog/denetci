@@ -32,9 +32,9 @@ KURUM_ISARETLERI = ("a.s", "as", "anonim", "ltd", "limited", "sti", "sirketi", "
 TEVSIK = {
     "limit": 30_000_00,
     "dayanak": ("VUK Genel Tebliği (Sıra No: 459) ve değişiklikleri: belirlenen tutarı aşan tahsilat ve ödemeler banka, "
-                "ödeme kuruluşu veya PTT aracılığıyla yapılmalıdır. Tutar sınırı 30.000 TL olarak girildi; "
-                "güncel tebliğden doğrulayın."),
-    "dogrulandi": False,
+                "ödeme kuruluşu veya PTT aracılığıyla yapılmalıdır. İşlem bedeli farklı tarihlerde parça parça "
+                "ödense de işlemin toplam tutarı dikkate alınır. 30.000 TL sınırı 11.11.2026'da büro tarafından teyit edildi."),
+    "dogrulandi": True,
 }
 
 # Resmî ve dinî bayram günleri (hafta sonu dışında tatil sayılan günler). Dinî bayram tarihleri yıla göre değişir;

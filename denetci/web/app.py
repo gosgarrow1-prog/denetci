@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -33,7 +33,7 @@ from ..importer.tables import UnsupportedFile
 from ..importer.ingest import find_or_create_period, ingest, peek
 from ..importer.beyanname import donem_adi as beyan_donem_adi
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
-from .. import beyannameler
+from .. import beyannameler, buro
 from ..analyses import build as build_analyses, kdv_amounts
 from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET_YONTEMLERI as GV_MALIYET, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
@@ -83,6 +83,7 @@ templates.env.globals["efatura_neden"] = lambda e, yon: __import__("denetci.efat
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
+templates.env.globals["buro"] = buro.bilgiler
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
     "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
@@ -345,6 +346,11 @@ def create_app() -> FastAPI:
     app.add_middleware(SessionMiddleware, secret_key=_secret_key(), same_site="strict", max_age=8 * 3600,
                        session_cookie="denetci_oturum")
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+
+    @app.get("/buro/logo-{tema}.png")
+    def buro_logo(tema: str):
+        yol = buro.logo_yolu(tema) or _404()
+        return FileResponse(yol, media_type="image/png")
 
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
@@ -642,6 +648,7 @@ def create_app() -> FastAPI:
         v["gv"] = gv_for(s, c, p, v["decls"])[0]
         v["GV_ALANLAR"] = GV_ALANLAR
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
+        v["whatsapp"] = _whatsapp_ozeti(c, p, v)
         return render(request, "report.html", active="rapor", **v)
 
     @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)
@@ -1260,6 +1267,31 @@ def _signer():
 def summarize_empty():
     from ..finance import Summary
     return Summary()
+
+
+def _whatsapp_ozeti(c, p, v) -> str:
+    """Rapordan mükellefe WhatsApp ile gönderilebilecek kısa düz metin özet."""
+    tl = kurus_str
+    satir = [f"*{c.unvan}*", f"{donem_adi(p)} dönem kontrolü ({_now():%d.%m.%Y})", ""]
+    findings = v.get("findings") or []
+    if v.get("run") is None:
+        satir.append("Bu dönem için henüz kontrol yapılmadı.")
+    elif not findings:
+        satir.append("✅ Kontrollerde açık bulgu yok.")
+    else:
+        satir.append(f"⚠️ {len(findings)} konuya bakılması gerekiyor:")
+        for f in findings[:6]:
+            tutar = f" ({tl(abs(f.amount))} TL)" if f.amount else ""
+            satir.append(f"• {f.title}{tutar}")
+        if len(findings) > 6:
+            satir.append(f"• … ve {len(findings) - 6} konu daha (ayrıntılar raporda)")
+    eksik = [al["text"] for al in v.get("alerts") or [] if al.get("action") == "Tamamla"]
+    if eksik:
+        satir += ["", "📄 Bizden istenen belgeler:"] + [f"• {e}" for e in eksik[:5]]
+    b = buro.bilgiler()
+    if b.get("unvan"):
+        satir += ["", b["unvan"]] + ([b["telefonlar"][0]] if b.get("telefonlar") else [])
+    return "\n".join(satir)
 
 
 def _404():
