@@ -417,13 +417,21 @@ def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):
     # Büro bilgileri ve logo eklenince raporda ve menüde görünür.
     d = tmp_path / "buro"
     d.mkdir()
-    (d / "buro.json").write_text(json.dumps({"unvan": "Örnek Müşavirlik", "telefonlar": ["0212 000 0000"]}), encoding="utf-8")
+    (d / "buro.json").write_text(json.dumps({"unvan": "Örnek Müşavirlik", "telefonlar": ["0212 000 0000"],
+                                                         "kullanicilar": {"x": {"ad": "Başka Kişi"}}}), encoding="utf-8")
     (d / "logo-acik.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     (d / "logo-koyu.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     monkeypatch.setenv("DENETCI_BURO", str(d))
     rapor = tc.get(loc + "/rapor").text
     assert 'src="/buro/logo-acik.png"' in rapor and "Örnek Müşavirlik" in rapor and "Kaşe / İmza" in rapor
     assert "Örnek Müşavirlik\n0212 000 0000" in rapor
+    # Tanımlı olmayan kullanıcıda kullanıcı adı yazılır; tanımlıysa ad ve unvan.
+    import re as _re
+    hazir = _re.search(r'r-imza-alan">(.*?)</div>\s*</div>', rapor, _re.S).group(1)
+    assert "Örnek Müşavirlik" in hazir and "<strong>burak</strong>" in hazir and "Başka Kişi" not in hazir
+    from denetci import buro
+    assert buro.hazirlayan("x") == {"ad": "Başka Kişi", "unvan": ""}
+    assert buro.hazirlayan("yok") == {"ad": "yok", "unvan": ""}
     assert 'src="/buro/logo-koyu.png"' in tc.get(loc).text
     assert tc.get("/buro/logo-koyu.png").status_code == 200
     assert tc.get("/buro/logo-baska.png").status_code == 404

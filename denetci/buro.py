@@ -36,3 +36,17 @@ def logo_yolu(tema: str) -> Path | None:
         return None
     p = klasor() / f"logo-{tema}.png"
     return p if p.is_file() else None
+
+
+def hazirlayan(kullanici_adi: str) -> dict:
+    """Raporu hazırlayan: buro.json'daki "kullanicilar" tablosundan ad ve unvan; tanımlı değilse kullanıcı adı.
+
+        "kullanicilar": {"burak": {"ad": "Burak ALTINOK", "unvan": "S.M.Mali Müşavir"}}
+    """
+    tablo = bilgiler().get("kullanicilar") or {}
+    k = tablo.get(kullanici_adi) if isinstance(tablo, dict) else None
+    if isinstance(k, str):
+        k = {"ad": k}
+    if not isinstance(k, dict) or not k.get("ad"):
+        return {"ad": kullanici_adi, "unvan": ""}
+    return {"ad": k["ad"], "unvan": k.get("unvan", "")}

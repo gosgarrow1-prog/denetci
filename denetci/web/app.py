@@ -649,6 +649,7 @@ def create_app() -> FastAPI:
         v["GV_ALANLAR"] = GV_ALANLAR
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
         v["whatsapp"] = _whatsapp_ozeti(c, p, v)
+        v["hazirlayan"] = buro.hazirlayan(user.username)
         return render(request, "report.html", active="rapor", **v)
 
     @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)
