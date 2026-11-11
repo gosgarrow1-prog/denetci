@@ -45,3 +45,20 @@ DINI_BAYRAMLAR = {
     2026: [("2026-03-20", 3), ("2026-05-27", 4)],
     2027: [("2027-03-09", 3), ("2027-05-16", 4)],
 }
+
+# Örtülü sermaye (KVK 12): ortaklardan ve ilişkili kişilerden alınan borç, dönem başı öz sermayenin bu katını aşarsa
+# aşan kısım örtülü sermaye sayılır.
+ORTULU_SERMAYE = {
+    "kat": 3,
+    "dayanak": "KVK 12 (örtülü sermaye): borç, hesap dönemi başındaki öz sermayenin üç katını aşarsa aşan kısım. Doğrulayın.",
+    "dogrulandi": False,
+}
+
+# Binek otomobil giderlerinde kanunen kabul edilmeyen kısım (GVK 40/5): giderlerin en fazla %70'i indirilebilir.
+# Kiralama ve amortismandaki yıllık tutar sınırları burada yoktur.
+BINEK_OTO = {
+    "kkeg_orani": 0.30,
+    "dayanak": ("GVK 40/1, 40/5, 40/7 ve KVK 8: binek otomobil giderlerinin en fazla %70'i indirilebilir; kalan %30 "
+                "kanunen kabul edilmeyen giderdir. Kiralama, amortisman ve ÖTV+KDV için yıllık tutar sınırları ayrıca uygulanır. Doğrulayın."),
+    "dogrulandi": False,
+}

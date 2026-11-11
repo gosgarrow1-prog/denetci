@@ -10,7 +10,7 @@ from denetci.models import Finding, FindingEvidence, JournalLine, RawRow, TrialB
 
 
 # Risk taraması (K-10..K-13) tests/test_risk.py'de sınanır; buradaki testler temel kurallara bakar.
-TEMEL = Finding.rule_id.not_in(("K-10", "K-11", "K-12", "K-13"))
+TEMEL = Finding.rule_id.not_in(("K-10", "K-11", "K-12", "K-13", "K-14", "K-15", "K-16"))
 
 
 def _import_all(session, c, p, files):

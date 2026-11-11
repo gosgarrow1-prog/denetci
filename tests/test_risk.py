@@ -75,3 +75,57 @@ def test_mukerrer_fatura():
     assert r.status == "bulgu" and len(r.drafts) == 1
     assert r.drafts[0].severity == "Yüksek" and r.drafts[0].amount == 1_200_00
     assert k13(C([J(d1, "770.01", borc=1_00), J(d1, "100.01", alacak=1_00)])).status == "uygulanmadi"
+
+
+def Y(yev, ytd=None, start=date(2026, 9, 1)):
+    ctx = Context("THP_VUK", start, date(2026, 9, 30), None, yev)
+    ctx.ytd = ytd if ytd is not None else yev
+    return ctx
+
+
+ACILIS = [J(date(2026, 1, 1), "102.01", borc=100_000_00, fis="A"), J(date(2026, 1, 1), "500.01", alacak=100_000_00, fis="A")]
+
+
+def test_ortaklardan_alacak_adat():
+    from denetci.checks.risk import k14
+    ver = [J(date(2026, 9, 11), "131.01", borc=365_000_00, fis="5"), J(date(2026, 9, 11), "102.01", alacak=365_000_00, fis="5")]
+    r = k14(Y(ver, ACILIS + ver))
+    assert r.status == "bulgu"
+    # 20 gün × 365.000 TL / 30 gün
+    assert r.drafts[0].amount == 365_000_00 * 20 // 30
+    assert "yaklaşık 2.000,00 TL faiz" in r.drafts[0].explanation  # %10 × 365.000 × 20/365
+    faiz = [J(date(2026, 9, 30), "131.01", borc=5_000_00, fis="6", aciklama="Eylül adat faizi"),
+            J(date(2026, 9, 30), "642.01", alacak=5_000_00, fis="6")]
+    assert k14(Y(ver + faiz, ACILIS + ver + faiz)).status == "gecti"
+    assert k14(Y([], ACILIS)).status == "gecti"
+    assert k14(C([])).status == "uygulanmadi"
+
+
+def test_ortulu_sermaye():
+    from denetci.checks.risk import k15
+    al = lambda t: [J(date(2026, 9, 5), "102.01", borc=t, fis="7"), J(date(2026, 9, 5), "331.01", alacak=t, fis="7")]
+    assert k15(Y(al(300_000_00), ACILIS + al(300_000_00))).status == "gecti"
+    r = k15(Y(al(450_000_00), ACILIS + al(450_000_00)))
+    assert r.status == "bulgu" and r.drafts[0].amount == 150_000_00
+    # Dönem sonunda geri ödense de dönem içi en yüksek bakiye esas alınır.
+    geri = [J(date(2026, 9, 25), "331.01", borc=450_000_00, fis="8"), J(date(2026, 9, 25), "102.01", alacak=450_000_00, fis="8")]
+    yev = al(450_000_00) + geri
+    assert k15(Y(yev, ACILIS + yev)).status == "bulgu"
+
+
+def test_binek_oto():
+    from denetci.checks.risk import k16
+    d = date(2026, 9, 10)
+
+    def L(code, ad, borc=0, alacak=0, fis="1"):
+        j = J(d, code, borc, alacak, fis)
+        j.hesap_adi = ad
+        return j
+    gider = [L("770.05", "TAŞIT AKARYAKIT GİDERLERİ", borc=10_000_00), L("770.01", "KIRTASİYE", borc=3_000_00),
+             L("320.01", "SATICI", alacak=13_000_00)]
+    r = k16(Y(gider))
+    assert r.status == "bulgu" and r.drafts[0].amount == 3_000_00
+    ayrilmis = [L("770.05", "TAŞIT AKARYAKIT GİDERLERİ", borc=7_000_00), L("689.01", "BİNEK OTO KKEG", borc=3_000_00),
+                L("320.01", "SATICI", alacak=10_000_00)]
+    assert k16(Y(ayrilmis)).status == "gecti"
+    assert k16(Y(gider[1:])).status == "gecti"
