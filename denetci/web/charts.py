@@ -212,3 +212,42 @@ def gosterge(deger, aralik, olcek) -> Markup:
              f'<circle cx="{min(max(x(deger), 5), W - 5):.1f}" cy="8" r="5" fill="{C_IKI}" stroke="#fff" stroke-width="2"/>')
     p.append("</svg>")
     return Markup("".join(p))
+
+
+def benford_grafik(sonuc) -> Markup:
+    """İlk rakam 1–9 için gerçekleşen oran (çubuk) ve Benford'a göre beklenen oran (nokta ve çizgi)."""
+    from ..benford import BEKLENEN
+    if sonuc is None:
+        return Markup("")
+    W, H, L, R, T, B = 680, 250, 44, 8, 16, 40
+    import math
+    top = math.ceil(max(max(sonuc.gozlenen.values()), max(BEKLENEN.values())) * 10 + 1e-9) / 10
+    ih = H - T - B
+    y = lambda v: T + (top - v) / top * ih  # noqa: E731
+    gw = (W - L - R) / 9
+    bw = min(36, gw - 14)
+    p = [f'<svg class="rc" viewBox="0 0 {W} {H}" role="img" aria-label="İlk rakam dağılımı ve Benford beklentisi">']
+    for i in range(int(round(top * 10)) + 1):
+        v = i / 10
+        p.append(f'<line x1="{L}" x2="{W - R}" y1="{y(v):.1f}" y2="{y(v):.1f}" stroke="{C_IZGARA}"/>'
+                 f'<text x="{L - 6}" y="{y(v) + 4:.1f}" text-anchor="end" class="rc-ax">%{v * 100:.0f}</text>')
+    pts = []
+    for d in range(1, 10):
+        cx = L + gw * (d - 1) + gw / 2
+        g, e = sonuc.gozlenen[d], BEKLENEN[d]
+        renk = C_AZ if d in sonuc.fazla else C_ANA
+        h = max(y(0) - y(g), 1)
+        r4 = min(4, h)
+        p.append(f'<path d="M{cx - bw / 2:.1f},{y(0):.1f} V{y(g) + r4:.1f} q0,-{r4:.1f} {r4:.1f},-{r4:.1f} H{cx + bw / 2 - r4:.1f} '
+                 f'q{r4:.1f},0 {r4:.1f},{r4:.1f} V{y(0):.1f} Z" fill="{renk}"><title>İlk rakam {d}: gerçekleşen %{g * 100:.1f}, '
+                 f'beklenen %{e * 100:.1f} ({sonuc.adet.get(d, 0)} kayıt)</title></path>')
+        p.append(f'<text x="{cx:.1f}" y="{H - B + 18}" text-anchor="middle" class="rc-lbl rc-strong">{d}</text>')
+        pts.append((cx, y(e)))
+    p.append('<polyline fill="none" stroke="var(--ink, #29241D)" stroke-width="2" points="'
+             + " ".join(f"{x:.1f},{yy:.1f}" for x, yy in pts) + '"/>')
+    for x, yy in pts:
+        p.append(f'<circle cx="{x:.1f}" cy="{yy:.1f}" r="4" fill="var(--ink, #29241D)" stroke="#fff" stroke-width="2"/>')
+    p.append("</svg>")
+    leg = (f'<span><i style="background:{C_ANA}"></i>Gerçekleşen</span><span><i style="background:{C_AZ}"></i>Beklenenden belirgin fazla</span>'
+           f'<span><i style="background:var(--ink, #29241D);border-radius:50%"></i>Benford beklentisi</span>')
+    return Markup(f'<div class="rc-wrap">{"".join(p)}<div class="rc-leg">{leg}</div></div>')

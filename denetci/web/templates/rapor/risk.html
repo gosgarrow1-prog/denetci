@@ -11,5 +11,6 @@
 <h2>Bulgular</h2>
 <p class="muted">Bulgular olası risklerdir; her biri belgesiyle birlikte değerlendirilmelidir.</p>
 {{ bulgu_tablo(risk_findings, cases) }}
+<div class="r-kdv">{% include "_benford.html" %}</div>
 <h2>Taranan konular ve sonuçları</h2>
 {{ kontrol_tablo(risk_results) }}

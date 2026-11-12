@@ -170,3 +170,21 @@ def test_donemsellik_supheli_avans_kapanis():
     assert r.status == "bulgu" and [d.hesap_kodu for d in r.drafts] == ["692"]
     assert k32(C(mizan=[M("690.01", -100_000_00), M("691.01", 25_000_00), M("692.01", -75_000_00),
                         M("370.01", -25_000_00), M("590.01", -75_000_00)])).status == "gecti"
+
+
+def test_benford():
+    from denetci import benford
+    from denetci.checks.risk import k33
+    import random
+    rnd = random.Random(1)
+    dogal = [int(10 ** rnd.uniform(3, 7)) for _ in range(2000)]  # log-düzgün: Benford'a uyar
+    b = benford.analiz(dogal)
+    assert b.uygunluk in ("yakin", "kabul") and b.yeterli
+    uydurma = [rnd.randint(50_000, 99_999) * 100 for _ in range(2000)]  # hep 5–9 ile başlar
+    b = benford.analiz(uydurma)
+    assert b.uygunluk == "uygun_degil" and set(b.fazla) <= {5, 6, 7, 8, 9}
+    d = date(2026, 9, 10)
+    yev = [J(d, "770.01", borc=x) for x in uydurma[:400]]
+    r = k33(C(yev))
+    assert r.status == "bulgu"
+    assert k33(C([J(d, "770.01", borc=x) for x in dogal[:50]])).status == "bilgi"

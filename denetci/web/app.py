@@ -40,7 +40,7 @@ from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET
 from ..parametreler import GECICI_VERGI
 from ..asistan import GOREV as ASISTAN_GOREV, GOREVLER as ASISTAN_GOREVLER, nasil as asistan_nasil, secenekler as asistan_secenekler, uygun as asistan_uygun
 from ..oneriler import ONCELIK_ADI, build as oneriler_build
-from .charts import aylik_grafik, balance_bars, gosterge, selale, tl_short, yatay_cubuk
+from .charts import aylik_grafik, balance_bars, benford_grafik, gosterge, selale, tl_short, yatay_cubuk
 from .. import raporlar
 
 HERE = Path(__file__).parent
@@ -758,6 +758,8 @@ def create_app() -> FastAPI:
             a = by_key[konu]
             v[f"{konu}_a"] = a
             v[f"{konu}_results"], v[f"{konu}_findings"] = filtre(a)
+            if konu == "risk":
+                _benford_view(s, c, p, v)
 
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
     def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
@@ -942,6 +944,8 @@ def create_app() -> FastAPI:
             v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
         if p and key == "kdv":
             _kdv_view(s, c, p, v)
+        if p and key == "risk":
+            _benford_view(s, c, p, v)
         return render(request, "analysis.html", active=keys[key], **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")
@@ -1473,6 +1477,21 @@ def _oneri(info: dict, ref: str, others):
         if by_vkn:
             return by_vkn
     return firma_en_iyi(ref, others)
+
+
+def _benford_view(s, c, p, v) -> None:
+    """Benford analizi (risk sayfası ve risk raporu): ilk rakam dağılımı ve grafiği."""
+    from .. import benford
+    from ..checks.risk import _kayitlar
+    ctx = build_context(s, c, p)[0]
+    if ctx is None:
+        return
+    lines, kaynak = _kayitlar(ctx)
+    b = benford.analiz([max(j.borc, j.alacak) for j in lines]) if lines else None
+    if b is not None:
+        v["benford"], v["benford_kaynak"] = b, kaynak
+        v["benford_grafik"] = benford_grafik(b)
+        v["BENFORD_UYGUNLUK"], v["BENFORD_BEKLENEN"] = benford.UYGUNLUK_ADI, benford.BEKLENEN
 
 
 def _kdv_view(s, c, p, v) -> None:

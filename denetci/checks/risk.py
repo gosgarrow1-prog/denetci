@@ -742,5 +742,38 @@ def k32(ctx: Context) -> Result:
     return Result(K32, "gecti", f"Kapanış kayıtları birbiriyle tutarlı ({kaynak}).")
 
 
+# ---- K-33 Benford analizi ---------------------------------------------------
+
+K33 = Rule("K-33", "1.0", "Tutarların ilk rakam dağılımı (Benford)",
+           "Kayıt tutarlarının ilk rakamları Benford dağılımıyla karşılaştırılır (10 TL altı tutarlar hariç, en az 300 kayıt). "
+           "Belirgin sapma, elle girilmiş, uydurulmuş ya da bir sınırın altında tutulmaya çalışılmış tutarlara işaret edebilir.",
+           "I", ("THP_VUK",), (), "İstatistiksel analitik inceleme (Benford yasası; Nigrini MAD eşikleri).", True,
+           "Sabit fiyatlı satışlar, abonelik, kira ve maaş gibi tekrar eden tutarlar dağılımı doğal olarak bozar; "
+           "kayıt sayısı azsa sapma rastlantısal olabilir.", D0, "Orta")
+
+
+def k33(ctx: Context) -> Result:
+    from .. import benford
+    lines, ad = _kayitlar(ctx)
+    if not lines:
+        return Result(K33, "uygulanmadi", "Uygulanmadı: yevmiye, kebir veya muavin gerekli.")
+    b = benford.analiz([max(j.borc, j.alacak) for j in lines])
+    if b is None:
+        return Result(K33, "uygulanmadi", "Uygulanmadı: 10 TL üzerinde kayıt yok.")
+    mad, ki = f"{b.mad:.4f}".replace(".", ","), f"{b.ki_kare:.1f}".replace(".", ",")
+    ozet = f"{b.n} kayıt ({ad}); ortalama mutlak sapma {mad}, ki-kare {ki}: {benford.UYGUNLUK_ADI[b.uygunluk].lower()}."
+    if not b.yeterli:
+        return Result(K33, "bilgi", f"Kayıt sayısı az ({b.n}); Benford sonucu yalnızca bilgi amaçlıdır. {ozet}")
+    if b.uygunluk != "uygun_degil":
+        return Result(K33, "gecti", ozet)
+    rakam = ", ".join(str(d) for d in b.fazla) or "—"
+    return Result(K33, "bulgu", ozet, [Draft(
+        "Kayıt tutarları Benford dağılımına uymuyor", "Orta", None, None, "benford",
+        f"{ozet} Beklenenden fazla görülen ilk rakam(lar): {rakam}."
+        + (f" En çok tekrar eden tutar {kurus_str(b.tekrar[0][0])} TL ({b.tekrar[0][1]} kez)." if b.tekrar else ""),
+        "İstatistiksel bulgu; tek başına hata göstermez. " + K33.exceptions,
+        f"İlk rakamı {rakam} olan büyük tutarlı kayıtları ve sık tekrar eden tutarları belgeleriyle karşılaştırın.")])
+
+
 RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16), (K17, k17), (K18, k18),
-              (K19, k19), (K20, k20), (K31, k31), (K32, k32)]
+              (K19, k19), (K20, k20), (K31, k31), (K32, k32), (K33, k33)]
