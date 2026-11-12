@@ -21,7 +21,7 @@
     {% if telefon_kodu %}<label>Doğrulama kodu (kimlik doğrulayıcı uygulamadaki 6 hane) <input name="kod" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code" required></label>{% endif %}
     <button class="primary big-btn">Giriş yap</button>
   </form>
-  <p class="muted">Uygulama yalnızca bu bilgisayarda çalışır; veriler dışarı gönderilmez.</p>
+  {% if not sunucu %}<p class="muted">Uygulama yalnızca bu bilgisayarda çalışır; veriler dışarı gönderilmez.</p>{% endif %}
 </section>
 </body>
 </html>

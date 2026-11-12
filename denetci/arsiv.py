@@ -1,6 +1,8 @@
 """Yüklenen her belgenin bir kopyası Mükellef\\Yıl\\Ay klasörüne kaydedilir (yalnızca arşiv; uygulama oradan okumaz)."""
 
+import io
 import re
+import zipfile
 from pathlib import Path
 
 from .config import arsiv_dir
@@ -56,3 +58,20 @@ def kaydet(client, o, content: bytes) -> Path | None:
         import logging
         logging.getLogger(__name__).warning('Arşive kopyalanamadı: %s', exc)
         return None
+
+
+def mukellef_klasoru(client) -> Path:
+    return arsiv_dir() / _temiz(client.unvan)
+
+
+def zip_olarak(client) -> bytes | None:
+    """Mükellefin arşiv klasörünü (yıl/ay düzeniyle) tek bir zip dosyası olarak verir; klasör boşsa None."""
+    kok = mukellef_klasoru(client)
+    dosyalar = sorted(f for f in kok.rglob("*") if f.is_file()) if kok.is_dir() else []
+    if not dosyalar:
+        return None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in dosyalar:
+            z.write(f, f.relative_to(kok).as_posix())
+    return buf.getvalue()

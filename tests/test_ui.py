@@ -400,6 +400,32 @@ def test_yuklenen_dosya_arsive_kopyalanir(app_client, data_root, monkeypatch, tm
     assert len(kopyalar) == len(files)
     assert any(k.name.startswith("Yevmiye - ") for k in kopyalar)
     assert "arsiv" in tc.get(f"/mukellef/{cid}/belgeler").text
+    z = tc.get(f"/mukellef/{cid}/arsiv.zip")
+    assert z.status_code == 200 and z.headers["content-type"] == "application/zip"
+    import io, zipfile
+    adlar = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+    assert len(adlar) == len(files) and all(a.startswith("2026/") for a in adlar)
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": "DEMO BOŞ A.Ş."}, follow_redirects=False)
+    assert tc.get(r.headers["location"] + "/arsiv.zip").status_code == 404
+
+
+def test_sunucu_kipinde_telefon_kodu_ve_yedek(data_root, monkeypatch):
+    import os, zipfile
+    from datetime import datetime, timedelta
+    from denetci import config, yedek
+    assert not config.telefon_kodu()
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")
+    assert config.telefon_kodu() and config.sunucu()
+    (config.data_dir() / "dosyalar").mkdir()
+    (config.data_dir() / "dosyalar" / "a.xlsx").write_bytes(b"x")
+    eski = config.yedek_dir() / "denetci-2026-01-01-0300.zip"
+    eski.write_bytes(b"")
+    t = (datetime.now() - timedelta(days=20)).timestamp()
+    os.utime(eski, (t, t))
+    yol = yedek.al()
+    adlar = zipfile.ZipFile(yol).namelist()
+    assert "veri/denetci.db" in adlar and "veri/dosyalar/a.xlsx" in adlar
+    assert not eski.exists() and yol.exists()
 
 
 def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):

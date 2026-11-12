@@ -3,9 +3,10 @@
 import secrets
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -17,7 +18,7 @@ from ..auth import LoginThrottle, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..config import RULESET_VERSION
 from ..checks.registry import ALL_RULES
-from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
+from ..config import MAX_YUKLEME_BAYT, data_dir, sunucu, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
@@ -155,6 +156,7 @@ def render(request: Request, name: str, **ctx):
     ctx["request"] = request
     ctx["csrf"] = csrf_token(request)
     ctx.setdefault("telefon_kodu", telefon_kodu())
+    ctx.setdefault("sunucu", sunucu())
     if request.session.get("uid") and "shell" not in ctx:
         ctx["shell"] = _shell(request.session["uid"], ctx.get("c"), ctx.get("p"))
     return templates.TemplateResponse(request, name, ctx)
@@ -344,7 +346,7 @@ def create_app() -> FastAPI:
     db.init_db()
     app = FastAPI(title="Denetçi", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SessionMiddleware, secret_key=_secret_key(), same_site="strict", max_age=8 * 3600,
-                       session_cookie="denetci_oturum")
+                       session_cookie="denetci_oturum", https_only=sunucu())
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
 
     @app.get("/buro/logo-{tema}.png")
@@ -602,8 +604,20 @@ def create_app() -> FastAPI:
     def documents_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
-        from ..config import arsiv_dir
-        return render(request, "documents.html", active="belgeler", arsiv_yolu=str(arsiv_dir()), **_view(s, c, p, request))
+        from .. import arsiv
+        return render(request, "documents.html", active="belgeler", arsiv_yolu=str(arsiv.mukellef_klasoru(c)),
+                      sunucu=sunucu(), **_view(s, c, p, request))
+
+    @app.get("/mukellef/{cid}/arsiv.zip")
+    def archive_zip(cid: int, user=Depends(current_user), s=Depends(get_session)):
+        from .. import arsiv
+        c = s.get(Client, cid) or _404()
+        icerik = arsiv.zip_olarak(c) or _404()
+        audit(s, user, "arsiv_indir", client_id=c.id)
+        s.commit()
+        ad = quote(f"{arsiv._temiz(c.unvan)} - belgeler.zip")
+        return Response(icerik, media_type="application/zip",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{ad}"})
 
     @app.get("/mukellef/{cid}/finansal", response_class=HTMLResponse)
     def finance_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):

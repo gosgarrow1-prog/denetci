@@ -3,6 +3,8 @@
     python -m denetci kullanici-ekle <kullanici_adi>
     python -m denetci demo
     python -m denetci calistir
+    python -m denetci telefon-kodu <kullanici_adi>
+    python -m denetci yedek
 """
 
 import argparse
@@ -40,6 +42,32 @@ def cmd_add_user(args):
     print(f"    {secret}\n")
     print(f"(Bazı uygulamalar bu bağlantıyı da kabul eder: {otpauth_uri(secret, args.username)})")
     print("Bu anahtarı kimseyle paylaşmayın.")
+
+
+def cmd_telefon_kodu(args):
+    """Kullanıcının telefon kodu anahtarını gösterir (kimlik doğrulayıcı uygulamaya eklemek için)."""
+    db.init_db()
+    from .models import User
+
+    with db.SessionLocal() as s:
+        u = s.scalar(select(User).where(User.username == args.username))
+        if not u:
+            sys.exit("Böyle bir kullanıcı yok.")
+        if args.yenile:
+            u.totp_secret = new_totp_secret()
+            s.commit()
+        print(f"Kullanıcı: {u.username}")
+        print("Telefonunuzdaki kimlik doğrulayıcı uygulamaya 'anahtarı elle gir' seçeneğiyle şu anahtarı ekleyin:\n")
+        print(f"    {u.totp_secret}\n")
+        print(f"(Bağlantı: {otpauth_uri(u.totp_secret, u.username)})")
+        print("Bu anahtarı kimseyle paylaşmayın.")
+
+
+def cmd_yedek(args):
+    from . import buro, yedek
+
+    yol = yedek.al(ek_klasorler=[buro.klasor()])
+    print(f"Yedek alındı: {yol}")
 
 
 def cmd_demo(args):
@@ -89,6 +117,12 @@ def main(argv=None):
     p = sub.add_parser("calistir", help="Uygulamayı yalnızca bu bilgisayarda (127.0.0.1) başlatır")
     p.add_argument("--port", type=int, default=8000)
     p.set_defaults(func=cmd_run)
+    p = sub.add_parser("telefon-kodu", help="Kullanıcının telefon kodu anahtarını gösterir")
+    p.add_argument("username")
+    p.add_argument("--yenile", action="store_true", help="Yeni anahtar üretir (eski telefon geçersiz olur)")
+    p.set_defaults(func=cmd_telefon_kodu)
+    p = sub.add_parser("yedek", help="Veritabanı ve dosyaların yedeğini alır, 14 günden eskileri siler")
+    p.set_defaults(func=cmd_yedek)
     args = parser.parse_args(argv)
     args.func(args)
 
