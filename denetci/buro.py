@@ -44,7 +44,10 @@ def hazirlayan(kullanici_adi: str) -> dict:
         "kullanicilar": {"burak": {"ad": "Burak ALTINOK", "unvan": "S.M.Mali Müşavir"}}
     """
     tablo = bilgiler().get("kullanicilar") or {}
-    k = tablo.get(kullanici_adi) if isinstance(tablo, dict) else None
+    k = None
+    if isinstance(tablo, dict):
+        # Kullanıcı adı büyük/küçük harf farkıyla yazılmış olabilir (ör. "Baltinok" / "baltinok").
+        k = next((v for ad, v in tablo.items() if str(ad).casefold() == kullanici_adi.casefold()), None)
     if isinstance(k, str):
         k = {"ad": k}
     if not isinstance(k, dict) or not k.get("ad"):

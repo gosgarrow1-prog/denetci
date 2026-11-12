@@ -108,3 +108,4 @@ svg.rc text { font-family: var(--f-metin, sans-serif); }
   svg.rc, .r-chart svg { min-width: 540px; }
 }
 @media (max-width: 640px) { .r-status { align-items: flex-start; text-align: left; } }
+.r-imza-logo { height: 64px; width: auto; max-width: 100%; margin-bottom: 6px; }
