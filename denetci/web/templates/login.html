@@ -8,10 +8,13 @@
 </head>
 <body class="login-page">
 <section class="login-card">
-  <div class="brand login-brand">
+  {% set bu = buro() %}
+  {% if bu.logolar.acik %}<img class="login-logo" src="/buro/logo-acik.png" alt="{{ bu.get('unvan', '') }}">
+  <p class="eyebrow login-eyebrow">Denetçi · kontrol paneli</p>
+  {% else %}<div class="brand login-brand">
     <span class="brand-mark">{{ icon('shield', 24) }}</span>
     <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
-  </div>
+  </div>{% endif %}
   <h1>Giriş yap</h1>
   {% if error %}<p class="err" role="alert">{{ error }}</p>{% endif %}
   <form method="post" action="/giris" class="form-stack">

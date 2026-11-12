@@ -1,4 +1,4 @@
-/* Denetçi — arayüz. Yerel çalışır; dış kaynak (yazı tipi, kütüphane) kullanılmaz. */
+/* Denetçi — arayüz. Dış kaynak kullanılmaz; yazı tipleri static/fonts altında (SIL OFL). */
 :root {
   color-scheme: light;
   --bg: #f3f5f8; --surface: #ffffff; --surface-2: #f8fafc; --line: #e3e8ef; --line-strong: #d0d7e2;
@@ -412,3 +412,103 @@ tr.ef-neden ul { margin: 0; padding: 4px 0 4px 18px; font-size: 12.5px; color: v
 .wa-actions { display: flex; gap: 10px; margin-top: 10px; }
 @media (max-width: 640px) { .r-buro { flex-direction: column; align-items: flex-start; } .r-imza { grid-template-columns: 1fr; } }
 .r-hazirlayan { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2px; }
+
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/dm-sans-latin-ext-400-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url(fonts/dm-sans-latin-400-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/dm-sans-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/dm-sans-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/dm-sans-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/dm-sans-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/dm-sans-latin-ext-700-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "DM Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url(fonts/dm-sans-latin-700-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/cormorant-garamond-latin-ext-500-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 500; font-display: swap; src: url(fonts/cormorant-garamond-latin-500-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 500; font-display: swap; src: url(fonts/cormorant-garamond-latin-ext-500-italic.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 500; font-display: swap; src: url(fonts/cormorant-garamond-latin-500-italic.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/cormorant-garamond-latin-ext-600-normal.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 600; font-display: swap; src: url(fonts/cormorant-garamond-latin-600-normal.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 600; font-display: swap; src: url(fonts/cormorant-garamond-latin-ext-600-italic.woff2) format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 600; font-display: swap; src: url(fonts/cormorant-garamond-latin-600-italic.woff2) format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+/* ==== Büro teması (altinokmalimusavirlik.com ile uyumlu): krem zemin, altın vurgu, siyah menü ==== */
+:root {
+  --bg: #F5EFE3; --surface: #FBF8F1; --surface-2: #F3EBDC; --line: #E4D7BC; --line-strong: #D9C9A4;
+  --ink: #29241D; --ink-2: #4A4237; --muted: #6B6253;
+  --navy: #121110; --navy-2: #2B2620; --navy-hover: #1E1B17; --navy-ink: #EFE7D6; --navy-muted: #B4A992;
+  --accent: #C9A24A; --accent-ink: #8F6D22; --accent-soft: #F3E8CF;
+  --gold: #C9A24A; --gold-dark: #8F6D22; --gold-light: #E3C784;
+  --gold-grad: linear-gradient(135deg, #D8B562, #C9A24A 45%, #A9832F);
+  --red: #9A3B2E; --red-ink: #7E2F24; --red-soft: #F6E1DA;
+  --amber: #A8661B; --amber-ink: #85501A; --amber-soft: #F7E9CC;
+  --blue: #4F6475; --blue-soft: #E9EBE6;
+  --green: #4E7A4A; --green-ink: #3B5E38; --green-soft: #E3EAD6;
+  --gray-soft: #EFE7D6; --gray-ink: #5E5547;
+  --s1: #8F6D22; --s2: #29241D; --s3: #4E7A4A; --s4: #C9A24A; --s5: #9A3B2E; --neg: #9A3B2E;
+  --radius: 6px;
+  --f-baslik: "Cormorant Garamond", Garamond, "Times New Roman", serif;
+  --f-metin: "DM Sans", "Segoe UI", system-ui, sans-serif;
+}
+body { font-family: var(--f-metin); font-size: 15px; }
+h1 { font-family: var(--f-baslik); font-weight: 600; font-size: 34px; color: var(--ink); letter-spacing: -.005em; }
+h1 em, h2 em { font-style: italic; color: var(--gold-dark); }
+h2 { font-family: var(--f-baslik); font-weight: 600; font-size: 22px; color: var(--ink); }
+.eyebrow, .sect, .bot-name { letter-spacing: .2em; color: var(--gold-dark); font-weight: 500; }
+.app { background: linear-gradient(to right, var(--navy) 264px, transparent 264px); }
+.side { border-right: 1px solid #2E2A24; }
+.nav { border-radius: 4px; }
+.nav.on { background: transparent; color: var(--gold-light); box-shadow: inset 3px 0 0 var(--gold); }
+a.nav:hover { color: var(--gold-light); }
+.sect { color: var(--gold); opacity: .85; }
+.badge { background: var(--gold-grad); color: #1A1610; }
+.soon { border-color: #4A4237; }
+.dot { background: var(--gold); }
+.brand-mark { background: var(--gold-grad); color: #1A1610; border-radius: 4px; }
+.brand-name { font-family: var(--f-baslik); font-size: 24px; font-weight: 600; letter-spacing: .04em; }
+.brand-sub { color: var(--navy-muted); }
+.topbar { background: rgba(251, 248, 241, .92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+.avatar { background: var(--gold-grad); color: #1A1610; }
+.back-btn, .sel select, input, select, textarea { border-radius: 4px; }
+.card, .summary, .tile, .alert-row, a.client-row, .bot, .report, .wa-box { border-radius: 4px; box-shadow: none; }
+.card, .summary { border-color: var(--line); }
+.ph-ic, .cl-av { background: var(--accent-soft); color: var(--gold-dark); border-radius: 4px; }
+.sum-ic { background: var(--navy); color: var(--gold-light); border-radius: 4px; }
+.tv { font-family: var(--f-metin); font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.tile { border-top: 2px solid var(--gold); }
+a.client-row:hover, .bot-opt:hover { border-color: var(--gold); }
+.lv-pill, .st-pill, .tag, .rel-pill { letter-spacing: .03em; }
+.need, .chk, .docs li { border-bottom-color: var(--line); }
+.progress { background: var(--gray-soft); }
+.progress .r { background: var(--red); } .progress .n { background: #B4A992; }
+.drop { border-color: var(--line-strong); border-radius: 4px; }
+.drop.over, .drop:hover { border-color: var(--gold); background: var(--accent-soft); }
+
+/* Düğmeler: altın, yuvarlak (sitedeki "Mükellef" düğmesi gibi) */
+button, .btn { border-radius: 999px; font-weight: 500; }
+.btn.primary, button.primary, form > button:not(.link):not(.icon-btn):not(.btn) { background: var(--gold-grad); border-color: transparent; color: #1A1610; }
+.btn.primary:hover, button.primary:hover, form > button:not(.link):not(.icon-btn):not(.btn):hover { background: var(--gold-grad); filter: brightness(1.06); color: #1A1610; }
+button.link { color: var(--gold-dark); }
+.st-pill.navy, .bot-me, .seg-i.on { background: var(--navy); color: var(--gold-light); }
+.bot-avatar { background: var(--navy); color: var(--gold-light); border-radius: 4px; }
+.bot-say { border-radius: 2px 12px 12px 12px; }
+.bot-opt strong { color: var(--ink); }
+.step.now .step-n { border-color: var(--gold); color: var(--gold-dark); background: var(--accent-soft); }
+.step.now { background: linear-gradient(90deg, var(--accent-soft), transparent); }
+.qtable th.col-hi, .qtable td.col-hi { background: var(--accent-soft); }
+.decl-tag { background: var(--accent-soft); color: var(--gold-dark); } .decl-tag.gv { background: var(--green-soft); color: var(--green-ink); }
+.yorum { border-color: var(--line-strong); background: var(--surface); }
+tr.ef-neden td { background: var(--surface); }
+table.grid { background: transparent; }
+table.grid th { letter-spacing: .04em; }
+
+/* Giriş: sitedeki gibi krem zemin, ortada logo */
+.login-page { background: radial-gradient(ellipse at top, #FBF8F1, #F5EFE3 60%, #EDE3D0); }
+.login-card { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 4px; box-shadow: 0 20px 50px -30px rgba(41, 36, 29, .45); }
+.login-card h1 { font-size: 30px; }
+.login-logo { display: block; width: 220px; max-width: 100%; height: auto; margin: 0 auto 4px; }
+.login-card .brand-mark { background: var(--gold-grad); }
+
+/* Rapor */
+.report h2 { color: var(--ink); border-bottom-color: var(--line-strong); }
+.r-head { border-bottom-color: var(--gold); }
+.r-brand { color: var(--gold-dark); letter-spacing: .12em; text-transform: uppercase; font-weight: 500; }
+.login-eyebrow { text-align: center; margin: 0; }

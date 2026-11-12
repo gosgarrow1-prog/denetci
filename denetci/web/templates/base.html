@@ -45,7 +45,7 @@
   {% endif %}
   <div class="sect">Yönetim</div>
   <a class="nav {{ 'on' if active == 'mukellefler' }}" href="/">{{ icon('building') }}Mükellefler</a>
-  <div class="side-foot"><span class="dot"></span>Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz</div>
+  <div class="side-foot"><span class="dot"></span>{% if sunucu %}Güvenli bağlantı · büro sunucusu{% else %}Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz{% endif %}</div>
 </nav>
 
 <div class="main">
