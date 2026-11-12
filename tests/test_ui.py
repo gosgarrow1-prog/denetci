@@ -504,3 +504,25 @@ def test_tasinan_veride_dosya_yollari_duzelir(data_root, capsys):
     assert "Bulunamayan dosya: 0" in capsys.readouterr().out
     with db.SessionLocal() as s:
         assert s.scalar(select(SourceFile)).stored_path == str(hedef)
+
+
+def test_bu_bilgisayari_hatirla(app_client, monkeypatch):
+    from denetci.auth import totp
+    from denetci.models import User
+    from tests.test_web import csrf as _csrf
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")
+    tc = app_client
+    giris = lambda **ek: tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "burak",
+                                                 "parola": "cok-gizli-parola-123", **ek}, follow_redirects=False)
+    assert giris().status_code == 200  # kod yok, hatırlanmıyor: giriş yok
+    r = giris(kod=totp(tc.secret), hatirla="1")
+    assert r.status_code == 303 and "denetci_cihaz" in r.headers.get("set-cookie", "")
+    tc.cookies.set("denetci_cihaz", r.cookies.get("denetci_cihaz") or tc.cookies.get("denetci_cihaz"))
+    tc.post("/cikis", data={"csrf": _csrf(tc, "/")})
+    assert giris().status_code == 303  # hatırlanan bilgisayar: kodsuz giriş
+    tc.post("/cikis", data={"csrf": _csrf(tc, "/")})
+    with db.SessionLocal() as s:  # anahtar yenilenince hatırlama geçersiz
+        u = s.scalar(select(User).where(User.username == "burak"))
+        u.totp_secret = "JBSWY3DPEHPK3PXP"
+        s.commit()
+    assert giris().status_code == 200

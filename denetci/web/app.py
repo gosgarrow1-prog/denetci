@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, URLSafeSerializer, URLSafeTimedSerializer
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import db
@@ -389,8 +389,9 @@ def create_app() -> FastAPI:
         if throttle.locked(username):
             return render(request, "login.html", error="Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.")
         user = s.scalar(select(User).where(User.username == username))
+        hatirlandi = bool(user) and _cihaz_hatirlaniyor(request, user)
         ok = user and verify_password(str(form.get("parola", "")), user.password_hash) and \
-            (not telefon_kodu() or user.misafir or verify_totp(user.totp_secret, str(form.get("kod", ""))))
+            (not telefon_kodu() or user.misafir or hatirlandi or verify_totp(user.totp_secret, str(form.get("kod", ""))))
         if not ok:
             throttle.fail(username)
             audit(s, None, "giris_basarisiz", detail=username[:64])
@@ -401,7 +402,11 @@ def create_app() -> FastAPI:
         request.session["uid"] = user.id
         request.session["csrf"] = secrets.token_urlsafe(24)
         audit(s, user, "giris")
-        return _redirect(s, "/")
+        r = _redirect(s, "/")
+        if telefon_kodu() and not user.misafir and form.get("hatirla") and not hatirlandi:
+            r.set_cookie(CIHAZ_CEREZI, _cihaz_imzaci().dumps({"u": user.id, "k": _anahtar_izi(user)}),
+                         max_age=CIHAZ_GUN * 86400, httponly=True, secure=sunucu(), samesite="strict")
+        return r
 
     @app.post("/cikis")
     async def logout(request: Request):
@@ -1291,6 +1296,32 @@ def _redirect(s, url):
     if s is not None:
         s.commit()
     return RedirectResponse(url, status_code=303)
+
+
+CIHAZ_CEREZI = "denetci_cihaz"
+CIHAZ_GUN = 30
+
+
+def _cihaz_imzaci():
+    return URLSafeTimedSerializer(_secret_key(), salt="cihaz-hatirla")
+
+
+def _anahtar_izi(user) -> str:
+    """Telefon kodu anahtarı yenilenince hatırlanan cihazlar geçersiz olsun diye anahtarın kısa özeti."""
+    import hashlib
+    return hashlib.sha256(user.totp_secret.encode()).hexdigest()[:16]
+
+
+def _cihaz_hatirlaniyor(request, user) -> bool:
+    """Bu tarayıcı son 30 gün içinde bu kullanıcı için 'bu bilgisayarı hatırla' ile işaretlendiyse telefon kodu sorulmaz."""
+    tok = request.cookies.get(CIHAZ_CEREZI)
+    if not tok:
+        return False
+    try:
+        v = _cihaz_imzaci().loads(tok, max_age=CIHAZ_GUN * 86400)
+    except BadSignature:
+        return False
+    return v.get("u") == user.id and v.get("k") == _anahtar_izi(user)
 
 
 def _signer():

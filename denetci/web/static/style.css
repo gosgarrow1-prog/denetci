@@ -512,3 +512,5 @@ table.grid th { letter-spacing: .04em; }
 .r-head { border-bottom-color: var(--gold); }
 .r-brand { color: var(--gold-dark); letter-spacing: .12em; text-transform: uppercase; font-weight: 500; }
 .login-eyebrow { text-align: center; margin: 0; }
+label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; }
+label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(--gold-dark); }

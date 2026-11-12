@@ -22,7 +22,8 @@
     <label>Kullanıcı adı <input name="kullanici" autocomplete="username" required autofocus></label>
     <label>Parola <input name="parola" type="password" autocomplete="current-password" required></label>
     {% if telefon_kodu %}<label>Doğrulama kodu (kimlik doğrulayıcı uygulamadaki 6 hane) <input name="kod" inputmode="numeric" pattern="[0-9 ]{6,7}" autocomplete="one-time-code"></label>
-    <p class="muted">Misafir hesabıyla girerken bu kutuyu boş bırakın.</p>{% endif %}
+    <p class="muted">Misafir hesabıyla ya da hatırlanan bilgisayarda bu kutuyu boş bırakın.</p>
+    <label class="check"><input type="checkbox" name="hatirla" value="1"> Bu bilgisayarı 30 gün hatırla (kod sorulmaz)</label>{% endif %}
     <button class="primary big-btn">Giriş yap</button>
   </form>
   {% if not sunucu %}<p class="muted">Uygulama yalnızca bu bilgisayarda çalışır; veriler dışarı gönderilmez.</p>{% endif %}
