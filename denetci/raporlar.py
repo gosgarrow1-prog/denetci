@@ -30,6 +30,7 @@ KONULAR = [
     Konu("risk", "Hata ve risk taraması", "Ters bakiye, kasa, ortaklar cari, örtülü sermaye, binek oto ve diğer riskler."),
     Konu("mutabakat", "Defter mutabakatı", "Yevmiye, kebir, muavin ve mizanın birbiriyle tutarlılığı."),
     Konu("fatura", "Fatura mutabakatı", "e-Fatura / e-Arşiv listesinin deftere işlenip işlenmediği."),
+    Konu("kredibilite", "Kredibilite (banka görünümü)", "Bankanın kredi verirken baktığı oranlar, Altman Z, A–E not ve istenecek belgeler."),
 ]
 KONU = {k.key: k for k in KONULAR}
 
@@ -294,3 +295,165 @@ def finansal(fin, prev_fin=None, aylar=()) -> Finansal:
         kod, ad, v = f.giderler[0]
         f.yorumlar.append(f"En büyük gider kalemi {kod} {ad} ({kurus_str(v)} TL); gösterilen giderlerin {_pct(v / tg)}'i.")
     return f
+
+
+# ---- Kredibilite (banka görünümü) ------------------------------------------------------------------------------
+
+NOTLAR = {
+    "A": "Güçlü: bankalar açısından kredi değerliliği yüksek görünüyor.",
+    "B": "İyi: kredi kullanımında genel olarak sorun beklenmez; zayıf kalan göstergeler iyileştirilebilir.",
+    "C": "Orta: kredi alınabilir ancak teminat ve faiz koşulları ağırlaşabilir.",
+    "D": "Zayıf: bankalar ek teminat veya kefalet isteyebilir; önce zayıf göstergeler iyileştirilmeli.",
+    "E": "Riskli: mevcut tablo kredi başvurusunda olumsuz değerlendirilebilir.",
+}
+
+BANKA_BELGELERI = [
+    "Son iki yılın kurumlar (veya gelir) vergisi beyannamesi ile bilanço ve gelir tablosu",
+    "Son dönem geçici vergi beyannamesi ve güncel mizan",
+    "Vergi ve SGK borcu yoktur yazıları",
+    "Faaliyet belgesi, imza sirküleri, ticaret sicil gazeteleri (kuruluş ve son değişiklikler)",
+    "Ortakların ve yetkililerin kimlik bilgileri, gerekirse kefil bilgileri",
+    "Diğer bankalardaki kredi ve limitlerin listesi (banka KKB raporunu ayrıca çeker)",
+    "Alacak yaşlandırma listesi, çek/senet portföyü, önemli müşteri sözleşmeleri",
+    "Teminat olarak gösterilecek gayrimenkul, araç veya makine belgeleri",
+]
+
+
+@dataclass
+class KrediGosterge:
+    ad: str
+    deger: float | None
+    bicim: str
+    puan: int  # 0, 1, 2
+    esik: str  # puanlama eşikleri, okunabilir
+    yorum: str
+    aralik: tuple | None = None
+    olcek: float | None = None
+
+    @property
+    def metin(self):
+        if self.deger is None:
+            return "—"
+        return {"pct": _pct, "gun": _gun}.get(self.bicim, _x)(self.deger)
+
+    @property
+    def durum(self):
+        return {2: "iyi", 1: "dikkat", 0: "zayif"}[self.puan]
+
+
+@dataclass
+class Kredibilite:
+    gostergeler: list = field(default_factory=list)
+    altman: dict | None = None
+    puan: int = 0
+    en_fazla: int = 0
+    harf: str | None = None
+    guclu: list = field(default_factory=list)
+    zayif: list = field(default_factory=list)
+    eksik: list = field(default_factory=list)
+    yillik_carpan: float = 1.0
+    gun: int | None = None
+
+    @property
+    def yuzde(self):
+        return self.puan / self.en_fazla if self.en_fazla else None
+
+
+def _harf(oran: float) -> str:
+    for h, alt in (("A", 0.85), ("B", 0.70), ("C", 0.50), ("D", 0.30)):
+        if oran >= alt:
+            return h
+    return "E"
+
+
+def kredibilite(fin) -> Kredibilite:
+    """Bankanın kredi değerlendirmesinde baktığı başlıca göstergeler ve bunlardan basit bir A–E not.
+
+    Puanlama genel kabul gören eşiklerle yapılır (her gösterge 0–2 puan); bankaların kendi modelleri ve KKB/çek
+    sicili gibi bilgiler dahil değildir. Gelir tablosu kalemleri dönem gün sayısıyla yıllığa çevrilir.
+    """
+    kr = Kredibilite()
+    if fin is None or not fin.has_balance:
+        kr.eksik.append("Dönem sonu bakiyeleri (yılbaşından mizan veya defteri kebir)")
+    if fin is None or not fin.has_income:
+        kr.eksik.append("Gelir ve gider hareketleri (yevmiye, kebir veya mizan)")
+    if kr.eksik:
+        return kr
+    k, aktif = fin.kalemler, fin.aktif or 0
+    if fin.flows_window:
+        kr.gun = (fin.flows_window[1] - fin.flows_window[0]).days + 1
+        kr.yillik_carpan = 365 / kr.gun
+    yc = kr.yillik_carpan
+    ns = k.get("net_satis", 0)
+    fk = k.get("faaliyet_kar", 0)
+    amort = k.get("amortisman", 0)
+    favok = (fk + amort) * yc
+    fin_gid = k.get("finansman_gideri", 0) * yc
+    oz = k.get("ozkaynak", 0)
+    yab = k.get("yabanci_kaynak", 0)
+    G = kr.gostergeler
+
+    # Altman Z'' (üretim dışı / gelişmekte olan piyasa modeli)
+    if aktif > 0:
+        x1 = (k.get("donen", 0) - k.get("kvyk", 0)) / aktif
+        x2 = (k.get("dagitilmamis_kar", 0) + (fin.donem_sonucu_kapanmamis or 0)) / aktif
+        x3 = fk * yc / aktif
+        x4 = oz / yab if yab else 3.0
+        z = 6.56 * x1 + 3.26 * x2 + 6.72 * x3 + 1.05 * x4
+        kr.altman = {"z": z, "x1": x1, "x2": x2, "x3": x3, "x4": x4, "x4_yok": not yab}
+        p = 2 if z > 2.6 else (1 if z >= 1.1 else 0)
+        G.append(KrediGosterge("Altman Z puanı", z, "x", p, "> 2,6 güvenli · 1,1–2,6 gri bölge · < 1,1 riskli",
+                               {2: "Mali sıkıntı riski düşük bölgede.", 1: "Gri bölgede: yakından izlenmeli.",
+                                0: "Mali sıkıntı riski yüksek bölgede."}[p], (2.6, 8), 8))
+    cari = _div(k.get("donen", 0), k.get("kvyk", 0))
+    if cari is not None:
+        p = 2 if cari >= 1.5 else (1 if cari >= 1 else 0)
+        G.append(KrediGosterge("Cari oran", cari, "x", p, "≥ 1,5 iyi · 1–1,5 orta · < 1 zayıf",
+                               f"İşletme sermayesi {kurus_str(k.get('donen', 0) - k.get('kvyk', 0))} TL.", (1.5, 2.5), 4))
+    if aktif > 0:
+        oa = oz / aktif
+        p = 2 if oa >= 0.35 else (1 if oa >= 0.2 else 0)
+        G.append(KrediGosterge("Özkaynak / aktif", oa, "pct", p, "≥ %35 iyi · %20–35 orta · < %20 zayıf",
+                               "Varlıkların ne kadarının ortakların kendi kaynağıyla finanse edildiği; bankalar "
+                               "özkaynağı güçlü şirketi daha az riskli görür." if oa >= 0 else
+                               "Özkaynak eksi: borçlar varlıkları aşıyor.", (0.35, 1), 1))
+    if fin_gid > 0:
+        fko = favok / fin_gid
+        p = 2 if fko >= 3 else (1 if fko >= 1.5 else 0)
+        G.append(KrediGosterge("Faiz karşılama (FAVÖK / finansman gideri)", fko, "x", p, "≥ 3 iyi · 1,5–3 orta · < 1,5 zayıf",
+                               f"Faaliyetten elde edilen kâr finansman giderlerinin {_x(fko)} katı.", (3, 10), 10))
+    else:
+        G.append(KrediGosterge("Faiz karşılama (FAVÖK / finansman gideri)", None, "x", 2, "finansman gideri yok",
+                               "Dönemde finansman gideri kaydı yok; faiz yükü bulunmuyor.", None, None))
+    net_borc = k.get("mali_borclar", 0) - k.get("hazir_degerler", 0)
+    if net_borc <= 0:
+        G.append(KrediGosterge("Net borç / FAVÖK", None, "x", 2, "≤ 2,5 iyi · 2,5–4 orta · > 4 zayıf",
+                               f"Kasa ve bankadaki para banka borçlarından fazla (net nakit {kurus_str(-net_borc)} TL).", None, None))
+    elif favok <= 0:
+        G.append(KrediGosterge("Net borç / FAVÖK", None, "x", 0, "≤ 2,5 iyi · 2,5–4 orta · > 4 zayıf",
+                               f"Net banka borcu {kurus_str(net_borc)} TL var, faaliyetler ise kâr üretmiyor.", None, None))
+    else:
+        nbf = net_borc / favok
+        p = 2 if nbf <= 2.5 else (1 if nbf <= 4 else 0)
+        G.append(KrediGosterge("Net borç / FAVÖK", nbf, "x", p, "≤ 2,5 iyi · 2,5–4 orta · > 4 zayıf",
+                               f"Net banka borcu ({kurus_str(net_borc)} TL) yaklaşık {_x(nbf)[:-1]} yıllık faaliyet kârıyla "
+                               "(amortisman öncesi) ödenebilir.", (0, 2.5), 6))
+    if ns > 0:
+        nm = k.get("donem_kari", 0) / ns
+        p = 2 if nm >= 0.05 else (1 if nm >= 0 else 0)
+        G.append(KrediGosterge("Vergi öncesi kâr marjı", nm, "pct", p, "≥ %5 iyi · %0–5 orta · zarar zayıf",
+                               "Satışlardan kalan kâr payı; bankalar sürekli kâr eden şirketi tercih eder.", (0.05, 0.3), 0.3))
+        if kr.gun:
+            ts = k.get("ticari_alacaklar", 0) / ns * kr.gun
+            p = 2 if ts <= 60 else (1 if ts <= 120 else 0)
+            G.append(KrediGosterge("Alacak tahsil süresi", ts, "gun", p, "≤ 60 gün iyi · 60–120 orta · > 120 zayıf",
+                                   "Satışların nakde dönme hızı; uzun süre işletme sermayesi ihtiyacını artırır.", (0, 60), 180))
+    else:
+        G.append(KrediGosterge("Vergi öncesi kâr marjı", None, "pct", 0, "satış yok", "Dönemde satış kaydı yok.", None, None))
+
+    kr.puan = sum(g.puan for g in G)
+    kr.en_fazla = 2 * len(G)
+    kr.harf = _harf(kr.yuzde) if kr.en_fazla else None
+    kr.guclu = [g for g in G if g.puan == 2]
+    kr.zayif = [g for g in G if g.puan == 0]
+    return kr

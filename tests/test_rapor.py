@@ -58,3 +58,18 @@ def test_rapor_sayfasi_konular(app_client):  # noqa: F811
     hepsi = "&".join(f"konu={k.key}" for k in raporlar.KONULAR)
     r = tc.get(f"/mukellef/{cid}/rapor?{hepsi}").text
     assert "İçindekiler" in r and r.count('class="r-konu"') == len(raporlar.KONULAR)
+
+
+def test_kredibilite_notu():
+    fin = _fin()
+    fin.kalemler.update({"donen": 600_000_00, "kvyk": 300_000_00, "yabanci_kaynak": 600_000_00, "dagitilmamis_kar": 50_000_00,
+                         "mali_borclar": 200_000_00, "hazir_degerler": 50_000_00, "amortisman": 10_000_00,
+                         "finansman_gideri": 20_000_00})
+    fin.donem_sonucu_kapanmamis = 100_000_00
+    kr = raporlar.kredibilite(fin)
+    assert kr.harf in "ABCDE" and kr.en_fazla == 2 * len(kr.gostergeler)
+    g = {x.ad: x for x in kr.gostergeler}
+    assert g["Cari oran"].puan == 2 and g["Özkaynak / aktif"].puan == 2  # 2,0 ve %40
+    z = kr.altman
+    assert abs(z["z"] - (6.56 * z["x1"] + 3.26 * z["x2"] + 6.72 * z["x3"] + 1.05 * z["x4"])) < 1e-9
+    assert raporlar.kredibilite(None).eksik

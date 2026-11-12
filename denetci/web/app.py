@@ -751,6 +751,9 @@ def create_app() -> FastAPI:
             cy = ceyrek.analiz(s, c, p.bitis)
             v["cy"] = cy
             v["cy_grafik"] = aylik_grafik(cy.aylar) if cy else None
+        elif konu == "kredibilite":
+            v["kr"] = raporlar.kredibilite(v["fin"])
+            v["NOTLAR"], v["BANKA_BELGELERI"] = raporlar.NOTLAR, raporlar.BANKA_BELGELERI
         elif konu in ("risk", "mutabakat"):
             a = by_key[konu]
             v[f"{konu}_a"] = a

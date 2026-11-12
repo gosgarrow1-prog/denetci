@@ -109,3 +109,10 @@ svg.rc text { font-family: var(--f-metin, sans-serif); }
 }
 @media (max-width: 640px) { .r-status { align-items: flex-start; text-align: left; } }
 .r-imza-logo { height: 64px; width: auto; max-width: 100%; margin-bottom: 6px; }
+.r-not { display: flex; gap: 18px; align-items: center; border: 1px solid var(--line); border-left: 4px solid var(--gold, #C9A24A); border-radius: 4px; padding: 16px 18px; margin: 14px 0; break-inside: avoid; }
+.r-not-harf { width: 72px; height: 72px; flex: none; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: var(--f-baslik, serif); font-size: 46px; font-weight: 600; background: var(--navy, #121110); color: var(--gold-light, #E3C784); }
+.r-not-metin p { margin: 4px 0 8px; }
+.r-not-olcek { display: flex; gap: 4px; }
+.r-not-olcek span { width: 28px; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; background: var(--gray-soft, #EFE7D6); color: var(--muted); }
+.r-not-olcek span.on { background: var(--gold, #C9A24A); color: #1A1610; }
+@media (max-width: 640px) { .r-not { flex-direction: column; align-items: flex-start; } }

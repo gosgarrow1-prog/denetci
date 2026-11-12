@@ -1,0 +1,71 @@
+<p class="r-giris">Bu bölüm şirkete bankanın gözüyle bakar: kredi değerlendirmesinde öne çıkan oranlar genel kabul gören eşiklerle puanlanır ve A–E arası bir not çıkarılır. Bankaların kendi puanlama modelleri, KKB kaydı, çek ve senet sicili ile teminat durumu bu nota dahil değildir; not yalnızca defter kayıtlarından çıkan finansal tabloyu özetler.</p>
+{% if kr.eksik %}
+<div class="r-eksik"><strong>Eksik belge:</strong> {{ kr.eksik|join('; ') }}. Kredibilite notu için bilanço ve gelir tablosu birlikte gerekir.</div>
+{% else %}
+<div class="r-not">
+  <div class="r-not-harf r-not-{{ kr.harf }}">{{ kr.harf }}</div>
+  <div class="r-not-metin">
+    <strong>Kredibilite notu: {{ kr.harf }}</strong> <span class="muted">({{ kr.puan }} / {{ kr.en_fazla }} puan)</span>
+    <p>{{ NOTLAR[kr.harf] }}</p>
+    <div class="r-not-olcek">{% for h in 'ABCDE' %}<span class="{{ 'on' if h == kr.harf }}">{{ h }}</span>{% endfor %}</div>
+  </div>
+</div>
+{% if kr.gun and kr.gun < 360 %}<p class="muted">Gelir tablosu {{ kr.gun }} günlük döneme ait; FAVÖK, faaliyet kârı ve finansman gideri yıllığa çevrilerek hesaplandı (× {{ '%.2f'|format(kr.yillik_carpan)|replace('.', ',') }}). Mevsimsel işletmelerde bu çevirme yanıltıcı olabilir.</p>{% endif %}
+
+<div class="r-two">
+  <div><h3>Bankanın güçlü göreceği yönler</h3>
+    {% if kr.guclu %}<ul class="r-yorum">{% for g in kr.guclu %}<li><strong>{{ g.ad }}</strong>{% if g.deger is not none %} ({{ g.metin }}){% endif %}: {{ g.yorum }}</li>{% endfor %}</ul>
+    {% else %}<p class="muted">Eşiğin üzerinde kalan gösterge yok.</p>{% endif %}</div>
+  <div><h3>Bankanın zayıf göreceği yönler</h3>
+    {% if kr.zayif %}<ul class="r-yorum">{% for g in kr.zayif %}<li><strong>{{ g.ad }}</strong>{% if g.deger is not none %} ({{ g.metin }}){% endif %}: {{ g.yorum }}</li>{% endfor %}</ul>
+    {% else %}<p class="muted">Zayıf bölgede kalan gösterge yok.</p>{% endif %}</div>
+</div>
+
+<h2>Göstergeler ve puanlama</h2>
+<p>Her gösterge 0–2 puan alır. Taralı alan bankaların genelde yeterli gördüğü aralığı, koyu çubuk şirketin değerini gösterir.</p>
+<div class="r-oranlar">
+{% for g in kr.gostergeler %}
+  <div class="r-oran">
+    <div class="r-oran-ust">
+      <span class="r-oran-ad">{{ g.ad }}</span>
+      <span class="r-oran-v">{{ g.metin }}</span>
+      <span class="r-durum r-d-{{ g.durum }}">{{ g.puan }} puan</span>
+    </div>
+    {% if g.aralik and g.deger is not none %}<div class="r-oran-g">{{ gosterge(g.deger, g.aralik, g.olcek) }}</div>{% endif %}
+    <p>{{ g.yorum }}</p>
+    <div class="muted r-formul">{{ g.esik }}</div>
+  </div>
+{% endfor %}
+</div>
+
+{% if kr.altman %}{% set a = kr.altman %}
+<h3>Altman Z puanının hesabı</h3>
+<p>Altman Z, birkaç oranı tek bir puanda toplayarak şirketin önümüzdeki dönemde mali sıkıntıya girme olasılığını tahmin eden, bankaların ve analistlerin yaygın kullandığı bir modeldir. Burada üretim dışı şirketler ve gelişmekte olan piyasalar için uyarlanmış dört değişkenli sürüm (Z'') kullanıldı.</p>
+<div class="r-scroll"><table class="grid small"><thead><tr><th>Değişken</th><th class="num">Değer</th><th class="num">Katsayı</th><th class="num">Katkı</th></tr></thead><tbody>
+  <tr><td>X1 · İşletme sermayesi / aktif</td><td class="num">{{ '%.3f'|format(a.x1)|replace('.', ',') }}</td><td class="num">6,56</td><td class="num">{{ '%.2f'|format(6.56 * a.x1)|replace('.', ',') }}</td></tr>
+  <tr><td>X2 · Dağıtılmamış kârlar / aktif <div class="muted">geçmiş yıl kârları ve yedekler − geçmiş yıl zararları + dönem sonucu</div></td><td class="num">{{ '%.3f'|format(a.x2)|replace('.', ',') }}</td><td class="num">3,26</td><td class="num">{{ '%.2f'|format(3.26 * a.x2)|replace('.', ',') }}</td></tr>
+  <tr><td>X3 · Faaliyet kârı (yıllık) / aktif</td><td class="num">{{ '%.3f'|format(a.x3)|replace('.', ',') }}</td><td class="num">6,72</td><td class="num">{{ '%.2f'|format(6.72 * a.x3)|replace('.', ',') }}</td></tr>
+  <tr><td>X4 · Özkaynak / yabancı kaynaklar{% if a.x4_yok %} <span class="muted">(borç yok, 3 alındı)</span>{% endif %}</td><td class="num">{{ '%.3f'|format(a.x4)|replace('.', ',') }}</td><td class="num">1,05</td><td class="num">{{ '%.2f'|format(1.05 * a.x4)|replace('.', ',') }}</td></tr>
+  <tr class="total"><td>Z''</td><td></td><td></td><td class="num">{{ '%.2f'|format(a.z)|replace('.', ',') }}</td></tr>
+</tbody></table></div>
+<p class="muted">Bölgeler: 2,6'nın üstü güvenli, 1,1–2,6 gri bölge, 1,1'in altı riskli.</p>
+{% endif %}
+
+<h2>Notu iyileştirmek için</h2>
+<ul class="r-yorum">
+{% for g in kr.gostergeler if g.puan < 2 %}
+  {% if g.ad.startswith('Cari') %}<li>Kısa vadeli banka kredilerinin uzun vadeye çevrilmesi ve alacak tahsilatının hızlandırılması cari oranı yükseltir.</li>
+  {% elif g.ad.startswith('Özkaynak') %}<li>Sermaye artırımı, ortaklara olan borcun (331) sermayeye eklenmesi veya kârın dağıtılmadan şirkette bırakılması özkaynağı güçlendirir.</li>
+  {% elif g.ad.startswith('Faiz') %}<li>Yüksek faizli borçların yapılandırılması ve faaliyet giderlerinin azaltılması faiz karşılama oranını artırır.</li>
+  {% elif g.ad.startswith('Net borç') %}<li>Banka borcunun kârla uyumlu seviyeye indirilmesi; yeni yatırım için uzun vadeli finansman tercih edilmesi.</li>
+  {% elif g.ad.startswith('Vergi öncesi') %}<li>Kâr marjının düşük görünmesinin nedeni dönem sonu kayıtlarının (maliyet, amortisman) eksikliği olabilir; kayıtlar tamamlandıktan sonra not yeniden alınmalı.</li>
+  {% elif g.ad.startswith('Alacak') %}<li>Vadesi geçmiş alacakların takibi ve tahsil edilemeyecek olanlar için karşılık ayrılması alacak süresini kısaltır.</li>
+  {% elif g.ad.startswith('Altman') %}<li>Altman puanı yukarıdaki göstergeler iyileştikçe kendiliğinden yükselir.</li>{% endif %}
+{% else %}<li>Tüm göstergeler yeterli bölgede; mevcut yapının korunması yeterli.</li>
+{% endfor %}
+</ul>
+{% endif %}
+
+<h2>Kredi başvurusunda bankanın isteyeceği belgeler</h2>
+<ul class="r-yorum">{% for b in BANKA_BELGELERI %}<li>{{ b }}</li>{% endfor %}</ul>
+<p class="muted">Liste genel niteliktedir; bankaya ve kredi türüne göre değişir.</p>
