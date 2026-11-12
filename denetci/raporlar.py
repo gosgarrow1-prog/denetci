@@ -334,6 +334,8 @@ class KrediGosterge:
     def metin(self):
         if self.deger is None:
             return "—"
+        if self.bicim == "tl":
+            return kurus_str(int(self.deger)) + " TL"
         return {"pct": _pct, "gun": _gun}.get(self.bicim, _x)(self.deger)
 
     @property
@@ -366,7 +368,7 @@ def _harf(oran: float) -> str:
     return "E"
 
 
-def kredibilite(fin) -> Kredibilite:
+def kredibilite(fin, nakit=None) -> Kredibilite:
     """Bankanın kredi değerlendirmesinde baktığı başlıca göstergeler ve bunlardan basit bir A–E not.
 
     Puanlama genel kabul gören eşiklerle yapılır (her gösterge 0–2 puan); bankaların kendi modelleri ve KKB/çek
@@ -451,6 +453,12 @@ def kredibilite(fin) -> Kredibilite:
     else:
         G.append(KrediGosterge("Vergi öncesi kâr marjı", None, "pct", 0, "satış yok", "Dönemde satış kaydı yok.", None, None))
 
+    if nakit is not None and nakit.toplam:
+        fn = nakit.toplam.get("faaliyet", 0)
+        p = 2 if fn > 0 and fn >= k.get("donem_kari", 0) * 0.5 else (1 if fn > 0 else 0)
+        G.append(KrediGosterge("Faaliyetlerden sağlanan nakit", fn, "tl", p, "artı ve kârın yarısından fazla iyi · artı orta · eksi zayıf",
+                               f"Dönemde faaliyetler {kurus_str(fn)} TL nakit {'sağladı' if fn >= 0 else 'tüketti'}; kâr "
+                               f"{kurus_str(k.get('donem_kari', 0))} TL. Bankalar kârın nakde dönüşüp dönüşmediğine bakar.", None, None))
     kr.puan = sum(g.puan for g in G)
     kr.en_fazla = 2 * len(G)
     kr.harf = _harf(kr.yuzde) if kr.en_fazla else None

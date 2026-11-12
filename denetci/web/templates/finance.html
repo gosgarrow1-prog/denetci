@@ -83,6 +83,8 @@
   {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
 </section>
 
+{% include "_nakit.html" %}
+
 <section class="block" id="oneriler">
   <div class="block-head"><h2>Değerlendirme ve Öneriler</h2><a class="more" href="/mukellef/{{ c.id }}/rapor{{ q }}">Dönem raporunda gör →</a></div>
   {% if oneriler|selectattr('grup', 'equalto', 'sirket')|list %}

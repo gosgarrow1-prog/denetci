@@ -143,6 +143,11 @@ def selale(gelir_tablosu) -> Markup:
         if gt.get(ad):
             adimlar.append((ad, gt[ad], "adim"))
     adimlar.append(("Dönem kârı (vergi öncesi)", gt.get("Dönem kârı (vergi öncesi)", 0), "toplam"))
+    return kopru(adimlar, "Net satıştan dönem kârına")
+
+
+def kopru(adimlar, etiket="Köprü grafiği") -> Markup:
+    """Yatay şelale: [(ad, tutar, 'toplam'|'adim')]; toplamlar sıfırdan, adımlar bir öncekinin ucundan çizilir."""
     W, rh, L, R = 680, 30, 200, 92
     H = rh * len(adimlar) + 24
     cum, noktalar = 0, []
@@ -157,7 +162,7 @@ def selale(gelir_tablosu) -> Markup:
     hi = max(0, *(max(a, b) for a, b in noktalar)) or 1
     span = (hi - lo) or 1
     x = lambda v: L + (v - lo) / span * (W - L - R)  # noqa: E731
-    p = [f'<svg class="rc" viewBox="0 0 {W} {H}" role="img" aria-label="Net satıştan dönem kârına">']
+    p = [f'<svg class="rc" viewBox="0 0 {W} {H}" role="img" aria-label="{_esc(etiket)}">']
     x0 = x(0)
     p.append(f'<line x1="{x0:.1f}" x2="{x0:.1f}" y1="0" y2="{H - 18}" stroke="var(--ink-2, #4A4237)" stroke-width="1"/>')
     for i, ((ad, v, tur), (a, b)) in enumerate(zip(adimlar, noktalar)):
@@ -172,8 +177,9 @@ def selale(gelir_tablosu) -> Markup:
             nx = x(b)
             p.append(f'<line x1="{nx:.1f}" x2="{nx:.1f}" y1="{yy + rh - 7}" y2="{yy + rh + 3}" stroke="var(--muted, #6B6253)" stroke-dasharray="2 2"/>')
     p.append("</svg>")
-    leg = (f'<span><i style="background:{C_ANA}"></i>Toplam</span><span><i style="background:{C_AZ}"></i>Kârı azaltan</span>'
-           f'<span><i style="background:{C_ART}"></i>Kârı artıran</span>')
+    az, art = ("Kârı azaltan", "Kârı artıran") if "kâr" in etiket else ("Azaltan", "Artıran")
+    leg = (f'<span><i style="background:{C_ANA}"></i>Toplam</span><span><i style="background:{C_AZ}"></i>{az}</span>'
+           f'<span><i style="background:{C_ART}"></i>{art}</span>')
     return Markup(f'<div class="rc-wrap">{"".join(p)}<div class="rc-leg">{leg}</div></div>')
 
 

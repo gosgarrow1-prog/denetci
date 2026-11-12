@@ -40,7 +40,7 @@ from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET
 from ..parametreler import GECICI_VERGI
 from ..asistan import GOREV as ASISTAN_GOREV, GOREVLER as ASISTAN_GOREVLER, nasil as asistan_nasil, secenekler as asistan_secenekler, uygun as asistan_uygun
 from ..oneriler import ONCELIK_ADI, build as oneriler_build
-from .charts import aylik_grafik, balance_bars, benford_grafik, gosterge, selale, tl_short, yatay_cubuk
+from .charts import aylik_grafik, balance_bars, benford_grafik, gosterge, kopru, selale, tl_short, yatay_cubuk
 from .. import raporlar
 
 HERE = Path(__file__).parent
@@ -660,6 +660,8 @@ def create_app() -> FastAPI:
         v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
         gv = gv_for(s, c, p, v["decls"])[0] if p else None
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], gv, p)
+        if p:
+            _nakit_view(s, c, p, v)
         return render(request, "finance.html", active="finansal", **v)
 
     @app.get("/mukellef/{cid}/ceyrek", response_class=HTMLResponse)
@@ -712,6 +714,7 @@ def create_app() -> FastAPI:
             v["rf_aylik"] = aylik_grafik(rf.aylar)
             v["rf_selale"] = selale(fin.gelir_tablosu) if fin and fin.has_income else None
             v["rf_gider"] = yatay_cubuk([(f"{kod} {ad}".strip(), t) for kod, ad, t in rf.giderler])
+            _nakit_view(s, c, p, v)
             if fin and fin.has_balance:
                 b = fin.bilanco
                 v["balance_chart"] = balance_bars(
@@ -752,7 +755,8 @@ def create_app() -> FastAPI:
             v["cy"] = cy
             v["cy_grafik"] = aylik_grafik(cy.aylar) if cy else None
         elif konu == "kredibilite":
-            v["kr"] = raporlar.kredibilite(v["fin"])
+            _nakit_view(s, c, p, v)
+            v["kr"] = raporlar.kredibilite(v["fin"], v.get("nakit"))
             v["NOTLAR"], v["BANKA_BELGELERI"] = raporlar.NOTLAR, raporlar.BANKA_BELGELERI
         elif konu in ("risk", "mutabakat"):
             a = by_key[konu]
@@ -1477,6 +1481,22 @@ def _oneri(info: dict, ref: str, others):
         if by_vkn:
             return by_vkn
     return firma_en_iyi(ref, others)
+
+
+def _nakit_view(s, c, p, v) -> None:
+    """Nakit akım tablosu ve köprü grafiği (finansal analiz ve kredibilite)."""
+    from .. import nakit
+    if "nakit" in v:
+        return
+    ctx = build_context(s, c, p)[0]
+    na = nakit.hesapla(ctx) if ctx else None
+    v["nakit"], v["NAKIT_BOLUM"] = na, nakit.BOLUMLER
+    if na:
+        v["nakit_grafik"] = kopru([("Dönem başı nakit", na.nakit_bas, "toplam"),
+                                   ("Faaliyetler", na.toplam.get("faaliyet", 0), "adim"),
+                                   ("Yatırımlar", na.toplam.get("yatirim", 0), "adim"),
+                                   ("Finansman", na.toplam.get("finansman", 0), "adim"),
+                                   ("Dönem sonu nakit (hesaplanan)", na.nakit_bas + na.degisim, "toplam")], "Nakit köprüsü")
 
 
 def _benford_view(s, c, p, v) -> None:

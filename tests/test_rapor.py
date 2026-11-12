@@ -73,3 +73,24 @@ def test_kredibilite_notu():
     z = kr.altman
     assert abs(z["z"] - (6.56 * z["x1"] + 3.26 * z["x2"] + 6.72 * z["x3"] + 1.05 * z["x4"])) < 1e-9
     assert raporlar.kredibilite(None).eksik
+
+
+def test_nakit_akim_dengesi():
+    from types import SimpleNamespace
+    from denetci import nakit
+    from denetci.checks.rules import Context
+
+    def J(d, code, borc=0, alacak=0, aciklama=None):
+        return SimpleNamespace(tarih=d, hesap_kodu=code, borc=borc, alacak=alacak, hesap_adi=None, raw_row_id=1,
+                               fis_no="1", madde_no="1", aciklama=aciklama, fis_tipi=None, evrak_no=None)
+    a, b = date(2026, 1, 1), date(2026, 2, 10)
+    ytd = [J(a, "102.01", borc=1_000_00, aciklama="Açılış fişi"), J(a, "500.01", alacak=1_000_00, aciklama="Açılış fişi"),
+           J(b, "120.01", borc=600_00), J(b, "600.01", alacak=600_00),           # veresiye satış
+           J(b, "102.01", borc=400_00), J(b, "120.01", alacak=400_00),           # tahsilat
+           J(b, "255.01", borc=300_00), J(b, "102.01", alacak=300_00),           # demirbaş alımı
+           J(b, "300.01", alacak=200_00), J(b, "102.01", borc=200_00)]           # kredi
+    ctx = Context("THP_VUK", a, date(2026, 3, 31), None, None)
+    ctx.ytd = ytd
+    na = nakit.hesapla(ctx)
+    assert na.nakit_bas == 1_000_00 and na.nakit_son == 1_300_00
+    assert na.toplam == {"faaliyet": 400_00, "yatirim": -300_00, "finansman": 200_00} and na.fark == 0
