@@ -29,6 +29,8 @@ ENV
 
 chown -R denetci:denetci "$VERI"
 chmod 700 "$VERI"
+# Başka bilgisayardan taşınan veride dosya yollarını düzelt (veri yoksa bir şey yapmaz).
+bash "$UYG/deploy/komut.sh" yollari-duzelt
 
 cat > /etc/systemd/system/denetci.service <<UNIT
 [Unit]

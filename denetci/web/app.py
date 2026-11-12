@@ -133,7 +133,23 @@ def current_user(request: Request, s=Depends(get_session)) -> User:
     user = s.get(User, uid) if uid else None
     if not user:
         raise LoginRequired()
+    if user.misafir:
+        # Misafir yalnızca DEMO mükellefleri görebilir; gerçek mükellef ve liste işlemleri kapalı.
+        if request.url.path.startswith(("/mukellef/yeni", "/mukellef/liste")):
+            raise HTTPException(403, "Misafir hesabıyla yapılamaz")
+        cid = request.path_params.get("cid")
+        if cid is not None:
+            c = s.get(Client, int(cid))
+            if not c or not c.is_demo:
+                raise HTTPException(404, "Bulunamadı")
     return user
+
+
+def gorunen_mukellefler(s, user):
+    q = select(Client)
+    if user.misafir:
+        q = q.where(Client.is_demo.is_(True))
+    return list(s.scalars(q))
 
 
 def csrf_token(request: Request) -> str:
@@ -175,8 +191,10 @@ def _shell(uid: int, c, p) -> dict:
     """Sol menü ve üst çubuk için: mükellef listesi, dönemler, son analiz ve açık bulgu sayısı."""
     with db.SessionLocal() as s:
         user = s.get(User, uid)
-        sh = {"username": user.username if user else "", "clients": sorted(s.execute(
-            select(Client.id, Client.unvan, Client.is_demo)), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
+        q = select(Client.id, Client.unvan, Client.is_demo)
+        if user is None or user.misafir:
+            q = q.where(Client.is_demo.is_(True))
+        sh = {"username": user.username if user else "", "clients": sorted(s.execute(q), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
             "run": None, "badge": 0}
         if c is None:
             return sh
@@ -372,7 +390,7 @@ def create_app() -> FastAPI:
             return render(request, "login.html", error="Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.")
         user = s.scalar(select(User).where(User.username == username))
         ok = user and verify_password(str(form.get("parola", "")), user.password_hash) and \
-            (not telefon_kodu() or verify_totp(user.totp_secret, str(form.get("kod", ""))))
+            (not telefon_kodu() or user.misafir or verify_totp(user.totp_secret, str(form.get("kod", ""))))
         if not ok:
             throttle.fail(username)
             audit(s, None, "giris_basarisiz", detail=username[:64])
@@ -396,7 +414,7 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def portfolio(request: Request, user=Depends(current_user), s=Depends(get_session)):
         rows = []
-        for c in s.scalars(select(Client).order_by(Client.unvan)):
+        for c in gorunen_mukellefler(s, user):
             period = s.scalar(select(Period).where(Period.client_id == c.id).order_by(Period.bitis.desc()))
             run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == period.id)
                            .order_by(AnalysisRun.id.desc())) if period else None
@@ -864,7 +882,7 @@ def create_app() -> FastAPI:
         form = await form_checked(request)
         period = owned(s, Period, int(form["donem"]), cid) if str(form.get("donem", "")).isdigit() else None
         outcomes, touched, held = [], {}, []
-        others = [x for x in s.scalars(select(Client)) if x.id != c.id]
+        others = [x for x in gorunen_mukellefler(s, user) if x.id != c.id]
         uploads = []
         for up in form.getlist("dosya"):
             if getattr(up, "filename", ""):
@@ -922,7 +940,7 @@ def create_app() -> FastAPI:
         b = request.session.get("bekleyen")
         if not b or b.get("cid") != cid:
             return _redirect(s, f"/mukellef/{cid}")
-        clients = sorted(s.scalars(select(Client)), key=lambda x: (x.is_demo, tr_sira(x.unvan)))
+        clients = sorted(gorunen_mukellefler(s, user), key=lambda x: (x.is_demo, tr_sira(x.unvan)))
         names = {x.id: x.unvan for x in clients}
         flash = request.session.pop("flash", None)
         return render(request, "upload_check.html", c=c, items=b["items"], clients=clients, names=names, flash=flash)

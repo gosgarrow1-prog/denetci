@@ -32,9 +32,12 @@ def cmd_add_user(args):
         if pw != getpass.getpass("Parola (tekrar): "):
             sys.exit("Parolalar eşleşmedi.")
         secret = new_totp_secret()
-        s.add(User(username=args.username, password_hash=hash_password(pw), totp_secret=secret))
+        s.add(User(username=args.username, password_hash=hash_password(pw), totp_secret=secret, misafir=args.misafir))
         s.commit()
     print("\nKullanıcı eklendi.")
+    if args.misafir:
+        print("Misafir hesabı: yalnızca DEMO mükellefleri görür, telefon kodu sorulmaz.")
+        return
     if not telefon_kodu():
         return
     print("Telefonunuzdaki kimlik doğrulayıcı uygulamaya (Google Authenticator, Microsoft Authenticator vb.)")
@@ -61,6 +64,31 @@ def cmd_telefon_kodu(args):
         print(f"    {u.totp_secret}\n")
         print(f"(Bağlantı: {otpauth_uri(u.totp_secret, u.username)})")
         print("Bu anahtarı kimseyle paylaşmayın.")
+
+
+def cmd_yollari_duzelt(args):
+    """Başka bilgisayardan (ör. Windows) taşınan veride saklanan dosya yollarını bu bilgisayarın veri klasörüne göre düzeltir."""
+    import re
+
+    from .models import SourceFile
+
+    db.init_db()
+    kok = data_dir() / "dosyalar"
+    duzelen = eksik = 0
+    with db.SessionLocal() as s:
+        for sf in s.scalars(select(SourceFile)):
+            parcalar = re.split(r"[\\/]", sf.stored_path)
+            if "dosyalar" not in parcalar:
+                continue
+            i = len(parcalar) - 1 - parcalar[::-1].index("dosyalar")
+            yeni = kok.joinpath(*parcalar[i + 1:])
+            if str(yeni) != sf.stored_path:
+                sf.stored_path = str(yeni)
+                duzelen += 1
+            if not yeni.exists():
+                eksik += 1
+        s.commit()
+    print(f"{duzelen} dosya yolu düzeltildi. Bulunamayan dosya: {eksik}")
 
 
 def cmd_yedek(args):
@@ -110,6 +138,7 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("kullanici-ekle", help="Yeni kullanıcı ekler (kayıt ekranı yoktur)")
     p.add_argument("username")
+    p.add_argument("--misafir", action="store_true", help="Tanıtım hesabı: yalnızca DEMO mükellefler, telefon kodu yok")
     p.set_defaults(func=cmd_add_user)
     p = sub.add_parser("demo", help="Sentetik DEMO mükellef ve dosyalar oluşturur")
     p.add_argument("--yukle", action="store_true", help="Dosyaları otomatik olarak içe aktar")
@@ -121,6 +150,8 @@ def main(argv=None):
     p.add_argument("username")
     p.add_argument("--yenile", action="store_true", help="Yeni anahtar üretir (eski telefon geçersiz olur)")
     p.set_defaults(func=cmd_telefon_kodu)
+    p = sub.add_parser("yollari-duzelt", help="Taşınan verideki dosya yollarını bu bilgisayara göre düzeltir")
+    p.set_defaults(func=cmd_yollari_duzelt)
     p = sub.add_parser("yedek", help="Veritabanı ve dosyaların yedeğini alır, 14 günden eskileri siler")
     p.set_defaults(func=cmd_yedek)
     args = parser.parse_args(argv)

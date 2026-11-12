@@ -24,6 +24,8 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     totp_secret: Mapped[str] = mapped_column(String(64))
+    # Misafir: yalnızca DEMO (sentetik) mükellefleri görür, telefon kodu sorulmaz. Tanıtım için.
+    misafir: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

@@ -461,3 +461,46 @@ def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):
     assert 'src="/buro/logo-koyu.png"' in tc.get(loc).text
     assert tc.get("/buro/logo-koyu.png").status_code == 200
     assert tc.get("/buro/logo-baska.png").status_code == 404
+
+
+def test_misafir_yalnizca_demo_gorur(app_client, monkeypatch):
+    from denetci.auth import hash_password, new_totp_secret
+    from denetci.models import User
+    from tests.test_web import csrf as _csrf
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")  # telefon kodu açık; misafire sorulmaz
+    tc = app_client
+    with db.SessionLocal() as s:
+        gercek = Client(unvan="GERÇEK MÜKELLEF A.Ş.")
+        s.add(gercek)
+        s.add(User(username="misafir", password_hash=hash_password("misafir-parola-123"), totp_secret=new_totp_secret(), misafir=True))
+        s.commit()
+        gid = gercek.id
+    r = tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "misafir", "parola": "misafir-parola-123"},
+                follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert "GERÇEK MÜKELLEF" not in tc.get("/").text
+    assert tc.get(f"/mukellef/{gid}").status_code == 404
+    assert tc.post("/mukellef/yeni", data={"csrf": _csrf(tc, "/"), "unvan": "X"}).status_code == 403
+    loc = tc.post("/demo", data={"csrf": _csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    page = tc.get(loc).text
+    assert "Gösterge Paneli" in page and "GERÇEK MÜKELLEF" not in page
+
+
+def test_tasinan_veride_dosya_yollari_duzelir(data_root, capsys):
+    from denetci import config
+    from denetci.__main__ import main
+    from denetci.models import SourceFile
+    hedef = config.data_dir() / "dosyalar" / "3" / "abc.xlsx"
+    hedef.parent.mkdir(parents=True)
+    hedef.write_bytes(b"x")
+    with db.SessionLocal() as s:
+        c = Client(unvan="DEMO Y", is_demo=True)
+        s.add(c)
+        s.flush()
+        s.add(SourceFile(client_id=c.id, sha256="a" * 64, orig_name="a.xlsx", size=1,
+                         stored_path="C:\\Users\\Burak\\DenetciVeri\\dosyalar\\3\\abc.xlsx"))
+        s.commit()
+    main(["yollari-duzelt"])
+    assert "Bulunamayan dosya: 0" in capsys.readouterr().out
+    with db.SessionLocal() as s:
+        assert s.scalar(select(SourceFile)).stored_path == str(hedef)

@@ -38,6 +38,7 @@ _ADDED_COLUMNS = {
     "analysis_runs": {"source_batches": "JSON"},
     "periods": {"devreden_kdv": "INTEGER", "durum": "VARCHAR(16)", "kesin_at": "DATETIME", "kesin_kullanici": "VARCHAR(64)",
                 "kesin_run_id": "INTEGER", "notlar": "TEXT", "gv": "JSON"},
+    "users": {"misafir": "BOOLEAN DEFAULT 0"},
     "clients": {"vkn": "VARCHAR(16)", "vergi_dairesi": "VARCHAR(128)", "luca_kodu": "VARCHAR(64)"},
     "journal_lines": {"madde_no": "VARCHAR(32)", "fis_tipi": "VARCHAR(32)", "evrak_no": "VARCHAR(64)"},
 }
