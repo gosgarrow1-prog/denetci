@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -40,7 +40,8 @@ from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET
 from ..parametreler import GECICI_VERGI
 from ..asistan import GOREV as ASISTAN_GOREV, GOREVLER as ASISTAN_GOREVLER, nasil as asistan_nasil, secenekler as asistan_secenekler, uygun as asistan_uygun
 from ..oneriler import ONCELIK_ADI, build as oneriler_build
-from .charts import balance_bars, tl_short
+from .charts import aylik_grafik, balance_bars, gosterge, selale, tl_short, yatay_cubuk
+from .. import raporlar
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
@@ -85,6 +86,7 @@ templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
 templates.env.globals["buro"] = buro.bilgiler
+templates.env.globals["gosterge"] = gosterge
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
     "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
@@ -673,8 +675,90 @@ def create_app() -> FastAPI:
                             and (x.bitis.month - x.baslangic.month) == 2 and x.baslangic.year == x.bitis.year]
         return render(request, "ceyrek.html", active="ceyrek", **v)
 
+    def _konu_ozetleri(s, c, p, v) -> list:
+        """Genel rapordaki 'Konulara göre durum' tablosu: her konu için belge durumu, kontrol ve bulgu sayısı."""
+        out = []
+        by_key = {a.key: a for a in v["analyses"]}
+        results = v["results"]
+        harita = [("kdv", "kdv"), ("gecici", "gecici"), ("risk", "risk"), ("mutabakat", "mutabakat"), ("finansal", "finansal")]
+        for konu, akey in harita:
+            a = by_key.get(akey)
+            if a is None:
+                continue
+            rs = [r for r in results if r["id"] in a.rules]
+            out.append({"konu": konu, "baslik": raporlar.KONU[konu].baslik, "durum": a.status,
+                        "eksik": [n.label for n in a.missing],
+                        "gecti": sum(1 for r in rs if r["status"] == "gecti"), "kontrol": len(rs),
+                        "bulgu": sum(1 for f in v["findings"] if f.rule_id in a.rules)})
+        k30 = [f for f in v["findings"] if f.rule_id == "K-30"]
+        r30 = next((r for r in results if r["id"] == "K-30"), None)
+        out.insert(3, {"konu": "fatura", "baslik": raporlar.KONU["fatura"].baslik,
+                       "durum": "hazir" if v.get("fatura_listeleri") else "eksik",
+                       "eksik": [] if v.get("fatura_listeleri") else ["e-Fatura / e-Arşiv listesi"],
+                       "gecti": int(bool(r30 and r30["status"] == "gecti")), "kontrol": int(bool(r30)), "bulgu": len(k30)})
+        return out
+
+    def _rapor_konu(s, c, p, v, konu, request) -> None:
+        """Seçilen konunun ayrıntılı rapor bölümü için gereken verileri v'ye ekler."""
+        by_key = {a.key: a for a in v["analyses"]}
+
+        def filtre(a):
+            return ([r for r in v["results"] if r["id"] in a.rules], [f for f in v["findings"] if f.rule_id in a.rules])
+
+        if konu == "finansal":
+            fin = v["fin"]
+            rf = raporlar.finansal(fin, v["prev_fin"], raporlar.aylik(s, c, p))
+            v["rf"] = rf
+            v["rf_aylik"] = aylik_grafik(rf.aylar)
+            v["rf_selale"] = selale(fin.gelir_tablosu) if fin and fin.has_income else None
+            v["rf_gider"] = yatay_cubuk([(f"{kod} {ad}".strip(), t) for kod, ad, t in rf.giderler])
+            if fin and fin.has_balance:
+                b = fin.bilanco
+                v["balance_chart"] = balance_bars(
+                    [("Dönen varlıklar", b["1"], "--s1"), ("Duran varlıklar", b["2"], "--s2")],
+                    [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
+                     ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
+        elif konu == "kdv":
+            _kdv_view(s, c, p, v)
+            a = by_key["kdv"]
+            v["kdv_a"] = a
+            v["kdv_results"], v["kdv_findings"] = filtre(a)
+            if beyannameler.tek_ay(p.baslangic, p.bitis):
+                v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
+        elif konu == "fatura":
+            if "efatura" not in v:
+                _kdv_view(s, c, p, v)
+            v["k30"] = next((r for r in v["results"] if r["id"] == "K-30"), None)
+            v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
+        elif konu == "gecici":
+            gp = gv_donemi(s, c, p, create=False) or p
+            ctx, src = gv_kaynak(s, c, p.bitis)
+            a = by_key["gecici"]
+            results, findings = v["results"], v["findings"]
+            if src is not None and src.id != p.id:
+                sv = _view(s, c, src, request)
+                a = next(x for x in sv["analyses"] if x.key == "gecici")
+                results, findings = sv["results"], sv["findings"]
+            v["gv_a"] = a
+            v["gv_results"] = [r for r in results if r["id"] in a.rules]
+            v["gv_findings"] = [f for f in findings if f.rule_id in a.rules]
+            v["gv_donem"] = gp
+            v["GV_DONEM"], v["GV_PARAM"] = GV_DONEM_ADI, GECICI_VERGI
+            if v["gv"] is not None:
+                v["gv_adim"] = gv_adimlar.adimlar(c, gp, v["gv"], v["gv_results"], v["gv_findings"])
+        elif konu == "ceyrek":
+            from .. import ceyrek
+            cy = ceyrek.analiz(s, c, p.bitis)
+            v["cy"] = cy
+            v["cy_grafik"] = aylik_grafik(cy.aylar) if cy else None
+        elif konu in ("risk", "mutabakat"):
+            a = by_key[konu]
+            v[f"{konu}_a"] = a
+            v[f"{konu}_results"], v[f"{konu}_findings"] = filtre(a)
+
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
-    def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+    def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
+                    konu: list[str] = Query(default=[])):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
         if not p:
@@ -687,6 +771,12 @@ def create_app() -> FastAPI:
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
         v["whatsapp"] = _whatsapp_ozeti(c, p, v)
         v["hazirlayan"] = buro.hazirlayan(user.username)
+        v["konular"] = raporlar.secilen(konu)
+        v["KONULAR"], v["KONU"] = raporlar.KONULAR, raporlar.KONU
+        v["rapor_baslik"] = raporlar.baslik(v["konular"])
+        v["konu_ozet"] = _konu_ozetleri(s, c, p, v)
+        for k in v["konular"]:
+            _rapor_konu(s, c, p, v, k, request)
         return render(request, "report.html", active="rapor", **v)
 
     @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)

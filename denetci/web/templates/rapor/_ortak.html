@@ -1,0 +1,43 @@
+{# Rapor bölümlerinde ortak kullanılan parçalar #}
+{% macro pct(x) -%}{% if x is none %}—{% else %}%{{ ('%.1f'|format(x * 100)).replace('.', ',') }}{% endif %}{%- endmacro %}
+
+{% macro sonuc_adi(st) -%}{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Belge yok', 'bilgi': 'Bilgi'}.get(st, st) }}{%- endmacro %}
+
+{% macro kontrol_tablo(results) -%}
+{% if results %}
+<div class="r-scroll"><table class="grid small"><thead><tr><th>Kontrol</th><th>Sonuç</th><th>Açıklama</th></tr></thead><tbody>
+{% for r in results %}
+  <tr><td><strong>{{ r.id }}</strong> {{ r.title }}</td>
+    <td><span class="r-sonuc r-{{ r.status }}">{{ sonuc_adi(r.status) }}</span></td><td>{{ r.message }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}<p class="muted">Bu konunun kontrolleri son analizde çalışmadı (belge eksik olabilir).</p>{% endif %}
+{%- endmacro %}
+
+{% macro bulgu_tablo(findings, cases) -%}
+{% if findings %}
+<div class="r-scroll"><table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
+{% for f in findings %}
+  {% set cs = cases.get(f.fingerprint) %}
+  <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
+    <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
+    <td>{{ f.rule_id }}</td><td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
+    <td>{{ STATUS_LABELS[cs.status] if cs else 'Yeni' }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}<p>Bu konuda açık bulgu yok.</p>{% endif %}
+{%- endmacro %}
+
+{% macro eksik_belge(a) -%}
+{% if a and a.missing %}
+<div class="r-eksik"><strong>Eksik belge:</strong> {% for n in a.missing %}{{ n.label }}{{ '; ' if not loop.last }}{% endfor %}. Bu belgeler yüklenmeden bu bölümdeki bazı hesaplar yapılamaz.</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro gelir_tablosu(lines, prev=none) -%}
+<table class="grid small"><thead><tr><th>Gelir tablosu</th><th class="num">TL</th>{% if prev %}<th class="num">Önceki dönem</th>{% endif %}</tr></thead><tbody>
+  {% for ln in lines %}{% if ln.value or ln.kind != 'kalem' %}
+  <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td>{% if prev %}<td class="num muted">{{ prev[loop.index0].value|tl }}</td>{% endif %}</tr>
+  {% endif %}{% endfor %}
+</tbody></table>
+{%- endmacro %}

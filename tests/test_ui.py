@@ -71,6 +71,8 @@ def test_multi_upload_creates_period_and_runs(app_client, data_root):
     for pid in pids:
         for x in ("", "/belgeler", "/kdv", "/mutabakat", "/finansal", "/ceyrek", "/gecici-vergi", "/fatura-mutabakati", "/rapor"):
             assert tc.get(f"/mukellef/{cid}{x}?donem={pid}").status_code == 200, (x, pid)
+        hepsi = "&".join(f"konu={k}" for k in ("genel", "finansal", "kdv", "gecici", "ceyrek", "risk", "mutabakat", "fatura"))
+        assert tc.get(f"/mukellef/{cid}/rapor?donem={pid}&{hepsi}").status_code == 200, pid
     # Aynı dosyalar tekrar yüklenirse çoğalmaz.
     r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
                 files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=True)
@@ -261,7 +263,7 @@ def test_report_and_finance_show_recommendations(app_client):
     loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
     cid = int(loc.rsplit("/", 1)[1].split("?")[0])
     rep = tc.get(f"/mukellef/{cid}/rapor").text
-    assert "2. Değerlendirme ve öneriler" in rep and "Dayanak:" in rep
+    assert "3. Değerlendirme ve öneriler" in rep and "Dayanak:" in rep
     assert "Değerlendirme ve Öneriler" in tc.get(f"/mukellef/{cid}/finansal").text
 
 

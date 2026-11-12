@@ -8,7 +8,7 @@
   <span class="ph-ic">{{ icon('calendar', 24) }}</span>
   <div class="ph-text"><h1>Geçici Vergi</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Yılbaşından dönem sonuna ticari kâr, tahmini matrah ve vergi; dönem sonu kayıt kontrolleri. Ön hesaplamadır, beyan yerine geçmez.</p></div>
-  <div class="ph-actions">{{ status_pill(a) }}</div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=gecici">{{ icon('file', 16) }}Raporu al</a>{% endif %}{{ status_pill(a) }}</div>
 </div>
 {{ flash_list(flash) }}
 

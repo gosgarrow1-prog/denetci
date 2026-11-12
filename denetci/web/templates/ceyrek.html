@@ -9,6 +9,7 @@
   <span class="ph-ic">{{ icon('panel', 24) }}</span>
   <div class="ph-text"><h1>Çeyrek Analizi</h1>
     <p>{{ c.unvan }}{% if cy %} · {{ cy.ad }}{% endif %}. Yalnızca seçilen 3 ayın kayıtları: ay ay gelir tablosu, önceki çeyrek ve geçen yılın aynı çeyreğiyle karşılaştırma, düzenli giderlerdeki boşluklar, bilanço hareketleri ve KDV. Geçici vergiden farklı olarak yılbaşından değil, yalnızca bu çeyreği gösterir.</p></div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=ceyrek">{{ icon('file', 16) }}Raporu al</a>{% endif %}</div>
 </div>
 {{ flash_list(flash) }}
 
