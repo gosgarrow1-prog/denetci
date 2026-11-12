@@ -12,7 +12,8 @@
 {% set q = ('?donem=' ~ sp.id) if sp else '' %}
 {% set active = active if active is defined else '' %}
 <div class="app">
-<nav class="side" aria-label="Ana menü">
+<nav class="side" id="yan-menu" aria-label="Ana menü">
+  <div class="side-top">
   {% set bu = buro() %}
   {% if bu.logolar.koyu %}
   <a class="brand brand-logo" href="/" title="Denetçi · {{ bu.get('unvan', '') }}">
@@ -25,6 +26,12 @@
     <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
   </a>
   {% endif %}
+  <button type="button" class="menu-btn" aria-controls="yan-menu" aria-expanded="false" onclick="var m = document.getElementById('yan-menu'), a = m.classList.toggle('acik'); this.setAttribute('aria-expanded', a);">
+    <svg class="mb-ac" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <svg class="mb-kapa" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    <span>Menü</span></button>
+  </div>
+  <div class="side-links">
   {% if sc %}
   <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
   <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>
@@ -46,6 +53,7 @@
   <div class="sect">Yönetim</div>
   <a class="nav {{ 'on' if active == 'mukellefler' }}" href="/">{{ icon('building') }}Mükellefler</a>
   <div class="side-foot"><span class="dot"></span>{% if sunucu %}Güvenli bağlantı · büro sunucusu{% else %}Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz{% endif %}</div>
+  </div>
 </nav>
 
 <div class="main">
@@ -92,6 +100,12 @@
 </div>
 </div>
 <script>
+// Dar ekranda geniş tablolar sayfayı taşırmasın: kayan kutu içine alınmayan tabloları sar.
+document.querySelectorAll('main table').forEach(function (t) {
+  if (t.closest('.scroll')) return;
+  var w = document.createElement('div'); w.className = 'scroll';
+  t.parentNode.insertBefore(w, t); w.appendChild(t);
+});
 // Sürükle-bırak alanı: seçilen dosya adlarını göster, seçince gönder.
 document.querySelectorAll('.drop').forEach(function (z) {
   var inp = z.querySelector('input[type=file]'), out = z.querySelector('.files');

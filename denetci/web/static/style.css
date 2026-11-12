@@ -514,3 +514,66 @@ table.grid th { letter-spacing: .04em; }
 .login-eyebrow { text-align: center; margin: 0; }
 label.check { flex-direction: row; align-items: center; gap: 8px; font-size: 14px; }
 label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(--gold-dark); }
+
+/* ==== Telefon ve dar ekran ==== */
+.side-top, .side-links { display: contents; }
+.menu-btn { display: none; }
+@media (max-width: 900px) {
+  .app { background: var(--bg); }
+  /* Sol menü: üstte ince şerit (logo + Menü düğmesi); bağlantılar düğmeyle açılır */
+  .side { position: sticky; top: 0; z-index: 20; height: auto; max-height: 100vh; flex-direction: column; flex-wrap: nowrap; gap: 0; padding: 0; border-right: none; border-bottom: 1px solid #2E2A24; }
+  .side-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px 8px 16px; min-height: 60px; }
+  .side .brand { width: auto; padding: 0; min-width: 0; }
+  .side .brand-mark { width: 36px; height: 36px; }
+  .side .brand-name { font-size: 21px; }
+  .side .brand-logo { flex-direction: row; align-items: center; }
+  .side .brand-logo img { max-width: 150px; max-height: 44px; width: auto; }
+  .side .brand-logo .brand-sub, .side .brand .brand-sub { display: none; }
+  .menu-btn { display: inline-flex; align-items: center; gap: 8px; flex: none; min-height: 44px; padding: 0 16px; border-radius: 999px;
+    background: transparent; border: 1px solid #4A4237; color: var(--navy-ink); font-size: 15px; font-weight: 500; cursor: pointer; }
+  .side .menu-btn:hover, .side.acik .menu-btn { border-color: var(--gold); color: var(--gold-light); background: transparent; filter: none; }
+  .menu-btn .mb-kapa, .side.acik .menu-btn .mb-ac { display: none; }
+  .side.acik .menu-btn .mb-kapa { display: block; }
+  .side-links { display: none; }
+  .side.acik { overflow-y: auto; }
+  .side.acik .side-links { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; padding: 4px 12px 14px; }
+  .side.acik .sect { display: block; grid-column: 1 / -1; padding: 12px 10px 4px; }
+  .side .nav { padding: 11px 10px; font-size: 14px; min-height: 44px; }
+  .side-foot { display: none !important; }
+
+  /* Üst çubuk: geri + kullanıcı bir satırda, seçiciler tam genişlikte alt alta */
+  .topbar { padding: 10px 16px; gap: 10px; min-height: 0; position: static; }
+  .topbar .back-btn { order: 0; }
+  .topbar .user { order: 1; gap: 8px; }
+  .topbar .sel, .topbar .demo-tag { order: 2; }
+  .topbar .sel { flex: 1 1 280px; }
+  .tv { font-size: 19px; }
+  .topbar .sel > span { display: none; }
+  .sel select { width: 100%; min-width: 0; max-width: none; font-size: 16px; min-height: 42px; }
+  .topbar .demo-tag { margin-top: -2px; }
+  .uname { display: none; }
+  .avatar { width: 36px; height: 36px; }
+
+  main { padding: 18px 16px 40px; gap: 18px; }
+  h1 { font-size: 28px; }
+  .ph-ic { width: 42px; height: 42px; }
+  .ph-text { flex-basis: 100%; }
+  .ph-actions { margin-left: 0; width: 100%; }
+  .card, .summary { padding: 16px; }
+  .summary { gap: 12px; }
+  .sum-text { flex-basis: 100%; }
+  .two { grid-template-columns: minmax(0, 1fr); }
+  .alert-row, a.client-row { padding: 12px 14px; }
+  table.narrowt { min-width: 0; }
+  /* Kayan tablolarda ilk sütun (kalem adı) tek satırda ve sabit kalır */
+  .scroll > table.grid th:first-child, .scroll > table.grid td:first-child { white-space: nowrap; position: sticky; left: 0; z-index: 1; background: var(--surface); box-shadow: 1px 0 0 var(--line); }
+  input, select, textarea { font-size: 16px; } /* iPhone'da odaklanınca sayfanın büyümesini önler */
+}
+@media (max-width: 420px) {
+  .tiles { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .tile { padding: 12px; }
+  .tv { font-size: 18px; }
+  h1 { font-size: 26px; }
+  .login-card { padding: 24px 20px; }
+}
+@media print { .scroll { overflow: visible; } .menu-btn { display: none !important; } }
