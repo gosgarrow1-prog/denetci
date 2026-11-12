@@ -143,3 +143,30 @@ def test_amortisman_ve_yansitma():
     assert r.status == "bulgu" and [(d.hesap_kodu, d.amount) for d in r.drafts] == [("770", 5_000_00)]
     yil = Context("THP_VUK", date(2026, 12, 1), date(2026, 12, 31), [M("770.01", 50_000_00)], None)
     assert k18(yil).status == "bulgu"
+
+
+def MH(code, net, borc=0, alacak=0):
+    m = M(code, net)
+    m.borc, m.alacak = borc, alacak
+    return m
+
+
+def test_donemsellik_supheli_avans_kapanis():
+    from denetci.checks.risk import k19, k20, k31, k32
+    # 180'de bakiye var, gidere aktarım yok → bulgu; 380'den gelire aktarım var → sorun yok
+    r = k19(C(mizan=[MH("180.01", 12_000_00, borc=12_000_00), MH("380.01", -6_000_00, borc=1_000_00, alacak=7_000_00)]))
+    assert r.status == "bulgu" and [d.hesap_kodu for d in r.drafts] == ["180"]
+    assert k19(C(mizan=[MH("180.01", 11_000_00, borc=12_000_00, alacak=1_000_00)])).status == "gecti"
+    # Karşılık şüpheli alacaktan fazla → bulgu; eksik karşılık → bilgi
+    assert k20(C(mizan=[M("128.01", 1_000_00), M("129.01", -2_000_00)])).status == "bulgu"
+    assert k20(C(mizan=[M("128.01", 1_000_00)])).status == "bilgi"
+    assert k20(C(mizan=[M("120.01", 1_000_00)])).status == "gecti"
+    # Hareketsiz avans
+    r = k31(C(mizan=[MH("159.01", 5_000_00), MH("340.01", -3_000_00, borc=1_000_00)]))
+    assert r.status == "bulgu" and [d.hesap_kodu for d in r.drafts] == ["159"]
+    # Kapanış: 692 ≠ 690 − 691
+    assert k32(C(mizan=[M("120.01", 1_00)])).status == "uygulanmadi"
+    r = k32(C(mizan=[M("690.01", -100_000_00), M("691.01", 25_000_00), M("692.01", -70_000_00), M("370.01", -25_000_00)]))
+    assert r.status == "bulgu" and [d.hesap_kodu for d in r.drafts] == ["692"]
+    assert k32(C(mizan=[M("690.01", -100_000_00), M("691.01", 25_000_00), M("692.01", -75_000_00),
+                        M("370.01", -25_000_00), M("590.01", -75_000_00)])).status == "gecti"

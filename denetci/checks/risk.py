@@ -568,4 +568,179 @@ def k18(ctx: Context) -> Result:
     return Result(K18, "gecti", f"Gider hesapları tam yansıtılmış ({kaynak}).")
 
 
-RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16), (K17, k17), (K18, k18)]
+# ---- K-19 Dönemsellik (180/280, 380/480) ------------------------------------
+
+K19 = Rule("K-19", "1.0", "Gelecek dönemlere ait gider ve gelirlerin dönemselliği",
+           "180 Gelecek Aylara Ait Giderler bakiyesi varken dönem içinde gidere aktarım (180 alacak hareketi) yoksa, "
+           "dönemin payına düşen gider kaydedilmemiş olabilir; 380 Gelecek Aylara Ait Gelirler için de aynı şekilde "
+           "gelire aktarım aranır. Yıl sonunda 280 ve 480'de kalan tutarların gelecek yıla düşen kısmı 180 ve 380'e aktarılmalıdır.",
+           "K", ("THP_VUK",), (), "Dönemsellik ilkesi (Muhasebenin Temel Kavramları, 1 Sıra No.lu MSUGT); 180, 280, 380, "
+           "480 hesaplarının işleyişi.", False,
+           "Peşin ödenen tutar dönem sonunda ilk kez kaydedilmişse aktarım henüz gerekmez; aktarım yalnızca yıl sonunda "
+           "yapılıyorsa ara dönemde olağandır.", D0, "Orta")
+
+DONEMSELLIK = (("180", "alacak", "gidere", "Gelecek Aylara Ait Giderler", "kira, sigorta gibi peşin ödenen giderlerin bu döneme düşen payı"),
+               ("380", "borc", "gelire", "Gelecek Aylara Ait Gelirler", "peşin tahsil edilen gelirlerin bu döneme düşen payı"))
+
+
+def k19(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    from .kdv import movements
+    net, kaynak = ana_balances(ctx)
+    m = movements(ctx)
+    if net is None or m is None:
+        return Result(K19, "uygulanmadi", "Uygulanmadı: dönem sonu bakiyeleri ve dönem hareketleri gerekli "
+                                          "(yılbaşından mizan, defteri kebir veya yevmiye).")
+    drafts, bakilan = [], 0
+    for hesap, yon, nereye, ad, aciklama in DONEMSELLIK:
+        bakiye = net.get(hesap, 0) * (1 if hesap == "180" else -1)
+        if bakiye <= ctx.tolerance:
+            continue
+        bakilan += 1
+        aktarim = m.total((hesap,), yon)
+        if aktarim <= ctx.tolerance:
+            drafts.append(Draft(f"{hesap} {ad} dönem içinde {nereye} aktarılmamış", "Orta", hesap, bakiye, f"donemsellik-{hesap}",
+                                f"{hesap} {ad} hesabında {kurus_str(bakiye)} TL bakiye var ({kaynak}); "
+                                f"{m.window[0]:%d.%m.%Y} – {m.window[1]:%d.%m.%Y} arasında bu hesaptan {nereye} aktarım kaydı yok.",
+                                "Bakiye ve hareketler kesin. Hata olup olmadığı belirsiz: " + K19.exceptions,
+                                f"Sözleşme sürelerine göre {aciklama} hesaplanıp {hesap} hesabından "
+                                f"{'ilgili gider' if hesap == '180' else 'ilgili gelir'} hesabına aktarılmalı."))
+    yil_sonu = (ctx.period_end.month, ctx.period_end.day) == (12, 31)
+    if yil_sonu:
+        for uzun, kisa, ad in (("280", "180", "Gelecek Yıllara Ait Giderler"), ("480", "380", "Gelecek Yıllara Ait Gelirler")):
+            bakiye = abs(net.get(uzun, 0))
+            if bakiye > ctx.tolerance and m.total((uzun,), "alacak" if uzun == "280" else "borc") <= ctx.tolerance:
+                bakilan += 1
+                drafts.append(Draft(f"{uzun} {ad}: gelecek yıla düşen kısım {kisa}'e aktarılmamış olabilir", "Orta", uzun, bakiye,
+                                    f"donemsellik-{uzun}",
+                                    f"{uzun} hesabında yıl sonunda {kurus_str(bakiye)} TL bakiye var ve yıl içinde {kisa} hesabına aktarım yok.",
+                                    "Bakiye kesin. " + K19.exceptions,
+                                    f"{uzun} bakiyesinin önümüzdeki 12 aya düşen kısmını {kisa} hesabına aktarın."))
+    if drafts:
+        return Result(K19, "bulgu", f"{len(drafts)} hesapta dönemsellik aktarımı eksik görünüyor.", drafts)
+    if not bakilan:
+        return Result(K19, "gecti", f"180, 380 (ve yıl sonunda 280, 480) hesaplarında bakiye yok ({kaynak}).")
+    return Result(K19, "gecti", f"Gelecek dönem hesaplarından dönem içinde aktarım yapılmış ({kaynak}).")
+
+
+# ---- K-20 Şüpheli ticari alacaklar ve karşılık ------------------------------
+
+K20 = Rule("K-20", "1.0", "Şüpheli alacaklar ve karşılığı",
+           "129 Şüpheli Ticari Alacaklar Karşılığı, 128 Şüpheli Ticari Alacaklar tutarını aşamaz. 128'de bakiye varken "
+           "karşılık ayrılmamışsa bilgi verilir: dava veya icra aşamasındaki alacaklar için karşılık ayrılarak gider yazılabilir.",
+           "K", ("THP_VUK",), (), "VUK 323 (şüpheli alacaklar); 128 ve 129 hesaplarının işleyişi.", False,
+           "Karşılık ayırmak isteğe bağlıdır; alacak teminatlıysa teminat dışındaki kısım için karşılık ayrılır.", D0, "Orta")
+
+
+def k20(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    net, kaynak = ana_balances(ctx)
+    if net is None:
+        return Result(K20, "uygulanmadi", "Uygulanmadı: dönem sonu bakiyeleri gerekli.")
+    s128, k129 = net.get("128", 0), -net.get("129", 0)
+    if s128 <= ctx.tolerance and k129 <= ctx.tolerance:
+        return Result(K20, "gecti", f"Şüpheli alacak (128) ve karşılık (129) bakiyesi yok ({kaynak}).")
+    if k129 > s128 + ctx.tolerance:
+        fark = k129 - max(s128, 0)
+        return Result(K20, "bulgu", "Karşılık şüpheli alacaktan fazla.", [Draft(
+            "Şüpheli alacak karşılığı (129) şüpheli alacaktan (128) fazla", ctx.rule_severity(fark), "129", fark, "supheli-fazla",
+            f"129 karşılık {kurus_str(k129)} TL, 128 şüpheli alacak {kurus_str(s128)} TL ({kaynak}). Fark {kurus_str(fark)} TL.",
+            "Bakiyeler kesin. Tahsil edilen veya silinen şüpheli alacağın karşılığı kapatılmamış olabilir.",
+            "Tahsil edilen şüpheli alacakların karşılığını 644 Konusu Kalmayan Karşılıklar hesabına, değersiz hale gelenleri "
+            "karşılıkla kapatın.")])
+    if s128 > ctx.tolerance and k129 < s128 - ctx.tolerance:
+        eksik = s128 - k129
+        return Result(K20, "bilgi", f"128 Şüpheli Ticari Alacaklar {kurus_str(s128)} TL, ayrılan karşılık {kurus_str(k129)} TL; "
+                                    f"{kurus_str(eksik)} TL için karşılık ayrılmamış ({kaynak}). Dava veya icra aşamasındaysa "
+                                    "VUK 323'e göre karşılık ayrılıp gider yazılabilir.")
+    return Result(K20, "gecti", f"Şüpheli alacakların tamamı için karşılık ayrılmış ({kaynak}).")
+
+
+# ---- K-31 Hareketsiz avans bakiyeleri ---------------------------------------
+
+K31 = Rule("K-31", "1.0", "Hareketsiz avans bakiyeleri",
+           "Verilen ve alınan avanslar (159, 195, 196, 340, 440) faturaya veya harcama belgesine bağlanarak kapatılır. "
+           "Bakiyesi olup dönem içinde hiç hareket görmeyen avans hesapları listelenir.",
+           "K", ("THP_VUK",), (), "159, 195, 196, 340, 440 hesaplarının işleyişi (1 Sıra No.lu MSUGT); avans tahsilatında "
+           "KDV doğmaz, fatura teslimde düzenlenir.", False,
+           "Uzun vadeli sipariş ve inşaat işlerinde avans bakiyesinin uzun süre kalması olağandır.", D0, "Orta")
+
+AVANSLAR = {"159": "Verilen Sipariş Avansları", "195": "İş Avansları", "196": "Personel Avansları",
+            "340": "Alınan Sipariş Avansları", "440": "Alınan Sipariş Avansları (uzun vadeli)"}
+
+
+def k31(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    from .kdv import movements
+    net, kaynak = ana_balances(ctx)
+    m = movements(ctx)
+    if net is None or m is None:
+        return Result(K31, "uygulanmadi", "Uygulanmadı: dönem sonu bakiyeleri ve dönem hareketleri gerekli.")
+    drafts, bakilan = [], 0
+    for hesap, ad in AVANSLAR.items():
+        bakiye = abs(net.get(hesap, 0))
+        if bakiye <= ctx.tolerance:
+            continue
+        bakilan += 1
+        if m.total((hesap,), "borc") + m.total((hesap,), "alacak") == 0:
+            drafts.append(Draft(f"{hesap} {ad} dönem içinde hiç hareket görmemiş", "Orta", hesap, bakiye, f"avans-{hesap}",
+                                f"{hesap} {ad} hesabında {kurus_str(bakiye)} TL bakiye var ({kaynak}); "
+                                f"{m.window[0]:%d.%m.%Y} – {m.window[1]:%d.%m.%Y} arasında hareket yok.",
+                                "Bakiye kesin. " + K31.exceptions,
+                                "Avansın karşılığı olan fatura veya harcama belgesinin gelip gelmediğine bakın; gelmişse avansı "
+                                "kapatın, gelmemişse cari mutabakatıyla teyit edin. Personel ve iş avansları uzun süre açık "
+                                "kalırsa ortak/personel borcu gibi değerlendirilebilir."))
+    if drafts:
+        return Result(K31, "bulgu", f"{len(drafts)} avans hesabı dönem içinde hareketsiz.", drafts)
+    if not bakilan:
+        return Result(K31, "gecti", f"Avans hesaplarında bakiye yok ({kaynak}).")
+    return Result(K31, "gecti", f"Avans hesapları dönem içinde hareket görmüş ({kaynak}).")
+
+
+# ---- K-32 Dönem kârı kapanış kayıtları (690–692, 370, 590/591) --------------
+
+K32 = Rule("K-32", "1.0", "Dönem kârı kapanış kayıtlarının tutarlılığı",
+           "Kapanış yapıldıysa 692 Dönem Net Kârı = 690 Dönem Kârı − 691 Vergi Karşılığı olmalı; 691 ile 370 Dönem Kârı "
+           "Vergi Karşılığı eşit olmalı; 692 bilançoya aktarıldıysa 590 (veya 591) aynı tutarı göstermeli.",
+           "A", ("THP_VUK",), (), "690, 691, 692, 370, 590, 591 hesaplarının işleyişi (1 Sıra No.lu MSUGT).", False,
+           "Kapanış kayıtları kısmen yapılmışsa (ör. yalnızca 690'a aktarım) sonraki adımlar henüz eksik olabilir.", D0, "Orta")
+
+
+def k32(ctx: Context) -> Result:
+    from ..finance import ana_balances
+    net, kaynak = ana_balances(ctx)
+    if net is None:
+        return Result(K32, "uygulanmadi", "Uygulanmadı: dönem sonu bakiyeleri gerekli.")
+    g = lambda h: -net.get(h, 0)  # noqa: E731  alacak yönü +
+    v690, v691, v692 = g("690"), -g("691"), g("692")  # 691 borç bakiyeli (vergi gideri)
+    if all(abs(x) <= ctx.tolerance for x in (v690, v691, v692)):
+        return Result(K32, "uygulanmadi", "Kapanış kaydı yok (690–692 boş); kontrol yıl sonu kapanışından sonra çalışır.")
+    drafts = []
+    tol = ctx.tolerance
+
+    def ekle(baslik, tutar, kod, aciklama, ne):
+        drafts.append(Draft(baslik, ctx.rule_severity(tutar), kod, tutar, f"kapanis-{kod}", aciklama,
+                            "Bakiyeler kesin. " + K32.exceptions, ne))
+    if abs(v692) > tol and abs(v692 - (v690 - v691)) > tol:
+        ekle("692 dönem net kârı, 690 − 691 ile tutmuyor", v692 - (v690 - v691), "692",
+             f"690 Dönem Kârı {kurus_str(v690)} TL, 691 Vergi Karşılığı {kurus_str(v691)} TL; 692 Dönem Net Kârı "
+             f"{kurus_str(v692)} TL olmalıydı {kurus_str(v690 - v691)} TL ({kaynak}).",
+             "690'dan 692'ye aktarım kaydını ve 691 tutarını kontrol edin.")
+    v370 = g("370")
+    if abs(v691) > tol and abs(v370) > tol and abs(v370 - v691) > tol:
+        ekle("370 vergi karşılığı ile 691 tutmuyor", v370 - v691, "370",
+             f"691 Dönem Kârı Vergi Karşılığı {kurus_str(v691)} TL, 370 Dönem Kârı Vergi ve Diğer Yasal Yükümlülük "
+             f"Karşılıkları {kurus_str(v370)} TL ({kaynak}).",
+             "Vergi karşılığı kaydının iki tarafını kontrol edin (691 borç / 370 alacak). 371 ile mahsup sonrası fark olağandır.")
+    v59 = g("590") - net.get("591", 0)
+    if abs(v692) > tol and abs(v59) > tol and abs(v59 - v692) > tol:
+        ekle("590/591 dönem sonucu ile 692 tutmuyor", v59 - v692, "590",
+             f"692 Dönem Net Kârı {kurus_str(v692)} TL, bilançodaki 590/591 {kurus_str(v59)} TL ({kaynak}).",
+             "692'den 590 (zarar ise 591) hesabına aktarım kaydını kontrol edin.")
+    if drafts:
+        return Result(K32, "bulgu", f"Kapanış kayıtlarında {len(drafts)} tutarsızlık var.", drafts)
+    return Result(K32, "gecti", f"Kapanış kayıtları birbiriyle tutarlı ({kaynak}).")
+
+
+RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16), (K17, k17), (K18, k18),
+              (K19, k19), (K20, k20), (K31, k31), (K32, k32)]
