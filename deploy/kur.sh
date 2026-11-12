@@ -29,6 +29,10 @@ ENV
 
 chown -R denetci:denetci "$VERI"
 chmod 700 "$VERI"
+# Başka bilgisayardan (ör. Windows tar ile) gelen dosyalar herkese açık izinlerle gelebilir; daralt.
+find "$VERI" -mindepth 1 -type d -exec chmod 750 {} +
+find "$VERI" -mindepth 1 -type f -exec chmod 640 {} +
+[ -f "$VERI/veri/.oturum_anahtari" ] && chmod 600 "$VERI/veri/.oturum_anahtari"
 # Başka bilgisayardan taşınan veride dosya yollarını düzelt (veri yoksa bir şey yapmaz).
 bash "$UYG/deploy/komut.sh" yollari-duzelt
 
