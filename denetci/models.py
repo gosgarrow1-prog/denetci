@@ -237,6 +237,21 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class YzSoru(Base):
+    """Mevzuat asistanına sorulan soru ve yanıtı (büro içi arşiv; mükellef verisi içermez)."""
+    __tablename__ = "yz_soru"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    soru: Mapped[str] = mapped_column(Text)
+    cevap: Mapped[str] = mapped_column(Text)
+    kaynaklar: Mapped[list] = mapped_column(JSON, default=list)
+    model: Mapped[str | None] = mapped_column(String(64))
+    giris: Mapped[int] = mapped_column(Integer, default=0)
+    cikis: Mapped[int] = mapped_column(Integer, default=0)
+    arama: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Declaration(Base):
     """GİB'den indirilmiş beyanname (PDF) özeti. Mükellef düzeyindedir; dönemle (yıl, ay) eşleşir.
     tur: kdv (ay = beyan ayı) veya gecici (ay = dönem sonu ayı: 3, 6, 9, 12). Tutarlar kuruş."""

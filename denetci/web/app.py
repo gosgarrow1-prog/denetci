@@ -22,7 +22,8 @@ from ..config import MAX_YUKLEME_BAYT, data_dir, sunucu, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
-from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
+from ..yz import maliyet as yz_maliyet
+from ..models import (YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
@@ -81,6 +82,37 @@ templates.env.filters["donem_adi"] = donem_adi
 templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.filters["id_of"] = id
+
+
+def yz_metin(text: str):
+    """Asistan yanıtını güvenli HTML'e çevirir: paragraflar, '- ' ile başlayan listeler, **kalın**."""
+    import html
+    import re
+    from markupsafe import Markup
+    out, liste = [], []
+
+    def satir(t):
+        return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html.escape(t))
+
+    def kapat():
+        if liste:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in liste) + "</ul>")
+            liste.clear()
+    for par in re.split(r"\n\s*\n", text or ""):
+        for ln in par.strip().splitlines():
+            m = re.match(r"^\s*(?:[-*•]|\d+[.)])\s+(.*)", ln)
+            if m:
+                liste.append(satir(m.group(1)))
+            else:
+                kapat()
+                if ln.strip():
+                    out.append(f"<p>{satir(ln.strip().lstrip('#').strip())}</p>")
+        kapat()
+    return Markup("".join(out))
+
+
+templates.env.filters["yz_metin"] = yz_metin
+templates.env.globals["maliyet"] = yz_maliyet
 templates.env.globals["efatura_neden"] = lambda e, yon: __import__("denetci.efatura", fromlist=["neden"]).neden(e, yon)
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
@@ -434,6 +466,37 @@ def create_app() -> FastAPI:
                          "rel": run.reliability if run else None})
         rows.sort(key=lambda r: (r["c"].is_demo, tr_sira(r["c"].unvan)))
         return render(request, "portfolio.html", active="mukellefler", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
+
+    @app.get("/mevzuat", response_class=HTMLResponse)
+    def mevzuat_page(request: Request, soru: int | None = None, user=Depends(current_user), s=Depends(get_session)):
+        from .. import yz
+        gecmis = list(s.scalars(select(YzSoru).order_by(YzSoru.id.desc()).limit(30)))
+        secili = s.get(YzSoru, soru) if soru else (gecmis[0] if gecmis and request.session.pop("yz_yeni", None) else None)
+        hata = request.session.pop("yz_hata", None)
+        return render(request, "mevzuat.html", active="mevzuat", gecmis=gecmis, secili=secili, hata=hata,
+                      hazir=yz.hazir() and not user.misafir, misafir=user.misafir, model=yz.MODEL)
+
+    @app.post("/mevzuat")
+    async def mevzuat_sor(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        import asyncio
+        from .. import yz
+        form = await form_checked(request)
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabı mevzuat asistanını kullanamaz.")
+        metin = str(form.get("soru", "")).strip()
+        onceki = s.get(YzSoru, int(form["devam"])) if str(form.get("devam", "")).isdigit() else None
+        gecmis = [{"soru": onceki.soru, "cevap": onceki.cevap}] if onceki else None
+        try:
+            c = await asyncio.to_thread(yz.sor, metin, gecmis)
+        except yz.YzHatasi as exc:
+            request.session["yz_hata"] = {"mesaj": str(exc), "soru": metin[:4000]}
+            return _redirect(s, "/mevzuat")
+        q = YzSoru(user_id=user.id, soru=metin[:4000], cevap=c.metin, kaynaklar=[list(k) for k in c.kaynaklar],
+                   model=c.model, giris=c.giris, cikis=c.cikis, arama=c.arama)
+        s.add(q)
+        s.flush()
+        audit(s, user, "yz_soru", None, f"soru={q.id} giris={c.giris} cikis={c.cikis} arama={c.arama}")
+        return _redirect(s, f"/mevzuat?soru={q.id}")
 
     @app.post("/mukellef/yeni")
     async def client_create(request: Request, user=Depends(current_user), s=Depends(get_session)):

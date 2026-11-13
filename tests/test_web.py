@@ -155,3 +155,37 @@ def test_luca_upload_without_mapping(app_client, data_root):
     page = tc.get(r.headers["location"]).text
     assert "Defteri kebir" in page and "Muavin defter" in page
     assert "Yevmiye–kebir mutabakatı" in page and "Kasa" in page
+
+
+def test_mevzuat_asistani(app_client, monkeypatch):
+    from types import SimpleNamespace as N
+
+    import anthropic
+
+    from denetci import yz
+    login(app_client)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    r = app_client.get("/mevzuat")
+    assert r.status_code == 200 and "Asistan henüz açılmadı" in r.text
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anahtar")
+    istekler = []
+
+    class Sahte:
+        def __init__(self, **kw):
+            self.beta = N(messages=N(create=self.create))
+
+        def create(self, **kw):
+            istekler.append(kw)
+            cite = N(url="https://www.gib.gov.tr/x", title="GİB 2009/14592")
+            return N(stop_reason="end_turn", content=[N(type="server_tool_use"), N(type="text", text="Kira stopajı **%20**.\n\n- GVK 94/5-a", citations=[cite])],
+                     usage=N(input_tokens=1000, output_tokens=200, cache_read_input_tokens=0, server_tool_use=N(web_search_requests=2)))
+
+    monkeypatch.setattr(anthropic, "Anthropic", Sahte)
+    tok = csrf(app_client, "/mevzuat")
+    r = app_client.post("/mevzuat", data={"csrf": tok, "soru": "Kira stopaj oranı?"})
+    assert r.status_code == 200
+    assert "<strong>%20</strong>" in r.text and "GİB 2009/14592" in r.text and "2 arama" in r.text
+    kw = istekler[0]
+    assert kw["model"] == yz.MODEL and kw["tools"][0]["allowed_domains"] == yz.ALANLAR
+    assert kw["messages"] == [{"role": "user", "content": "Kira stopaj oranı?"}]

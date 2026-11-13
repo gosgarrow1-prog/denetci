@@ -577,3 +577,17 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
   .login-card { padding: 24px 20px; }
 }
 @media print { .scroll { overflow: visible; } .menu-btn { display: none !important; } }
+
+/* Mevzuat asistanı */
+.yz-form { display: flex; flex-direction: column; gap: 10px; }
+.yz-alt { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
+.yz-alt .muted { flex: 1 1 260px; font-size: 13px; }
+.yz-devam { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.yz-devam input { min-height: 0; }
+.yz-hata { color: var(--neg, #b42318); margin: 0; }
+.yz-soru-metin { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.yz-metin { line-height: 1.6; overflow-wrap: anywhere; }
+.yz-metin p { margin: 0 0 10px; }
+.yz-metin ul { margin: 0 0 10px; padding-left: 20px; }
+.yz-kaynak ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; overflow-wrap: anywhere; }
+.yz-ek { font-size: 12px; }
