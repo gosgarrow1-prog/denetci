@@ -777,3 +777,7 @@ def k33(ctx: Context) -> Result:
 
 RISK_RULES = [(K10, k10), (K11, k11), (K12, k12), (K13, k13), (K14, k14), (K15, k15), (K16, k16), (K17, k17), (K18, k18),
               (K19, k19), (K20, k20), (K31, k31), (K32, k32), (K33, k33)]
+
+from .stopaj import STOPAJ_RULES  # noqa: E402
+
+RISK_RULES += STOPAJ_RULES

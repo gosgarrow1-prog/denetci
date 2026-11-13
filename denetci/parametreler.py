@@ -67,3 +67,12 @@ BINEK_OTO = {
                 "tutar sınırları ayrıca uygulanır. Vergino'dan 11.11.2026'da kontrol edildi."),
     "dogrulandi": True,
 }
+
+STOPAJ = {
+    "kira": 0.20,            # GVK 94/5-a: gerçek kişi ve vergi mükellefi olmayanlardan kiralanan mallar için ödenen kira
+    "serbest_meslek": 0.20,  # GVK 94/2-b: serbest meslek kazancı ödemeleri
+    "dayanak": ("GVK 94 ve 2009/14592 sayılı BKK: işyeri kirası (94/5-a) ve serbest meslek ödemeleri (94/2-b) için "
+                "gelir vergisi tevkifatı %20; kesinti muhtasar ve prim hizmet beyannamesiyle izleyen ayın 26'sına kadar "
+                "beyan edilip ödenir. Oranlar doğrulanmadı; Burak teyit etmeli."),
+    "dogrulandi": False,
+}

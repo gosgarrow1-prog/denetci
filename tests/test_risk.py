@@ -188,3 +188,36 @@ def test_benford():
     r = k33(C(yev))
     assert r.status == "bulgu"
     assert k33(C([J(d, "770.01", borc=x) for x in dogal[:50]])).status == "bilgi"
+
+
+def _adli(j, ad):
+    j.hesap_adi = ad
+    return j
+
+
+def test_stopaj_kira_ve_odeme():
+    from denetci.checks.stopaj import k34, k35
+    d = date(2026, 9, 5)
+    yev = [_adli(J(d, "770.02", borc=10_000_00, fis="1"), "Kira Giderleri"),
+           _adli(J(d, "360.01", alacak=2_000_00, fis="1"), "Kira Stopajı"),
+           J(d, "102.01", alacak=8_000_00, fis="1"),
+           _adli(J(d, "770.02", borc=5_000_00, fis="2"), "Kira Giderleri"),          # stopaj %10: tutmaz
+           _adli(J(d, "360.01", alacak=500_00, fis="2"), "Kira Stopajı"),
+           J(d, "102.01", alacak=4_500_00, fis="2"),
+           _adli(J(d, "770.02", borc=3_000_00, fis="3"), "Kira Giderleri"),          # stopaj yok, KDV yok
+           J(d, "102.01", alacak=3_000_00, fis="3"),
+           _adli(J(d, "770.02", borc=4_000_00, fis="4"), "Kira Giderleri"),          # faturalı (KDV): stopaj aranmaz
+           J(d, "191.01", borc=800_00, fis="4"), J(d, "320.01", alacak=4_800_00, fis="4")]
+    r = k34(C(yev))
+    assert r.status == "bulgu"
+    assert {x.key for x in r.drafts} == {"stopaj-oran", "stopaj-yok"}
+    assert next(x for x in r.drafts if x.key == "stopaj-yok").amount == 600_00
+    assert k34(C(yev[:3])).status == "gecti"
+
+    ctx = Context("THP_VUK", date(2026, 7, 1), date(2026, 9, 30), None, None)
+    tem, agu = date(2026, 7, 20), date(2026, 8, 26)
+    ctx.yevmiye = [_adli(J(tem, "360.01", alacak=2_000_00), "Kira Stopajı"),
+                   _adli(J(agu, "360.01", borc=2_000_00), "Kira Stopajı"),
+                   _adli(J(agu, "360.01", alacak=1_000_00), "Kira Stopajı")]   # Ağustos tahakkuku Eylül'de ödenmemiş
+    r = k35(ctx)
+    assert r.status == "bulgu" and r.drafts[0].amount == 1_000_00
