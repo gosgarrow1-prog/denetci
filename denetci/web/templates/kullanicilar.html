@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('users', 24) }}</span>
+  <div class="ph-text"><h1>Kullanıcılar ve Parolalar</h1><p>Büro kullanıcılarının ve misafir hesabının parolasını buradan değiştirebilirsiniz. Büro hesaplarında parola en az 12, misafir hesabında en az 6 karakterdir. Kendi parolanızı değiştirirken şu anki parolanız da sorulur.</p></div>
+</div>
+
+<div class="k-liste">
+{% for k in kullanicilar %}
+<section class="card k-kart">
+  <div class="k-bas">
+    <strong>{{ k.username }}</strong>
+    {% if k.misafir %}<span class="tag">Misafir · yalnızca DEMO</span>{% else %}<span class="tag">Büro</span>{% endif %}
+    {% if k.id == ben.id %}<span class="tag">Siz</span>{% endif %}
+  </div>
+  {% if mesaj and mesaj.uid == k.id %}<p class="{{ 'yz-hata' if mesaj.hata else 'k-tamam' }}">{{ mesaj.metin }}</p>{% endif %}
+  <form method="post" action="/kullanicilar/{{ k.id }}/parola" class="k-form" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if k.id == ben.id %}<label>Şu anki parolanız<input type="password" name="mevcut" required autocomplete="current-password"></label>{% endif %}
+    <label>Yeni parola (en az {{ en_az(k.misafir) }} karakter)<input type="password" name="yeni" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
+    <label>Yeni parola (tekrar)<input type="password" name="tekrar" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
+    <button class="btn primary" type="submit">Parolayı değiştir</button>
+  </form>
+</section>
+{% endfor %}
+</div>
+{% endblock %}

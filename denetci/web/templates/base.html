@@ -56,6 +56,7 @@
   <div class="sect">Yönetim</div>
   <a class="nav {{ 'on' if active == 'mukellefler' }}" href="/">{{ icon('building') }}Mükellefler</a>
   <a class="nav {{ 'on' if active == 'mevzuat' }}" href="/mevzuat">{{ icon('bot') }}Mevzuat Asistanı</a>
+  {% if sh and not sh.get('misafir') %}<a class="nav {{ 'on' if active == 'kullanicilar' }}" href="/kullanicilar">{{ icon('users') }}Kullanıcılar ve Parolalar</a>{% endif %}
   <div class="side-foot"><span class="dot"></span>{% if sunucu %}Güvenli bağlantı · büro sunucusu{% else %}Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz{% endif %}</div>
   </div>
 </nav>

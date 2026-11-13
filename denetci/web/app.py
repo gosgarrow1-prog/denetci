@@ -14,7 +14,7 @@ from itsdangerous import BadSignature, URLSafeSerializer, URLSafeTimedSerializer
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import db
-from ..auth import LoginThrottle, verify_password, verify_totp
+from ..auth import LoginThrottle, hash_password, parola_en_az, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..config import RULESET_VERSION
 from ..checks.registry import ALL_RULES
@@ -228,7 +228,7 @@ def _shell(uid: int, c, p) -> dict:
         q = select(Client.id, Client.unvan, Client.is_demo)
         if user is None or user.misafir:
             q = q.where(Client.is_demo.is_(True))
-        sh = {"username": user.username if user else "", "clients": sorted(s.execute(q), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
+        sh = {"username": user.username if user else "", "misafir": bool(user is None or user.misafir), "clients": sorted(s.execute(q), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
             "run": None, "badge": 0}
         if c is None:
             return sh
@@ -497,6 +497,41 @@ def create_app() -> FastAPI:
         s.flush()
         audit(s, user, "yz_soru", None, f"soru={q.id} giris={c.giris} cikis={c.cikis} arama={c.arama}")
         return _redirect(s, f"/mevzuat?soru={q.id}")
+
+    # ---- Kullanıcılar ve parolalar -------------------------------------------
+
+    @app.get("/kullanicilar", response_class=HTMLResponse)
+    def kullanicilar_page(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabıyla yapılamaz")
+        kullanicilar = list(s.scalars(select(User).order_by(User.misafir, User.username)))
+        return render(request, "kullanicilar.html", active="kullanicilar", kullanicilar=kullanicilar, ben=user,
+                      mesaj=request.session.pop("k_mesaj", None), en_az=parola_en_az)
+
+    @app.post("/kullanicilar/{uid}/parola")
+    async def kullanici_parola(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabıyla yapılamaz")
+        hedef = s.get(User, uid)
+        if not hedef:
+            raise HTTPException(404, "Bulunamadı")
+        yeni, tekrar = str(form.get("yeni", "")), str(form.get("tekrar", ""))
+        n = parola_en_az(bool(hedef.misafir))
+        hata = None
+        if hedef.id == user.id and not verify_password(str(form.get("mevcut", "")), user.password_hash):
+            hata = "Şu anki parolanız yanlış."
+        elif len(yeni) < n:
+            hata = f"Parola en az {n} karakter olmalı."
+        elif yeni != tekrar:
+            hata = "İki parola birbirini tutmuyor."
+        if hata:
+            request.session["k_mesaj"] = {"uid": uid, "hata": True, "metin": hata}
+            return _redirect(s, "/kullanicilar")
+        hedef.password_hash = hash_password(yeni)
+        audit(s, user, "parola_degisti", None, hedef.username)
+        request.session["k_mesaj"] = {"uid": uid, "hata": False, "metin": f"{hedef.username} kullanıcısının parolası değiştirildi."}
+        return _redirect(s, "/kullanicilar")
 
     @app.post("/mukellef/yeni")
     async def client_create(request: Request, user=Depends(current_user), s=Depends(get_session)):

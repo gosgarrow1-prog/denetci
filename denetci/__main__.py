@@ -16,17 +16,12 @@ from datetime import date
 from sqlalchemy import select
 
 from . import db
-from .auth import hash_password, new_totp_secret, otpauth_uri
+from .auth import hash_password, parola_en_az, new_totp_secret, otpauth_uri
 from .config import data_dir, telefon_kodu
 
 
-def _en_az(misafir: bool) -> int:
-    """Misafir (yalnızca DEMO verisi) için 6, büro kullanıcıları için 12 karakter. Girişte 5 hatalı denemede 5 dk bekleme var."""
-    return 6 if misafir else 12
-
-
 def _parola_sor(misafir: bool) -> str:
-    n = _en_az(misafir)
+    n = parola_en_az(misafir)
     pw = getpass.getpass(f"Parola (en az {n} karakter): ")
     if len(pw) < n:
         sys.exit(f"Parola en az {n} karakter olmalı.")

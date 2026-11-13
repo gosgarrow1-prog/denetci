@@ -189,3 +189,31 @@ def test_mevzuat_asistani(app_client, monkeypatch):
     kw = istekler[0]
     assert kw["model"] == yz.MODEL and kw["tools"][0]["allowed_domains"] == yz.ALANLAR
     assert kw["messages"] == [{"role": "user", "content": "Kira stopaj oranı?"}]
+
+
+def test_kullanicilar_parola_web(app_client):
+    from denetci.auth import verify_password
+    with db.SessionLocal() as s:
+        s.add(User(username="misafir", password_hash=hash_password("eski-parola-1"), totp_secret=new_totp_secret(), misafir=True))
+        s.commit()
+        mid = s.query(User).filter_by(username="misafir").one().id
+        bid = s.query(User).filter_by(username="burak").one().id
+    login(app_client)
+    r = app_client.get("/kullanicilar")
+    assert r.status_code == 200 and "misafir" in r.text and "Kullanıcılar ve Parolalar" in r.text
+    tok = csrf(app_client, "/kullanicilar")
+    r = app_client.post(f"/kullanicilar/{mid}/parola", data={"csrf": tok, "yeni": "12345", "tekrar": "12345"})
+    assert "en az 6 karakter" in r.text
+    r = app_client.post(f"/kullanicilar/{mid}/parola", data={"csrf": tok, "yeni": "482913", "tekrar": "482913"})
+    assert "parolası değiştirildi" in r.text
+    r = app_client.post(f"/kullanicilar/{bid}/parola", data={"csrf": tok, "mevcut": "yanlis", "yeni": "yeni-uzun-parola-1", "tekrar": "yeni-uzun-parola-1"})
+    assert "Şu anki parolanız yanlış" in r.text
+    with db.SessionLocal() as s:
+        assert verify_password("482913", s.get(User, mid).password_hash)
+        assert verify_password("cok-gizli-parola-123", s.get(User, bid).password_hash)
+    # misafir bu sayfayı açamaz
+    app_client.cookies.clear()
+    tok = csrf(app_client, "/giris")
+    app_client.post("/giris", data={"csrf": tok, "kullanici": "misafir", "parola": "482913"})
+    assert app_client.get("/kullanicilar").status_code == 403
+    assert "/kullanicilar" not in app_client.get("/").text
