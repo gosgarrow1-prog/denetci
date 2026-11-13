@@ -47,7 +47,7 @@
   {% if p.devreden_kdv is not none %}<p class="muted">Önceki aydan devreden KDV (beyannameden elle girildi): {{ p.devreden_kdv|tl }} TL</p>{% endif %}
   {% set rdecls = decls|selectattr('yil', 'equalto', p.bitis.year)|list %}
   {% set rdecls = rdecls|selectattr('ay', 'le', p.bitis.month)|list %}
-  {% if rdecls %}<p class="muted">Yüklenen beyannameler (bu yıl, dönem sonuna kadar): {% for d in rdecls %}{{ 'KDV' if d.tur == 'kdv' else 'Geçici vergi' }} {{ beyan_donem(d.tur, d.yil, d.ay) }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
+  {% if rdecls %}<p class="muted">Yüklenen beyannameler (bu yıl, dönem sonuna kadar): {% for d in rdecls %}{{ {'kdv': 'KDV', 'muhtasar': 'Muhtasar'}.get(d.tur, 'Geçici vergi') }} {{ beyan_donem(d.tur, d.yil, d.ay) }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 
   <h2>5. Bulgular</h2>
   {% if run or findings %}{{ bulgu_tablo(findings, cases) }}{% endif %}

@@ -20,7 +20,7 @@ def _yer(o):
     """(yıl, ay, ön ek) veya None."""
     if o.declaration is not None:
         d = o.declaration
-        on = "KDV Beyannamesi" if d.tur == "kdv" else "Geçici Vergi Beyannamesi"
+        on = {"kdv": "KDV Beyannamesi", "muhtasar": "Muhtasar Beyannamesi"}.get(d.tur, "Geçici Vergi Beyannamesi")
         return d.yil, d.ay, on
     if o.fatura is not None:
         f = o.fatura

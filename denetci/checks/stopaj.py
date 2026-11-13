@@ -64,7 +64,18 @@ def _stopaj_hesabi(ad: dict, kod: str) -> bool:
     if not kod.startswith("360"):
         return False
     isim = _tam_ad(ad, kod)
-    return any(fold(w) in isim for w in STOPAJ_AD) and "kdv" not in isim.split() and "sgk" not in isim
+    return (any(fold(w) in isim for w in STOPAJ_AD) and "kdv" not in isim.split() and "sgk" not in isim
+            and "damga" not in isim)
+
+
+def _grup(isim: str) -> str | None:
+    if "kira" in isim:
+        return "kira"
+    if any(fold(w) in isim for w in SMM) or "smm" in isim.split():
+        return "serbest_meslek"
+    if any(w in isim for w in ("ucret", "personel", "maas")):
+        return "ucret"
+    return None
 
 
 def _maddeler(ctx: Context):
@@ -169,4 +180,67 @@ def k35(ctx: Context) -> Result:
     return Result(K35, "bulgu", f"{len(eksik)} ayın stopajı izleyen ayda tam ödenmemiş görünüyor.", [d])
 
 
-STOPAJ_RULES = [(K34, k34), (K35, k35)]
+K36 = Rule("K-36", "1.0", "Muhtasar beyannamesi ile defterdeki stopaj tahakkuku",
+           "Aynı ayın muhtasar ve prim hizmet beyannamesindeki tahakkuk eden vergi, defterde 360 hesabının stopaj alt "
+           "hesaplarına o ay alacak olarak kaydedilen tutarla karşılaştırılır. Alt hesap adından anlaşılıyorsa ücret, "
+           "serbest meslek ve kira ayrı ayrı; tevkifata ilişkin damga vergisi de 360'taki damga alt hesabıyla.",
+           "D", ("THP_VUK",), ("yevmiye",), STOPAJ["dayanak"], STOPAJ["dogrulandi"],
+           "Stopaj ödeme günü tahakkuk ettirilmiş ya da başka hesapta (ör. 335, 336) izleniyorsa fark görünebilir. "
+           "Ücret stopajında asgari ücret istisnası düşülmüş net tutar beyan edilir.", D0, "Yüksek")
+
+GRUP_ADI = {"ucret": "ücret", "serbest_meslek": "serbest meslek", "kira": "kira", "damga": "damga vergisi"}
+
+
+def k36(ctx: Context) -> Result:
+    from .kdv import movements
+    b = ctx.muhtasar_beyan
+    if not b:
+        return Result(K36, "uygulanmadi", "Uygulanmadı: bu ayın muhtasar beyannamesi yüklenmemiş.")
+    m = movements(ctx)
+    if m is None:
+        return Result(K36, "calistirilamadi", "Çalıştırılamadı: dönemin hareketleri (yevmiye, kebir veya mizan) yok.")
+    ad = dict(_adlar(ctx))
+    ad.update({k: v for k, v in m.names.items() if v})
+    defter, gruplu, damga, rows = 0, defaultdict(int), 0, []
+    for kod, alacak in m.alacak.items():
+        if not kod.startswith("360") or not alacak:
+            continue
+        isim = _tam_ad(ad, kod)
+        if "damga" in isim:
+            damga += alacak
+            rows += m.rows.get(kod, [])[:3]
+        elif _stopaj_hesabi(ad, kod):
+            defter += alacak
+            if (g := _grup(isim)):
+                gruplu[g] += alacak
+            rows += m.rows.get(kod, [])[:3]
+    beyan = b.get("tahakkuk_eden", 0)  # tevkifat (gelir/kurumlar vergisi kesintisi); damga vergisi ayrı tahakkuk eder
+    tol = max(ctx.tolerance, 100_00)
+    farklar = []
+    if abs(defter - beyan) > tol:
+        farklar.append(("Toplam stopaj", defter, beyan))
+    bg = b.get("gruplar") or {}
+    for g, tutar in sorted(gruplu.items()):
+        bt = (bg.get(g) or {}).get("kesinti", 0)
+        if abs(tutar - bt) > tol:
+            farklar.append((GRUP_ADI[g].capitalize() + " stopajı", tutar, bt))
+    if b.get("damga") and abs(damga - b["damga"]) > tol and damga:
+        farklar.append(("Damga vergisi", damga, b["damga"]))
+    ozet = (f"Beyanname: tahakkuk eden {kurus_str(beyan)} TL"
+            + (f", damga vergisi {kurus_str(b['damga'])} TL" if b.get("damga") else "")
+            + f"; defter ({m.source}) 360 stopaj alacak {kurus_str(defter)} TL"
+            + (f", damga {kurus_str(damga)} TL" if damga else "") + ".")
+    if not farklar:
+        return Result(K36, "gecti", ozet)
+    fark = sum(abs(d - bb) for _, d, bb in farklar)
+    liste = "; ".join(f"{n}: defter {kurus_str(d)} TL, beyanname {kurus_str(bb)} TL (fark {kurus_str(d - bb)})" for n, d, bb in farklar)
+    dr = Draft("Muhtasar beyannamesi ile defterdeki stopaj farklı", "Yüksek", "360", fark, "muhtasar-defter",
+               f"{liste}. {ozet}",
+               "Beyanname ve defter tutarları kesin; farkın nedeni veriden anlaşılamaz. " + K36.exceptions,
+               "Beyanname ekindeki ödemeleri (kira, serbest meslek makbuzları, bordro) defterdeki 360 kayıtlarıyla "
+               "karşılaştırın. Eksik tahakkuk varsa kaydı düzeltin; beyanname eksikse düzeltme beyannamesi gerekir.",
+               rows[:10])
+    return Result(K36, "bulgu", f"Muhtasar beyannamesi ile defter arasında {len(farklar)} fark var.", [dr])
+
+
+STOPAJ_RULES = [(K34, k34), (K35, k35), (K36, k36)]
