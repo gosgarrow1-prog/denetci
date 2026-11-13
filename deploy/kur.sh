@@ -45,6 +45,8 @@ After=network.target
 User=denetci
 WorkingDirectory=$UYG
 EnvironmentFile=/etc/denetci.env
+# Mevzuat asistanının API anahtarı (deploy/yz-anahtar.sh yazar; kurulum bu dosyaya dokunmaz)
+EnvironmentFile=-/etc/denetci-yz.env
 ExecStart=$UYG/.venv/bin/python -m denetci calistir --port 8000
 Restart=always
 NoNewPrivileges=true
