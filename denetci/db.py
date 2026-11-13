@@ -38,8 +38,9 @@ _ADDED_COLUMNS = {
     "analysis_runs": {"source_batches": "JSON"},
     "periods": {"devreden_kdv": "INTEGER", "durum": "VARCHAR(16)", "kesin_at": "DATETIME", "kesin_kullanici": "VARCHAR(64)",
                 "kesin_run_id": "INTEGER", "notlar": "TEXT", "gv": "JSON"},
-    "users": {"misafir": "BOOLEAN DEFAULT 0"},
-    "clients": {"vkn": "VARCHAR(16)", "vergi_dairesi": "VARCHAR(128)", "luca_kodu": "VARCHAR(64)"},
+    "users": {"misafir": "BOOLEAN DEFAULT 0", "buro_id": "INTEGER", "yonetici": "BOOLEAN DEFAULT 0",
+              "sistem": "BOOLEAN DEFAULT 0", "ad": "VARCHAR(128)", "unvan": "VARCHAR(64)"},
+    "clients": {"buro_id": "INTEGER", "vkn": "VARCHAR(16)", "vergi_dairesi": "VARCHAR(128)", "luca_kodu": "VARCHAR(64)"},
     "journal_lines": {"madde_no": "VARCHAR(32)", "fis_tipi": "VARCHAR(32)", "evrak_no": "VARCHAR(64)"},
 }
 
@@ -58,6 +59,23 @@ def init_db():
             for name, ddl in cols.items():
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+        _buro_gecisi(conn, text)
+
+
+def _buro_gecisi(conn, text):
+    """Büro ayrımından önceki veriler 1 numaralı büroya aittir; o zamanki büro kullanıcıları bu büronun yöneticisidir."""
+    if conn.execute(text("SELECT COUNT(*) FROM burolar")).scalar():
+        return
+    ad = "Büro"
+    try:
+        from . import buro
+        ad = buro.dosya_bilgileri().get("unvan") or ad
+    except Exception:
+        pass
+    conn.execute(text("INSERT INTO burolar (id, ad, aktif, created_at) VALUES (1, :ad, 1, CURRENT_TIMESTAMP)"), {"ad": ad})
+    conn.execute(text("UPDATE clients SET buro_id = 1 WHERE buro_id IS NULL AND NOT is_demo"))
+    conn.execute(text("UPDATE users SET buro_id = 1 WHERE buro_id IS NULL"))
+    conn.execute(text("UPDATE users SET yonetici = 1, sistem = 1 WHERE NOT misafir"))
 
 
 def reset_engine():

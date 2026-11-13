@@ -1,28 +1,145 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% macro mesaj_kutusu(alan) %}{% if mesaj and mesaj.alan == alan %}<p class="{{ 'yz-hata' if mesaj.hata else 'k-tamam' }}">{{ mesaj.metin }}</p>{% endif %}{% endmacro %}
 {% block content %}
+{% set yonetici = ben.yonetici or ben.sistem %}
 <div class="page-head">
   <span class="ph-ic">{{ icon('users', 24) }}</span>
-  <div class="ph-text"><h1>Kullanıcılar ve Parolalar</h1><p>Büro kullanıcılarının ve misafir hesabının parolasını buradan değiştirebilirsiniz. Büro hesaplarında parola en az 12, misafir hesabında en az 6 karakterdir. Kendi parolanızı değiştirirken şu anki parolanız da sorulur.</p></div>
+  <div class="ph-text"><h1>Kullanıcılar ve Parolalar</h1><p>{% if yonetici %}Büronuzun kullanıcılarını, parolalarını ve raporlarda görünen büro bilgilerini buradan yönetirsiniz. {% endif %}Büro hesaplarında parola en az 12, misafir hesabında en az 6 karakterdir. Kendi parolanızı değiştirirken şu anki parolanız da sorulur.</p></div>
 </div>
 
+{% if yeni_anahtar %}
+<section class="card k-anahtar">
+  <h2>{{ yeni_anahtar.kullanici }} için telefon kodu anahtarı</h2>
+  <p>Bu kullanıcı girişte parolanın yanında telefondaki 6 haneli kodu da girecek. Anahtar yalnızca şimdi gösterilir; kullanıcıya güvenli bir yoldan iletin:</p>
+  <ol>
+    <li>Telefona <strong>Google Authenticator</strong> ya da <strong>Microsoft Authenticator</strong> uygulaması kurulur.</li>
+    <li>Uygulamada <strong>+</strong> düğmesine basılır, <strong>"Kurulum anahtarı gir"</strong> (ya da "Anahtarı elle gir") seçilir.</li>
+    <li>Hesap adına <strong>Denetçi</strong>, anahtar kutusuna aşağıdaki kod yazılır, tür <strong>"Zamana dayalı"</strong> kalır, <strong>Ekle</strong>'ye basılır.</li>
+  </ol>
+  <p class="k-kod">{{ yeni_anahtar.anahtar }}</p>
+</section>
+{% endif %}
+
+<h2 class="k-baslik">Kullanıcılar</h2>
 <div class="k-liste">
 {% for k in kullanicilar %}
 <section class="card k-kart">
   <div class="k-bas">
     <strong>{{ k.username }}</strong>
-    {% if k.misafir %}<span class="tag">Misafir · yalnızca DEMO</span>{% else %}<span class="tag">Büro</span>{% endif %}
+    {% if k.misafir %}<span class="tag">Misafir · yalnızca DEMO</span>{% elif k.yonetici %}<span class="tag">Büro yöneticisi</span>{% else %}<span class="tag">Büro</span>{% endif %}
     {% if k.id == ben.id %}<span class="tag">Siz</span>{% endif %}
   </div>
-  {% if mesaj and mesaj.uid == k.id %}<p class="{{ 'yz-hata' if mesaj.hata else 'k-tamam' }}">{{ mesaj.metin }}</p>{% endif %}
-  <form method="post" action="/kullanicilar/{{ k.id }}/parola" class="k-form" autocomplete="off">
+  {{ mesaj_kutusu('u' ~ k.id) }}
+  {% if not k.misafir %}
+  <form method="post" action="/kullanicilar/{{ k.id }}/bilgi" class="k-form k-bilgi">
     <input type="hidden" name="csrf" value="{{ csrf }}">
-    {% if k.id == ben.id %}<label>Şu anki parolanız<input type="password" name="mevcut" required autocomplete="current-password"></label>{% endif %}
-    <label>Yeni parola (en az {{ en_az(k.misafir) }} karakter)<input type="password" name="yeni" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
-    <label>Yeni parola (tekrar)<input type="password" name="tekrar" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
-    <button class="btn primary" type="submit">Parolayı değiştir</button>
+    <label>Ad soyad (raporda "Hazırlayan")<input name="ad" value="{{ k.ad or '' }}" placeholder="ör. Ayşe YILMAZ"></label>
+    <label>Unvan<input name="unvan" value="{{ k.unvan or '' }}" placeholder="ör. SMMM"></label>
+    {% if yonetici and k.id != ben.id %}<label class="k-onay"><input type="checkbox" name="yonetici" value="1" {{ 'checked' if k.yonetici }}> Büro yöneticisi (kullanıcı ekleyebilir)</label>{% endif %}
+    <button class="btn" type="submit">Bilgileri kaydet</button>
   </form>
+  {% endif %}
+  <details class="k-detay">
+    <summary>Parolayı değiştir</summary>
+    <form method="post" action="/kullanicilar/{{ k.id }}/parola" class="k-form" autocomplete="off">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% if k.id == ben.id %}<label>Şu anki parolanız<input type="password" name="mevcut" required autocomplete="current-password"></label>{% endif %}
+      <label>Yeni parola (en az {{ en_az(k.misafir) }} karakter)<input type="password" name="yeni" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
+      <label>Yeni parola (tekrar)<input type="password" name="tekrar" required minlength="{{ en_az(k.misafir) }}" autocomplete="new-password"></label>
+      <button class="btn primary" type="submit">Parolayı değiştir</button>
+    </form>
+  </details>
+  {% if telefon_kodu and not k.misafir and (yonetici or k.id == ben.id) %}
+  <form method="post" action="/kullanicilar/{{ k.id }}/telefon-anahtari" class="k-satir" onsubmit="return confirm('Yeni telefon kodu anahtarı üretilsin mi? Eski telefondaki kod çalışmaz olur.')">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary sm" type="submit">Telefon kodu anahtarını yenile</button>
+  </form>
+  {% endif %}
+  {% if yonetici and k.id != ben.id and not k.sistem %}
+  <form method="post" action="/kullanicilar/{{ k.id }}/sil" class="k-satir" onsubmit="return confirm('{{ k.username }} kullanıcısı silinsin mi?')">
+    <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn danger sm" type="submit">Kullanıcıyı sil</button>
+  </form>
+  {% endif %}
 </section>
 {% endfor %}
+
+{% if yonetici %}
+<section class="card k-kart">
+  <div class="k-bas"><strong>Yeni kullanıcı</strong></div>
+  {{ mesaj_kutusu('yeni') }}
+  <form method="post" action="/kullanicilar/yeni" class="k-form" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Kullanıcı adı (girişte yazılır)<input name="kullanici" required pattern="[A-Za-z0-9._\-]{3,32}" placeholder="ör. ayilmaz"></label>
+    <label>Ad soyad<input name="ad" placeholder="ör. Ayşe YILMAZ"></label>
+    <label>Unvan<input name="unvan" placeholder="ör. SMMM"></label>
+    <label>Parola<input type="password" name="parola" required minlength="6" autocomplete="new-password"></label>
+    <label>Parola (tekrar)<input type="password" name="parola2" required minlength="6" autocomplete="new-password"></label>
+    <label class="k-onay"><input type="checkbox" name="yonetici" value="1"> Büro yöneticisi</label>
+    {% if ben.sistem %}<label class="k-onay"><input type="checkbox" name="misafir" value="1"> Misafir (yalnızca DEMO, parola en az 6)</label>{% endif %}
+    <button class="btn primary" type="submit">Kullanıcı ekle</button>
+  </form>
+  <p class="muted">Büro kullanıcısında parola en az 12 karakter olmalı.</p>
+</section>
+{% endif %}
 </div>
+
+{% if yonetici %}
+<h2 class="k-baslik" id="buro">Büro bilgileri</h2>
+<section class="card">
+  <p class="muted">Bu bilgiler ve logo, büronuzun raporlarında, sol menüde ve WhatsApp özetinde görünür. Başka bürolar sizinkini görmez.{% if buro_kaydi and buro_kaydi.yz_aylik_sinir is not none %} Mevzuat asistanı bu ay: yaklaşık {{ '%.2f'|format(yz_harcama)|replace('.', ',') }} $ / sınır {{ '%.2f'|format(buro_kaydi.yz_aylik_sinir)|replace('.', ',') }} $.{% endif %}</p>
+  {{ mesaj_kutusu('buro') }}
+  <form method="post" action="/buro/bilgiler" class="k-form k-buro" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Büro unvanı<input name="unvan" value="{{ buro_bilgi.get('unvan', '') }}" placeholder="ör. Yılmaz Mali Müşavirlik"></label>
+    <label>Alt başlık<input name="alt_baslik" value="{{ buro_bilgi.get('alt_baslik', '') }}" placeholder="ör. Serbest Muhasebeci Mali Müşavirlik"></label>
+    <label>Adres<input name="adres" value="{{ buro_bilgi.get('adres', '') }}"></label>
+    <label>Telefon (birden fazlaysa virgülle)<input name="telefonlar" value="{{ (buro_bilgi.get('telefonlar') or [])|join(', ') }}"></label>
+    <label>E-posta<input name="eposta" value="{{ buro_bilgi.get('eposta', '') }}"></label>
+    <label>Web<input name="web" value="{{ buro_bilgi.get('web', '') }}"></label>
+    <label>Logo, açık zemin için (rapor) · PNG {% if buro_bilgi.logolar.acik %}<span class="muted">(yüklü)</span>{% endif %}<input type="file" name="logo_acik" accept=".png,image/png"></label>
+    <label>Logo, koyu zemin için (sol menü) · PNG {% if buro_bilgi.logolar.koyu %}<span class="muted">(yüklü)</span>{% endif %}<input type="file" name="logo_koyu" accept=".png,image/png"></label>
+    <button class="btn primary" type="submit">Kaydet</button>
+  </form>
+</section>
+{% endif %}
+
+{% if ben.sistem %}
+<h2 class="k-baslik" id="burolar">Bürolar</h2>
+<p class="muted">Her büro yalnızca kendi mükelleflerini ve kullanıcılarını görür; DEMO mükellefler hepsinde ortaktır. Mevzuat asistanının ücreti sizin API hesabınızdan çıkar; büro başına aylık sınır koyabilirsiniz (boş bırakılırsa sınırsız).</p>
+{{ mesaj_kutusu('burolar') }}
+<div class="card scroll"><table class="k-tablo">
+  <thead><tr><th>Büro</th><th>Kullanıcılar</th><th class="num">Mükellef</th><th class="num">Asistan bu ay</th><th>Aylık sınır ($) ve durum</th></tr></thead>
+  <tbody>
+  {% for r in burolar %}
+  <tr>
+    <td><strong>{{ r.b.ad }}</strong>{% if r.b.id == (ben.buro_id or 1) %} <span class="tag">Sizin</span>{% endif %}</td>
+    <td>{{ r.kullanici|map(attribute='username')|join(', ') }}</td>
+    <td class="num">{{ r.mukellef }}</td>
+    <td class="num">{{ '%.2f'|format(r.harcama)|replace('.', ',') }} $</td>
+    <td><form method="post" action="/burolar/{{ r.b.id }}" class="k-satir">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input name="sinir" class="k-sinir" value="{{ '%.2f'|format(r.b.yz_aylik_sinir) if r.b.yz_aylik_sinir is not none else '' }}" placeholder="sınırsız" aria-label="Aylık sınır">
+      {% if r.b.id != (ben.buro_id or 1) %}<label class="k-onay"><input type="checkbox" name="aktif" value="1" {{ 'checked' if r.b.aktif }}> Açık</label>{% endif %}
+      <button class="btn" type="submit">Kaydet</button></form></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+
+<section class="card k-kart k-yeni-buro">
+  <div class="k-bas"><strong>Yeni büro aç</strong></div>
+  <p class="muted">Büroyla birlikte o büronun yönetici kullanıcısı da açılır. Yönetici girince kendi büro bilgilerini, logosunu ve kullanıcılarını kendisi ekler.</p>
+  <form method="post" action="/burolar/yeni" class="k-form" autocomplete="off">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Büro adı<input name="buro_ad" required placeholder="ör. Yılmaz Mali Müşavirlik"></label>
+    <label>Aylık asistan sınırı ($)<input name="sinir" value="2" placeholder="boş: sınırsız"></label>
+    <label>Yöneticinin kullanıcı adı<input name="kullanici" required pattern="[A-Za-z0-9._\-]{3,32}" placeholder="ör. ayilmaz"></label>
+    <label>Yöneticinin ad soyadı<input name="ad" placeholder="ör. Ayşe YILMAZ"></label>
+    <label>Unvanı<input name="unvan" placeholder="ör. SMMM"></label>
+    <label>İlk parola (en az 12 karakter)<input type="password" name="parola" required minlength="12" autocomplete="new-password"></label>
+    <label>İlk parola (tekrar)<input type="password" name="parola2" required minlength="12" autocomplete="new-password"></label>
+    <button class="btn primary" type="submit">Büroyu aç</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

@@ -42,7 +42,7 @@ def kaydet(client, o, content: bytes) -> Path | None:
         if yer is None:
             return None
         yil, ay, on = yer
-        folder = arsiv_dir() / _temiz(client.unvan) / str(yil) / f"{ay:02d} {AYLAR[ay - 1]}"
+        folder = mukellef_klasoru(client) / str(yil) / f"{ay:02d} {AYLAR[ay - 1]}"
         folder.mkdir(parents=True, exist_ok=True)
         ad = Path(o.filename)
         hedef = folder / f"{on} - {_temiz(ad.stem)}{ad.suffix.lower()}"
@@ -61,7 +61,10 @@ def kaydet(client, o, content: bytes) -> Path | None:
 
 
 def mukellef_klasoru(client) -> Path:
-    return arsiv_dir() / _temiz(client.unvan)
+    """1 numaralı büro (ve DEMO) doğrudan arşiv klasöründe; diğer bürolar kendi alt klasöründe (aynı unvan karışmasın)."""
+    bid = getattr(client, "buro_id", None) or 1
+    kok = arsiv_dir() if bid == 1 or getattr(client, "is_demo", False) else arsiv_dir() / "Bürolar" / f"Büro {bid}"
+    return kok / _temiz(client.unvan)
 
 
 def zip_olarak(client) -> bytes | None:

@@ -18,6 +18,19 @@ def now():
     return datetime.now(timezone.utc)
 
 
+class Buro(Base):
+    """Mali müşavirlik bürosu. Her büro yalnızca kendi mükelleflerini ve kullanıcılarını görür (DEMO mükellefler ortaktır).
+    1 numaralı büro sunucunun sahibidir; bilgileri ve logoları buro/ klasöründen de okunabilir."""
+
+    __tablename__ = "burolar"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ad: Mapped[str] = mapped_column(String(256))
+    # Mevzuat asistanı için aylık harcama sınırı ($). Boş: sınırsız.
+    yz_aylik_sinir: Mapped[float | None] = mapped_column()
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -26,6 +39,13 @@ class User(Base):
     totp_secret: Mapped[str] = mapped_column(String(64))
     # Misafir: yalnızca DEMO (sentetik) mükellefleri görür, telefon kodu sorulmaz. Tanıtım için.
     misafir: Mapped[bool] = mapped_column(Boolean, default=False)
+    buro_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Büro yöneticisi: kendi bürosunun kullanıcılarını ve büro bilgilerini yönetir.
+    yonetici: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Sistem yöneticisi (sunucu sahibi): yeni büro açar.
+    sistem: Mapped[bool] = mapped_column(Boolean, default=False)
+    ad: Mapped[str | None] = mapped_column(String(128))  # raporda "Hazırlayan" (ör. Burak ALTINOK)
+    unvan: Mapped[str | None] = mapped_column(String(64))  # ör. SMMM
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -44,6 +64,7 @@ class Client(Base):
     # Uygulanan çerçeve. Kurallar bu etikete göre seçilir; ileride BOBİ FRS vb. eklenebilir.
     cerceve: Mapped[str] = mapped_column(String(32), default="THP_VUK")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    buro_id: Mapped[int | None] = mapped_column(Integer, index=True)  # DEMO mükelleflerde boş (tüm bürolar görür)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

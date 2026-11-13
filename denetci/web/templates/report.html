@@ -41,7 +41,7 @@
 </section>
 {% endif %}
 
-{% set bu = buro() %}
+{% set bu = shell.bu if shell is defined and shell.bu is defined else buro() %}
 <article class="report">
   {% if bu.logolar.acik or bu.get('unvan') %}
   <div class="r-buro">

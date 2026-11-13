@@ -600,3 +600,21 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
 .k-form input { padding: 9px 11px; border: 1px solid var(--line, #d5dae3); border-radius: 8px; font-size: 15px; width: 100%; box-sizing: border-box; }
 .k-form .btn { justify-self: start; }
 .k-tamam { color: #137a4b; font-weight: 600; }
+.k-baslik { margin: 28px 0 12px; font-size: 18px; }
+.k-liste + .k-baslik, .page-head + .k-baslik { margin-top: 8px; }
+.k-onay { display: flex !important; flex-direction: row; align-items: center; gap: 8px; }
+.k-onay input { width: auto !important; }
+.k-detay { margin-top: 12px; }
+.k-detay summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.k-satir { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.k-sil { color: #b42318; }
+.k-sinir { width: 90px; padding: 7px 9px; border: 1px solid var(--line, #d5dae3); border-radius: 8px; }
+.k-anahtar { border-left: 4px solid #2b6cb0; margin-bottom: 16px; }
+.k-anahtar ol { padding-left: 20px; }
+.k-kod { font: 600 18px/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; word-break: break-all; background: rgba(43,108,176,.08); padding: 10px 12px; border-radius: 8px; }
+.k-tablo { width: 100%; border-collapse: collapse; }
+.k-tablo th, .k-tablo td { padding: 10px; border-bottom: 1px solid var(--line, #e3e7ee); text-align: left; vertical-align: middle; }
+.k-tablo .num { text-align: right; }
+.k-yeni-buro { margin-top: 16px; max-width: 560px; }
+.k-buro { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.k-buro .btn { grid-column: 1 / -1; }

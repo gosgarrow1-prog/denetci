@@ -14,7 +14,8 @@ from denetci.web.app import create_app
 def app_client(data_root):
     secret = new_totp_secret()
     with db.SessionLocal() as s:
-        s.add(User(username="burak", password_hash=hash_password("cok-gizli-parola-123"), totp_secret=secret))
+        s.add(User(username="burak", password_hash=hash_password("cok-gizli-parola-123"), totp_secret=secret,
+                   buro_id=1, yonetici=True, sistem=True))
         s.commit()
     tc = TestClient(create_app())
     tc.secret = secret
@@ -217,3 +218,66 @@ def test_kullanicilar_parola_web(app_client):
     app_client.post("/giris", data={"csrf": tok, "kullanici": "misafir", "parola": "482913"})
     assert app_client.get("/kullanicilar").status_code == 403
     assert "/kullanicilar" not in app_client.get("/").text
+
+
+def test_burolar_birbirini_gormez(app_client):
+    login(app_client)
+    tok = csrf(app_client, "/kullanicilar")
+    r = app_client.post("/mukellef/yeni", data={"csrf": tok, "unvan": "BIZIM MUKELLEF A.S."})
+    bizim = int(r.url.path.rstrip("/").split("/")[-1])
+    r = app_client.post("/burolar/yeni", data={"csrf": tok, "buro_ad": "Yilmaz Musavirlik", "sinir": "0",
+                                               "kullanici": "ayilmaz", "ad": "Ayse YILMAZ", "unvan": "SMMM",
+                                               "parola": "baska-buro-parola-1", "parola2": "baska-buro-parola-1"})
+    assert "bürosu açıldı" in r.text
+    # ikinci büronun yöneticisi girer
+    app_client.cookies.clear()
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "ayilmaz", "parola": "baska-buro-parola-1"})
+    assert r.status_code == 200
+    assert "BIZIM MUKELLEF" not in r.text
+    assert app_client.get(f"/mukellef/{bizim}").status_code == 404
+    tok = csrf(app_client, "/")
+    r = app_client.post("/mukellef/yeni", data={"csrf": tok, "unvan": "ONLARIN MUKELLEFI LTD"})
+    onlarin = int(r.url.path.rstrip("/").split("/")[-1])
+    with db.SessionLocal() as s:
+        from denetci.models import Buro
+        c = s.get(Client, onlarin)
+        assert c.buro_id == s.scalar(__import__("sqlalchemy").select(Buro.id).where(Buro.ad == "Yilmaz Musavirlik"))
+    sayfa = app_client.get("/kullanicilar").text
+    assert "ayilmaz" in sayfa and "burak" not in sayfa and "Yeni büro aç" not in sayfa
+    # sınır 0 $: asistan kullanılamaz
+    import os
+    os.environ["ANTHROPIC_API_KEY"] = "test"
+    try:
+        tok = csrf(app_client, "/mevzuat")
+        r = app_client.post("/mevzuat", data={"csrf": tok, "soru": "Kira stopajı?"})
+        assert "sınırı" in r.text
+    finally:
+        del os.environ["ANTHROPIC_API_KEY"]
+    # büro bilgileri ve hazırlayan
+    r = app_client.post("/buro/bilgiler", data={"csrf": tok, "unvan": "Yilmaz Mali Musavirlik", "telefonlar": "0212 000 00 00"})
+    assert "Büro bilgileri kaydedildi" in r.text
+    # ilk büro onların mükellefini görmez
+    app_client.cookies.clear()
+    login(app_client)
+    assert "ONLARIN MUKELLEFI" not in app_client.get("/").text
+    assert app_client.get(f"/mukellef/{onlarin}").status_code == 404
+    sayfa = app_client.get("/kullanicilar").text
+    assert "Yilmaz Mali Musavirlik" in sayfa  # büro bilgilerindeki unvan büro listesine de yansır
+
+
+def test_eski_veri_buro_1e_gecer(data_root):
+    """Büro ayrımından önceki veritabanı: mükellefler ve kullanıcılar 1 numaralı büroya, büro kullanıcıları yönetici olur."""
+    from sqlalchemy import text
+    from denetci.models import Buro
+    with db.SessionLocal() as s:
+        s.add(User(username="eski", password_hash="x", totp_secret="x"))
+        s.add(Client(unvan="ESKI MUKELLEF"))
+        s.execute(text("DELETE FROM burolar"))
+        s.commit()
+    db.init_db()
+    with db.SessionLocal() as s:
+        assert s.get(Buro, 1) is not None
+        u = s.query(User).filter_by(username="eski").one()
+        assert u.buro_id == 1 and u.yonetici and u.sistem
+        assert s.query(Client).filter_by(unvan="ESKI MUKELLEF").one().buro_id == 1
