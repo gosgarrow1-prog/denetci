@@ -1,6 +1,7 @@
 """Komut satırı.
 
     python -m denetci kullanici-ekle <kullanici_adi>
+    python -m denetci parola <kullanici_adi>
     python -m denetci demo
     python -m denetci calistir
     python -m denetci telefon-kodu <kullanici_adi>
@@ -19,6 +20,35 @@ from .auth import hash_password, new_totp_secret, otpauth_uri
 from .config import data_dir, telefon_kodu
 
 
+def _en_az(misafir: bool) -> int:
+    """Misafir (yalnızca DEMO verisi) için 6, büro kullanıcıları için 12 karakter. Girişte 5 hatalı denemede 5 dk bekleme var."""
+    return 6 if misafir else 12
+
+
+def _parola_sor(misafir: bool) -> str:
+    n = _en_az(misafir)
+    pw = getpass.getpass(f"Parola (en az {n} karakter): ")
+    if len(pw) < n:
+        sys.exit(f"Parola en az {n} karakter olmalı.")
+    if pw != getpass.getpass("Parola (tekrar): "):
+        sys.exit("Parolalar eşleşmedi.")
+    return pw
+
+
+def cmd_parola(args):
+    """Var olan kullanıcının parolasını değiştirir."""
+    db.init_db()
+    from .models import User
+
+    with db.SessionLocal() as s:
+        u = s.scalar(select(User).where(User.username == args.username))
+        if not u:
+            sys.exit("Böyle bir kullanıcı yok.")
+        u.password_hash = hash_password(_parola_sor(bool(u.misafir)))
+        s.commit()
+    print("Parola değiştirildi.")
+
+
 def cmd_add_user(args):
     db.init_db()
     from .models import User
@@ -26,11 +56,7 @@ def cmd_add_user(args):
     with db.SessionLocal() as s:
         if s.scalar(select(User).where(User.username == args.username)):
             sys.exit("Bu kullanıcı zaten var.")
-        pw = getpass.getpass("Parola (en az 12 karakter): ")
-        if len(pw) < 12:
-            sys.exit("Parola en az 12 karakter olmalı.")
-        if pw != getpass.getpass("Parola (tekrar): "):
-            sys.exit("Parolalar eşleşmedi.")
+        pw = _parola_sor(args.misafir)
         secret = new_totp_secret()
         s.add(User(username=args.username, password_hash=hash_password(pw), totp_secret=secret, misafir=args.misafir))
         s.commit()
@@ -140,6 +166,9 @@ def main(argv=None):
     p.add_argument("username")
     p.add_argument("--misafir", action="store_true", help="Tanıtım hesabı: yalnızca DEMO mükellefler, telefon kodu yok")
     p.set_defaults(func=cmd_add_user)
+    p = sub.add_parser("parola", help="Kullanıcının parolasını değiştirir (misafir için en az 6 karakter)")
+    p.add_argument("username")
+    p.set_defaults(func=cmd_parola)
     p = sub.add_parser("demo", help="Sentetik DEMO mükellef ve dosyalar oluşturur")
     p.add_argument("--yukle", action="store_true", help="Dosyaları otomatik olarak içe aktar")
     p.set_defaults(func=cmd_demo)
