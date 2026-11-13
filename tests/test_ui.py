@@ -35,6 +35,11 @@ def test_demo_dashboard(app_client):
         assert text in risk, text
     for sub in ("/kdv", "/mutabakat", "/gecici-vergi", "/belgeler"):
         assert tc.get(loc + sub).status_code == 200, sub
+    st = tc.get(loc + "/stopaj").text
+    for text in ("Stopaj ve Muhtasar", "360 hesabındaki stopajlar", "Muhtasar ve prim hizmet beyannamesi"):
+        assert text in st, text
+    kr = tc.get(loc + "/kredibilite")
+    assert kr.status_code == 200 and "Kredibilite" in kr.text and "konu=kredibilite" in str(kr.url)
     assert tc.get(loc + "/olmayan").status_code == 404
     # İkinci tıklama yeni DEMO oluşturmaz.
     tc.post("/demo", data={"csrf": csrf(tc, "/")})

@@ -826,6 +826,9 @@ def create_app() -> FastAPI:
             v[f"{konu}_a"] = a
             v[f"{konu}_results"], v[f"{konu}_findings"] = filtre(a)
             if konu == "risk":
+                if "stopaj" in by_key:  # stopaj kontrolleri ayrı sayfada; raporda risk başlığı altında
+                    r2, f2 = filtre(by_key["stopaj"])
+                    v["risk_results"], v["risk_findings"] = v["risk_results"] + r2, v["risk_findings"] + f2
                 _benford_view(s, c, p, v)
 
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
@@ -993,10 +996,16 @@ def create_app() -> FastAPI:
         v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
         return render(request, "fatura.html", active="fatura", analysis=a, **v)
 
+    @app.get("/mukellef/{cid}/kredibilite")
+    def kredibilite_page(cid: int, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        return RedirectResponse(f"/mukellef/{cid}/rapor?" + (f"donem={p.id}&" if p else "") + "konu=kredibilite", status_code=303)
+
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
-        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk"}
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk", "stopaj": "stopaj"}
         if key not in keys:
             _404()
         c = s.get(Client, cid) or _404()

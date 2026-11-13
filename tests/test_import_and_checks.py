@@ -6,12 +6,12 @@ from sqlalchemy import func, select
 
 from denetci.checks.engine import run_analysis
 from denetci.importer.load import DuplicateFile, ImportError_, confirm, create_draft
-from denetci.analyses import RISK_RULES
+from denetci.analyses import RISK_RULES, STOPAJ_RULES
 from denetci.models import Finding, FindingEvidence, JournalLine, RawRow, TrialBalanceLine
 
 
 # Risk taraması (K-10..K-13) tests/test_risk.py'de sınanır; buradaki testler temel kurallara bakar.
-TEMEL = Finding.rule_id.not_in(RISK_RULES)
+TEMEL = Finding.rule_id.not_in(RISK_RULES + STOPAJ_RULES)
 
 
 def _import_all(session, c, p, files):
