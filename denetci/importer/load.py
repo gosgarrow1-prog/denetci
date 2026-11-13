@@ -34,7 +34,7 @@ def _json_safe(v):
 def store_file(session: Session, client: Client, filename: str, content: bytes, allowed=IZINLI_UZANTILAR) -> SourceFile:
     suffix = Path(filename).suffix.lower()
     if suffix not in allowed:
-        raise ImportError_("Yalnızca .xlsx ve .csv dosyaları (Luca) ile beyanname PDF'leri destekleniyor.")
+        raise ImportError_("Yalnızca .xlsx ve .csv dosyaları (Luca), e-Defter .xml/.zip dosyaları ile beyanname PDF'leri destekleniyor.")
     if len(content) == 0:
         raise ImportError_("Dosya boş.")
     if len(content) > MAX_YUKLEME_BAYT:

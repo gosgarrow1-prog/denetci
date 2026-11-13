@@ -36,7 +36,7 @@ def peek(filename: str, content: bytes) -> dict:
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
         return beyanname.peek(content)
-    if suffix not in (".xlsx", ".csv"):
+    if suffix not in (".xlsx", ".csv", ".xml", ".zip"):
         return {}
     try:
         with tempfile.TemporaryDirectory() as tmp:
