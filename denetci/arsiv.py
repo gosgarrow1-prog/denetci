@@ -1,6 +1,8 @@
 """Yüklenen her belgenin bir kopyası Mükellef\\Yıl\\Ay klasörüne kaydedilir (yalnızca arşiv; uygulama oradan okumaz)."""
 
+import io
 import re
+import zipfile
 from pathlib import Path
 
 from .config import arsiv_dir
@@ -18,7 +20,7 @@ def _yer(o):
     """(yıl, ay, ön ek) veya None."""
     if o.declaration is not None:
         d = o.declaration
-        on = "KDV Beyannamesi" if d.tur == "kdv" else "Geçici Vergi Beyannamesi"
+        on = {"kdv": "KDV Beyannamesi", "muhtasar": "Muhtasar Beyannamesi"}.get(d.tur, "Geçici Vergi Beyannamesi")
         return d.yil, d.ay, on
     if o.fatura is not None:
         f = o.fatura
@@ -40,7 +42,7 @@ def kaydet(client, o, content: bytes) -> Path | None:
         if yer is None:
             return None
         yil, ay, on = yer
-        folder = arsiv_dir() / _temiz(client.unvan) / str(yil) / f"{ay:02d} {AYLAR[ay - 1]}"
+        folder = mukellef_klasoru(client) / str(yil) / f"{ay:02d} {AYLAR[ay - 1]}"
         folder.mkdir(parents=True, exist_ok=True)
         ad = Path(o.filename)
         hedef = folder / f"{on} - {_temiz(ad.stem)}{ad.suffix.lower()}"
@@ -56,3 +58,23 @@ def kaydet(client, o, content: bytes) -> Path | None:
         import logging
         logging.getLogger(__name__).warning('Arşive kopyalanamadı: %s', exc)
         return None
+
+
+def mukellef_klasoru(client) -> Path:
+    """1 numaralı büro (ve DEMO) doğrudan arşiv klasöründe; diğer bürolar kendi alt klasöründe (aynı unvan karışmasın)."""
+    bid = getattr(client, "buro_id", None) or 1
+    kok = arsiv_dir() if bid == 1 or getattr(client, "is_demo", False) else arsiv_dir() / "Bürolar" / f"Büro {bid}"
+    return kok / _temiz(client.unvan)
+
+
+def zip_olarak(client) -> bytes | None:
+    """Mükellefin arşiv klasörünü (yıl/ay düzeniyle) tek bir zip dosyası olarak verir; klasör boşsa None."""
+    kok = mukellef_klasoru(client)
+    dosyalar = sorted(f for f in kok.rglob("*") if f.is_file()) if kok.is_dir() else []
+    if not dosyalar:
+        return None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in dosyalar:
+            z.write(f, f.relative_to(kok).as_posix())
+    return buf.getvalue()

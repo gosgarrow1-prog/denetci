@@ -81,6 +81,7 @@ class Context:
     # Aynı dönemin yüklenmiş beyannameleri (alanlar sözlüğü, kuruş): KDV (aylık) ve geçici vergi.
     kdv_beyan: dict | None = None
     gv_beyan: dict | None = None
+    muhtasar_beyan: dict | None = None
     # Dönemin e-Fatura listeleri: {"giden": [InvoiceRow], "gelen": [...]} (yönü belli olanlar)
     faturalar: dict = field(default_factory=dict)
     # Dönem kayıtları daha geniş bir yevmiyeden ayrıldıysa True.

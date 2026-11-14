@@ -6,7 +6,12 @@ from sqlalchemy import func, select
 
 from denetci.checks.engine import run_analysis
 from denetci.importer.load import DuplicateFile, ImportError_, confirm, create_draft
+from denetci.analyses import RISK_RULES, STOPAJ_RULES
 from denetci.models import Finding, FindingEvidence, JournalLine, RawRow, TrialBalanceLine
+
+
+# Risk taraması (K-10..K-13) tests/test_risk.py'de sınanır; buradaki testler temel kurallara bakar.
+TEMEL = Finding.rule_id.not_in(RISK_RULES + STOPAJ_RULES)
 
 
 def _import_all(session, c, p, files):
@@ -56,14 +61,14 @@ def test_clean_set_has_no_findings(session, client_period, files_temiz):
     _import_all(session, c, p, files_temiz)
     run = run_analysis(session, c, p)
     assert run.reliability == "uygun"
-    assert session.scalar(select(func.count()).select_from(Finding).where(Finding.run_id == run.id)) == 0
+    assert session.scalar(select(func.count()).select_from(Finding).where(Finding.run_id == run.id, TEMEL)) == 0
 
 
 def test_known_errors_found(session, client_period, files_hatali):
     c, p = client_period
     _import_all(session, c, p, files_hatali)
     run = run_analysis(session, c, p)
-    found = {(f.rule_id, f.hesap_kodu or f.title) for f in session.scalars(select(Finding).where(Finding.run_id == run.id))}
+    found = {(f.rule_id, f.hesap_kodu or f.title) for f in session.scalars(select(Finding).where(Finding.run_id == run.id, TEMEL))}
     assert found == {
         ("K-02", "Fiş Y-2026-0920 denk değil"),
         ("K-03", "153.01"), ("K-03", "320.01"),

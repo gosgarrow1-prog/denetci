@@ -26,3 +26,53 @@ GECICI_VERGI = {
 }
 
 KURUM_ISARETLERI = ("a.s", "as", "anonim", "ltd", "limited", "sti", "sirketi", "koop", "kooperatif")
+
+
+# Tahsilat ve ödemelerin banka/PTT aracılığıyla yapılması (tevsik) zorunluluğunun tutar sınırı (kuruş).
+TEVSIK = {
+    "limit": 30_000_00,
+    "dayanak": ("VUK Genel Tebliği (Sıra No: 459) ve değişiklikleri: belirlenen tutarı aşan tahsilat ve ödemeler banka, "
+                "ödeme kuruluşu veya PTT aracılığıyla yapılmalıdır. İşlem bedeli farklı tarihlerde parça parça "
+                "ödense de işlemin toplam tutarı dikkate alınır. 30.000 TL sınırı 11.11.2026'da büro tarafından teyit edildi."),
+    "dogrulandi": True,
+}
+
+# Resmî ve dinî bayram günleri (hafta sonu dışında tatil sayılan günler). Dinî bayram tarihleri yıla göre değişir;
+# listede olmayan yıllarda yalnızca pazar günleri ve sabit resmî tatiller kullanılır.
+SABIT_TATILLER = [(1, 1), (4, 23), (5, 1), (5, 19), (7, 15), (8, 30), (10, 29)]
+DINI_BAYRAMLAR = {
+    2025: [("2025-03-30", 3), ("2025-06-06", 4)],
+    2026: [("2026-03-20", 3), ("2026-05-27", 4)],
+    2027: [("2027-03-09", 3), ("2027-05-16", 4)],
+}
+
+# Örtülü sermaye (KVK 12): ortaklardan ve ilişkili kişilerden alınan borç, dönem başı öz sermayenin bu katını aşarsa
+# aşan kısım örtülü sermaye sayılır. Vergino'dan 11.11.2026'da kontrol edildi.
+ORTULU_SERMAYE = {
+    "kat": 3,
+    "dayanak": ("KVK 12: ortaklardan veya ortaklarla ilişkili kişilerden temin edilen borçların, hesap dönemi içinde herhangi bir "
+                "tarihte kurumun hesap dönemi başındaki öz sermayesinin üç katını aşan kısmı örtülü sermaye sayılır. Bu kısma "
+                "isabet eden faiz, kur farkı ve benzeri giderler indirilemez (KVK 11/1-b). Vergino'dan 11.11.2026'da kontrol edildi."),
+    "dogrulandi": True,
+}
+
+# Binek otomobil giderlerinde kanunen kabul edilmeyen kısım (GVK 40/5): giderlerin en fazla %70'i indirilebilir.
+# 2026 tutar sınırları (332 Seri No.lu GVK Genel Tebliği): aylık kira 46.000 TL; ÖTV+KDV toplamı 1.200.000 TL;
+# amortismanda ÖTV ve KDV hariç bedel 1.380.000 TL, vergiler dahil ya da ikinci el 2.600.000 TL. Bu sınırlar kontrol edilmez.
+BINEK_OTO = {
+    "kkeg_orani": 0.30,
+    "dayanak": ("GVK 40/5: binek otomobillere ilişkin giderlerin en fazla %70'i indirilebilir (binek otomobil kiralama ya da "
+                "işletme faaliyetinde kullanılanlar hariç); kalan %30 kanunen kabul edilmeyen giderdir. Kiralama (GVK 40/1; 2026: "
+                "aylık 46.000 TL), ÖTV+KDV (2026: 1.200.000 TL) ve amortisman (GVK 40/7; 2026: 1.380.000 / 2.600.000 TL) için "
+                "tutar sınırları ayrıca uygulanır. Vergino'dan 11.11.2026'da kontrol edildi."),
+    "dogrulandi": True,
+}
+
+STOPAJ = {
+    "kira": 0.20,            # GVK 94/5-a: gerçek kişi ve vergi mükellefi olmayanlardan kiralanan mallar için ödenen kira
+    "serbest_meslek": 0.20,  # GVK 94/2-b: serbest meslek kazancı ödemeleri
+    "dayanak": ("GVK 94 ve 2009/14592 sayılı BKK: işyeri kirası (94/5-a) ve serbest meslek ödemeleri (94/2-b) için "
+                "gelir vergisi tevkifatı %20; kesinti muhtasar ve prim hizmet beyannamesiyle izleyen ayın 26'sına kadar "
+                "beyan edilip ödenir. Oranlar doğrulanmadı; Burak teyit etmeli."),
+    "dogrulandi": False,
+}

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('bot', 24) }}</span>
+  <div class="ph-text"><h1>Mevzuat Asistanı</h1><p>Vergi ve muhasebe sorularınızı yazın. Asistan yanıtlamadan önce GİB, mevzuat.gov.tr, Resmî Gazete, TÜRMOB ve SGK sayfalarında arama yapar; kullandığı kaynakları yanıtın altında listeler.</p></div>
+</div>
+
+{% if not hazir %}
+<section class="card yz-kapali">
+  {% if misafir %}<p>Misafir hesabıyla mevzuat asistanı kullanılamaz.</p>
+  {% else %}<h2>Asistan henüz açılmadı</h2>
+  <p>Asistanın çalışması için Anthropic API anahtarı gerekiyor. Anahtar <strong>console.anthropic.com</strong> adresinden alınır ve sunucudaki ayarlara (ANTHROPIC_API_KEY) yazılır. Kullanım ücreti soru başına ödenir; Claude aboneliğinden ayrıdır.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card yz-sor">
+  <form method="post" action="/mevzuat" class="yz-form" onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.textContent='Yanıtlanıyor… (30–90 sn)'">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if secili %}<label class="yz-devam"><input type="checkbox" name="devam" value="{{ secili.id }}"> Bu soruya devam et (önceki soru ve yanıt da gönderilir)</label>{% endif %}
+    <textarea name="soru" rows="4" maxlength="4000" required placeholder="Örn. İşyeri kirası ödemesinde stopaj oranı nedir, hangi durumda stopaj yapılmaz?" {{ 'disabled' if not hazir }}>{{ hata.soru if hata else '' }}</textarea>
+    <div class="yz-alt">
+      <span class="muted">Soruya mükellefin adı, VKN'si gibi kişisel bilgileri yazmayın. Yanıt görüş ya da özelge yerine geçmez.</span>
+      <button class="btn primary" type="submit" {{ 'disabled' if not hazir }}>Sor</button>
+    </div>
+  </form>
+  {% if hata %}<p class="yz-hata">{{ hata.mesaj }}</p>{% endif %}
+</section>
+
+{% if secili %}
+<section class="card yz-cevap">
+  <div class="yz-soru-metin"><span class="muted">Soru · {{ secili.created_at.strftime('%d.%m.%Y %H:%M') }}</span><strong>{{ secili.soru }}</strong></div>
+  <div class="yz-metin">{{ secili.cevap|yz_metin }}</div>
+  {% if secili.kaynaklar %}<div class="yz-kaynak"><span class="muted">Kaynaklar</span><ol>
+    {% for baslik, url in secili.kaynaklar %}<li><a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ baslik }}</a></li>{% endfor %}
+  </ol></div>{% else %}<p class="muted">Bu yanıtta kaynak bağlantısı yok; bilgileri resmî kaynaktan doğrulayın.</p>{% endif %}
+  <div class="muted yz-ek">{{ secili.model }} · {{ secili.arama }} arama · yaklaşık {{ '%.3f'|format(maliyet(secili.model, secili.giris, secili.cikis, secili.arama))|replace('.', ',') }} $</div>
+</section>
+{% endif %}
+
+{% if gecmis %}
+<section class="block">
+  <div class="block-head"><h2>Önceki sorular</h2><span class="muted">Büro içinde paylaşılır</span></div>
+  <div class="alerts">
+  {% for q in gecmis %}
+    <a class="client-row {{ 'on' if secili and secili.id == q.id }}" href="/mevzuat?soru={{ q.id }}">
+      <span class="cl-main"><span class="cl-name">{{ q.soru[:140] }}{{ '…' if q.soru|length > 140 }}</span>
+        <span class="muted">{{ q.created_at.strftime('%d.%m.%Y %H:%M') }}</span></span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

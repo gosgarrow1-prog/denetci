@@ -1,0 +1,16 @@
+{% from "rapor/_ortak.html" import kontrol_tablo, bulgu_tablo, eksik_belge %}
+{% set gecti = risk_results|selectattr('status', 'equalto', 'gecti')|list|length %}
+<p class="r-giris">Bu bölüm defter kayıtlarını vergi incelemesinde sık sorun çıkaran konular açısından tarar: ters bakiye veren hesaplar, kasadan yapılan yüksek tutarlı ödemeler, hafta sonu ve resmi tatil günlerine düşen giderler, mükerrer fatura kayıtları, ortaklardan alacaklar ve adat, örtülü sermaye, binek otomobil giderleri, birikmiş amortisman uyumu, gider yansıtma, gelecek dönem gider ve gelirlerinin dönemselliği, şüpheli alacak karşılığı, hareketsiz avanslar ve dönem kârı kapanış kayıtları.</p>
+{{ eksik_belge(risk_a) }}
+<div class="r-kutular">
+  <div class="r-kutu"><span class="r-kutu-ad">Çalışan kontrol</span><span class="r-kutu-v">{{ risk_results|length }}</span></div>
+  <div class="r-kutu"><span class="r-kutu-ad">Sorunsuz</span><span class="r-kutu-v">{{ gecti }}</span></div>
+  <div class="r-kutu"><span class="r-kutu-ad">Açık bulgu</span><span class="r-kutu-v">{{ risk_findings|length }}</span></div>
+  <div class="r-kutu"><span class="r-kutu-ad">Bulguların toplam tutarı</span><span class="r-kutu-v">{{ (risk_findings|map(attribute='amount')|select|map('abs')|sum)|tl }} <small>TL</small></span></div>
+</div>
+<h2>Bulgular</h2>
+<p class="muted">Bulgular olası risklerdir; her biri belgesiyle birlikte değerlendirilmelidir.</p>
+{{ bulgu_tablo(risk_findings, cases) }}
+<div class="r-kdv">{% include "_benford.html" %}</div>
+<h2>Taranan konular ve sonuçları</h2>
+{{ kontrol_tablo(risk_results) }}

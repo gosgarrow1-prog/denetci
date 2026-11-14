@@ -6,6 +6,7 @@
   <span class="ph-ic">{{ icon('receipt', 24) }}</span>
   <div class="ph-text"><h1>Fatura Mutabakatı</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. e-Fatura, e-Arşiv ve diğer fatura listelerinin defterle fatura fatura karşılaştırılması.</p></div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=fatura">{{ icon('file', 16) }}Raporu al</a>{% endif %}</div>
 </div>
 {{ flash_list(flash) }}
 {% if not p %}

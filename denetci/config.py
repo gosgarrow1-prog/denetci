@@ -15,16 +15,28 @@ DEGISIM_ORAN = 0.25
 DEGISIM_TUTAR_KURUS = 10_000_00
 
 MAX_YUKLEME_BAYT = 20 * 1024 * 1024
-IZINLI_UZANTILAR = {".xlsx", ".csv"}  # Luca tabloları; beyanname PDF'leri ayrı yoldan alınır
+IZINLI_UZANTILAR = {".xlsx", ".csv", ".xml", ".zip"}  # Luca tabloları, e-Defter; beyanname PDF'leri ayrı yoldan alınır
 
-RULESET_VERSION = "0.7.0"
+RULESET_VERSION = "0.12.0"
 ENGINE_VERSION = "0.1.0"
 
 
 def telefon_kodu() -> bool:
     """Girişte telefon doğrulama kodu (TOTP) istensin mi? 29.10.2026 kararı: uygulama yalnızca bu bilgisayarda
     (127.0.0.1) çalıştığı sürece kapalı. Sunucuya taşınırsa DENETCI_TELEFON_KODU=1 ile açılmalı."""
-    return os.environ.get("DENETCI_TELEFON_KODU", "0") == "1"
+    return os.environ.get("DENETCI_TELEFON_KODU", "1" if sunucu() else "0") == "1"
+
+
+def sunucu() -> bool:
+    """Uygulama internetteki bir sunucuda mı çalışıyor? (DENETCI_SUNUCU=1) O zaman telefon kodu varsayılan olarak
+    açıktır, oturum çerezi yalnızca https üzerinden gönderilir ve arşiv klasörü tarayıcıdan indirilir."""
+    return os.environ.get("DENETCI_SUNUCU", "0") == "1"
+
+
+def yedek_dir() -> Path:
+    path = Path(os.environ.get("DENETCI_YEDEK", data_dir().parent / "DenetciYedek"))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def data_dir() -> Path:

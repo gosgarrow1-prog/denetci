@@ -3,25 +3,27 @@
 import secrets
 from datetime import date, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
-from itsdangerous import BadSignature, URLSafeSerializer
+from itsdangerous import BadSignature, URLSafeSerializer, URLSafeTimedSerializer
 from starlette.middleware.sessions import SessionMiddleware
 
 from .. import db
-from ..auth import LoginThrottle, verify_password, verify_totp
+from ..auth import LoginThrottle, hash_password, parola_en_az, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..config import RULESET_VERSION
 from ..checks.registry import ALL_RULES
-from ..config import MAX_YUKLEME_BAYT, data_dir, telefon_kodu
+from ..config import MAX_YUKLEME_BAYT, data_dir, sunucu, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
-from ..models import (AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
+from ..yz import maliyet as yz_maliyet
+from ..models import (Buro, YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
@@ -33,13 +35,14 @@ from ..importer.tables import UnsupportedFile
 from ..importer.ingest import find_or_create_period, ingest, peek
 from ..importer.beyanname import donem_adi as beyan_donem_adi
 from ..importer.firma import en_iyi as firma_en_iyi, eslesir as firma_eslesir
-from .. import beyannameler
+from .. import beyannameler, buro
 from ..analyses import build as build_analyses, kdv_amounts
 from ..gecici import ALANLAR as GV_ALANLAR, AYLAR_DONEM as GV_DONEM_ADI, MALIYET_YONTEMLERI as GV_MALIYET, hesapla as gv_hesapla
 from ..parametreler import GECICI_VERGI
 from ..asistan import GOREV as ASISTAN_GOREV, GOREVLER as ASISTAN_GOREVLER, nasil as asistan_nasil, secenekler as asistan_secenekler, uygun as asistan_uygun
 from ..oneriler import ONCELIK_ADI, build as oneriler_build
-from .charts import balance_bars, tl_short
+from .charts import aylik_grafik, balance_bars, benford_grafik, gosterge, kopru, selale, tl_short, yatay_cubuk
+from .. import raporlar
 
 HERE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(HERE / "templates"))
@@ -79,10 +82,43 @@ templates.env.filters["donem_adi"] = donem_adi
 templates.env.filters["tl0"] = tl0
 templates.env.filters["sayi"] = lambda n: f"{int(n or 0):,}".replace(",", ".")
 templates.env.filters["id_of"] = id
+
+
+def yz_metin(text: str):
+    """Asistan yanıtını güvenli HTML'e çevirir: paragraflar, '- ' ile başlayan listeler, **kalın**."""
+    import html
+    import re
+    from markupsafe import Markup
+    out, liste = [], []
+
+    def satir(t):
+        return re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", html.escape(t))
+
+    def kapat():
+        if liste:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in liste) + "</ul>")
+            liste.clear()
+    for par in re.split(r"\n\s*\n", text or ""):
+        for ln in par.strip().splitlines():
+            m = re.match(r"^\s*(?:[-*•]|\d+[.)])\s+(.*)", ln)
+            if m:
+                liste.append(satir(m.group(1)))
+            else:
+                kapat()
+                if ln.strip():
+                    out.append(f"<p>{satir(ln.strip().lstrip('#').strip())}</p>")
+        kapat()
+    return Markup("".join(out))
+
+
+templates.env.filters["yz_metin"] = yz_metin
+templates.env.globals["maliyet"] = yz_maliyet
 templates.env.globals["efatura_neden"] = lambda e, yon: __import__("denetci.efatura", fromlist=["neden"]).neden(e, yon)
 templates.env.globals["PROFILE_LABELS"] = PROFILE_LABELS
 templates.env.globals["beyan_donem"] = beyan_donem_adi
 templates.env.globals["ONCELIK_ADI"] = ONCELIK_ADI
+templates.env.globals["buro"] = buro.bilgiler
+templates.env.globals["gosterge"] = gosterge
 templates.env.globals["ROW_CLASS_LABELS"] = {
     "kayit": "✓ kayıt", "ara_toplam": "Σ ara toplam", "baslik": "≡ başlık", "bilgi": "i bilgi", "bos": "boş",
     "belirsiz": "? belirsiz", "hatali": "✗ hatalı", "ust_hesap": "↑ üst hesap", "grup": "≡ hesap grubu",
@@ -131,7 +167,45 @@ def current_user(request: Request, s=Depends(get_session)) -> User:
     user = s.get(User, uid) if uid else None
     if not user:
         raise LoginRequired()
+    b = s.get(Buro, buro_no(user))
+    if b is not None and not b.aktif:
+        request.session.clear()
+        raise LoginRequired()
+    if user.misafir and request.url.path.startswith(("/mukellef/yeni", "/mukellef/liste")):
+        # Misafir yalnızca DEMO mükellefleri görebilir; gerçek mükellef ve liste işlemleri kapalı.
+        raise HTTPException(403, "Misafir hesabıyla yapılamaz")
+    cid = request.path_params.get("cid")
+    if cid is not None and not gorebilir(user, s.get(Client, int(cid))):
+        # Büro yalıtımı: başka büronun mükellefi yokmuş gibi davranılır.
+        raise HTTPException(404, "Bulunamadı")
     return user
+
+
+def buro_no(user) -> int:
+    return (user.buro_id if user is not None else None) or 1
+
+
+def gorebilir(user, c) -> bool:
+    """DEMO mükellefleri herkes görür; gerçek mükellefleri yalnızca kendi bürosunun (misafir olmayan) kullanıcıları."""
+    if c is None:
+        return False
+    if c.is_demo:
+        return True
+    return not user.misafir and (c.buro_id or 1) == buro_no(user)
+
+
+def _mukellef_suzgeci(q, user):
+    if user is None or user.misafir:
+        return q.where(Client.is_demo.is_(True))
+    bid = buro_no(user)
+    kosul = Client.buro_id == bid
+    if bid == 1:
+        kosul = kosul | Client.buro_id.is_(None)
+    return q.where(Client.is_demo.is_(True) | kosul)
+
+
+def gorunen_mukellefler(s, user):
+    return list(s.scalars(_mukellef_suzgeci(select(Client), user)))
 
 
 def csrf_token(request: Request) -> str:
@@ -154,6 +228,7 @@ def render(request: Request, name: str, **ctx):
     ctx["request"] = request
     ctx["csrf"] = csrf_token(request)
     ctx.setdefault("telefon_kodu", telefon_kodu())
+    ctx.setdefault("sunucu", sunucu())
     if request.session.get("uid") and "shell" not in ctx:
         ctx["shell"] = _shell(request.session["uid"], ctx.get("c"), ctx.get("p"))
     return templates.TemplateResponse(request, name, ctx)
@@ -172,8 +247,9 @@ def _shell(uid: int, c, p) -> dict:
     """Sol menü ve üst çubuk için: mükellef listesi, dönemler, son analiz ve açık bulgu sayısı."""
     with db.SessionLocal() as s:
         user = s.get(User, uid)
-        sh = {"username": user.username if user else "", "clients": sorted(s.execute(
-            select(Client.id, Client.unvan, Client.is_demo)), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
+        q = _mukellef_suzgeci(select(Client.id, Client.unvan, Client.is_demo), user)
+        sh = {"username": user.username if user else "", "misafir": bool(user is None or user.misafir),
+              "bu": buro.bilgiler(buro_no(user)), "clients": sorted(s.execute(q), key=lambda r: (r.is_demo, tr_sira(r.unvan))), "c": c, "p": None, "periods": [],
             "run": None, "badge": 0}
         if c is None:
             return sh
@@ -327,6 +403,43 @@ def gv_for(s, c, p, decls):
     return gv_hesapla(ctx, gp, c, decls), gp, src
 
 
+def _buro_kullanicilari(s, user=None, bid: int | None = None) -> list[int]:
+    bid = bid or buro_no(user)
+    kosul = User.buro_id == bid
+    if bid == 1:
+        kosul = kosul | User.buro_id.is_(None)
+    return list(s.scalars(select(User.id).where(kosul)))
+
+
+def _yz_soru(s, user, qid: int):
+    q = s.get(YzSoru, qid)
+    return q if q is not None and q.user_id in _buro_kullanicilari(s, user) else None
+
+
+def _yz_bu_ay(s, bid: int) -> float:
+    """Büronun bu ayki yaklaşık mevzuat asistanı harcaması ($)."""
+    from datetime import datetime, timezone
+    from ..yz import maliyet as m
+    simdi = datetime.now(timezone.utc)
+    bas = simdi.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ids = _buro_kullanicilari(s, bid=bid)
+    return sum(m(q.model, q.giris, q.cikis, q.arama) for q in
+               s.scalars(select(YzSoru).where(YzSoru.user_id.in_(ids), YzSoru.created_at >= bas)))
+
+
+def _sinir(deger, varsayilan):
+    """Aylık $ sınırı: boş → varsayılan, '0' → kullanılamaz, 'sınırsız' / '-' → None."""
+    v = str(deger if deger is not None else "").strip().lower().replace(",", ".")
+    if not v:
+        return varsayilan
+    if v in ("-", "sınırsız", "sinirsiz", "yok"):
+        return None
+    try:
+        return max(0.0, round(float(v), 2))
+    except ValueError:
+        return varsayilan
+
+
 def owned(s, model, obj_id: int, client_id: int):
     """Mükellef yalıtımı: nesne bu mükellefe ait değilse 404."""
     obj = s.get(model, obj_id)
@@ -343,8 +456,14 @@ def create_app() -> FastAPI:
     db.init_db()
     app = FastAPI(title="Denetçi", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SessionMiddleware, secret_key=_secret_key(), same_site="strict", max_age=8 * 3600,
-                       session_cookie="denetci_oturum")
+                       session_cookie="denetci_oturum", https_only=sunucu())
     app.mount("/static", StaticFiles(directory=str(HERE / "static")), name="static")
+
+    @app.get("/buro/logo-{tema}.png")
+    def buro_logo(tema: str, request: Request, s=Depends(get_session)):
+        uid = request.session.get("uid")
+        yol = buro.logo_yolu(tema, buro_no(s.get(User, uid) if uid else None)) or _404()
+        return FileResponse(yol, media_type="image/png", headers={"Cache-Control": "private, no-cache"})
 
     @app.exception_handler(LoginRequired)
     async def _login_redirect(request, exc):
@@ -363,8 +482,11 @@ def create_app() -> FastAPI:
         if throttle.locked(username):
             return render(request, "login.html", error="Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.")
         user = s.scalar(select(User).where(User.username == username))
+        if user is not None and (b := s.get(Buro, buro_no(user))) is not None and not b.aktif:
+            user = None
+        hatirlandi = bool(user) and _cihaz_hatirlaniyor(request, user)
         ok = user and verify_password(str(form.get("parola", "")), user.password_hash) and \
-            (not telefon_kodu() or verify_totp(user.totp_secret, str(form.get("kod", ""))))
+            (not telefon_kodu() or user.misafir or hatirlandi or verify_totp(user.totp_secret, str(form.get("kod", ""))))
         if not ok:
             throttle.fail(username)
             audit(s, None, "giris_basarisiz", detail=username[:64])
@@ -375,7 +497,11 @@ def create_app() -> FastAPI:
         request.session["uid"] = user.id
         request.session["csrf"] = secrets.token_urlsafe(24)
         audit(s, user, "giris")
-        return _redirect(s, "/")
+        r = _redirect(s, "/")
+        if telefon_kodu() and not user.misafir and form.get("hatirla") and not hatirlandi:
+            r.set_cookie(CIHAZ_CEREZI, _cihaz_imzaci().dumps({"u": user.id, "k": _anahtar_izi(user)}),
+                         max_age=CIHAZ_GUN * 86400, httponly=True, secure=sunucu(), samesite="strict")
+        return r
 
     @app.post("/cikis")
     async def logout(request: Request):
@@ -388,7 +514,7 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def portfolio(request: Request, user=Depends(current_user), s=Depends(get_session)):
         rows = []
-        for c in s.scalars(select(Client).order_by(Client.unvan)):
+        for c in gorunen_mukellefler(s, user):
             period = s.scalar(select(Period).where(Period.client_id == c.id).order_by(Period.bitis.desc()))
             run = s.scalar(select(AnalysisRun).where(AnalysisRun.client_id == c.id, AnalysisRun.period_id == period.id)
                            .order_by(AnalysisRun.id.desc())) if period else None
@@ -402,13 +528,247 @@ def create_app() -> FastAPI:
         rows.sort(key=lambda r: (r["c"].is_demo, tr_sira(r["c"].unvan)))
         return render(request, "portfolio.html", active="mukellefler", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
 
+    @app.get("/mevzuat", response_class=HTMLResponse)
+    def mevzuat_page(request: Request, soru: int | None = None, user=Depends(current_user), s=Depends(get_session)):
+        from .. import yz
+        gecmis = list(s.scalars(select(YzSoru).where(YzSoru.user_id.in_(_buro_kullanicilari(s, user)))
+                                .order_by(YzSoru.id.desc()).limit(30)))
+        secili = _yz_soru(s, user, soru) if soru else (gecmis[0] if gecmis and request.session.pop("yz_yeni", None) else None)
+        hata = request.session.pop("yz_hata", None)
+        return render(request, "mevzuat.html", active="mevzuat", gecmis=gecmis, secili=secili, hata=hata,
+                      hazir=yz.hazir() and not user.misafir, misafir=user.misafir, model=yz.MODEL)
+
+    @app.post("/mevzuat")
+    async def mevzuat_sor(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        import asyncio
+        from .. import yz
+        form = await form_checked(request)
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabı mevzuat asistanını kullanamaz.")
+        metin = str(form.get("soru", "")).strip()
+        onceki = _yz_soru(s, user, int(form["devam"])) if str(form.get("devam", "")).isdigit() else None
+        gecmis = [{"soru": onceki.soru, "cevap": onceki.cevap}] if onceki else None
+        b = s.get(Buro, buro_no(user))
+        if b is not None and b.yz_aylik_sinir is not None and _yz_bu_ay(s, buro_no(user)) >= b.yz_aylik_sinir:
+            request.session["yz_hata"] = {"mesaj": f"Büronuzun bu ayki mevzuat asistanı sınırı ({b.yz_aylik_sinir:.2f} $) doldu. "
+                                          "Sınırı artırmak için sistem yöneticisine başvurun.", "soru": metin[:4000]}
+            return _redirect(s, "/mevzuat")
+        try:
+            c = await asyncio.to_thread(yz.sor, metin, gecmis)
+        except yz.YzHatasi as exc:
+            request.session["yz_hata"] = {"mesaj": str(exc), "soru": metin[:4000]}
+            return _redirect(s, "/mevzuat")
+        q = YzSoru(user_id=user.id, soru=metin[:4000], cevap=c.metin, kaynaklar=[list(k) for k in c.kaynaklar],
+                   model=c.model, giris=c.giris, cikis=c.cikis, arama=c.arama)
+        s.add(q)
+        s.flush()
+        audit(s, user, "yz_soru", None, f"soru={q.id} giris={c.giris} cikis={c.cikis} arama={c.arama}")
+        return _redirect(s, f"/mevzuat?soru={q.id}")
+
+    # ---- Kullanıcılar, parolalar ve bürolar ------------------------------------
+
+    def _yonetebilir(user, hedef) -> bool:
+        """Kendi parolası herkes; büro yöneticisi kendi bürosunu; sistem yöneticisi herkesi."""
+        if hedef is None or user.misafir:
+            return False
+        if hedef.id == user.id or user.sistem:
+            return True
+        return bool(user.yonetici) and buro_no(hedef) == buro_no(user)
+
+    @app.get("/kullanicilar", response_class=HTMLResponse)
+    def kullanicilar_page(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabıyla yapılamaz")
+        bid = buro_no(user)
+        if user.yonetici or user.sistem:
+            ids = set(_buro_kullanicilari(s, user))
+            if user.sistem:
+                ids |= set(s.scalars(select(User.id).where(User.misafir.is_(True))))
+            kullanicilar = [k for k in s.scalars(select(User).order_by(User.misafir, User.username)) if k.id in ids]
+        else:
+            kullanicilar = [user]
+        burolar = []
+        if user.sistem:
+            for b in s.scalars(select(Buro).order_by(Buro.id)):
+                burolar.append({"b": b, "kullanici": [k for k in s.scalars(select(User).where(User.buro_id == b.id))],
+                                "mukellef": s.scalar(select(func.count()).select_from(Client).where(Client.buro_id == b.id)),
+                                "harcama": _yz_bu_ay(s, b.id)})
+        return render(request, "kullanicilar.html", active="kullanicilar", kullanicilar=kullanicilar, ben=user,
+                      mesaj=request.session.pop("k_mesaj", None), yeni_anahtar=request.session.pop("k_anahtar", None),
+                      en_az=parola_en_az, buro_bilgi=buro.bilgiler(bid), buro_kaydi=s.get(Buro, bid), burolar=burolar,
+                      yz_harcama=_yz_bu_ay(s, bid), telefon_kodu=telefon_kodu())
+
+    def _k_mesaj(request, alan, metin, hata=False):
+        request.session["k_mesaj"] = {"alan": alan, "hata": hata, "metin": metin}
+
+    @app.post("/kullanicilar/{uid}/parola")
+    async def kullanici_parola(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        hedef = s.get(User, uid)
+        if not _yonetebilir(user, hedef):
+            raise HTTPException(403, "Bu kullanıcının parolasını değiştiremezsiniz")
+        yeni, tekrar = str(form.get("yeni", "")), str(form.get("tekrar", ""))
+        n = parola_en_az(bool(hedef.misafir))
+        hata = None
+        if hedef.id == user.id and not verify_password(str(form.get("mevcut", "")), user.password_hash):
+            hata = "Şu anki parolanız yanlış."
+        elif len(yeni) < n:
+            hata = f"Parola en az {n} karakter olmalı."
+        elif yeni != tekrar:
+            hata = "İki parola birbirini tutmuyor."
+        if hata:
+            _k_mesaj(request, f"u{uid}", hata, True)
+            return _redirect(s, "/kullanicilar")
+        hedef.password_hash = hash_password(yeni)
+        audit(s, user, "parola_degisti", None, hedef.username)
+        _k_mesaj(request, f"u{uid}", f"{hedef.username} kullanıcısının parolası değiştirildi.")
+        return _redirect(s, "/kullanicilar")
+
+    @app.post("/kullanicilar/{uid}/telefon-anahtari")
+    async def kullanici_telefon(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        await form_checked(request)
+        hedef = s.get(User, uid)
+        if not _yonetebilir(user, hedef) or hedef.misafir:
+            raise HTTPException(403, "Yapılamaz")
+        from ..auth import new_totp_secret, otpauth_uri
+        hedef.totp_secret = new_totp_secret()
+        audit(s, user, "telefon_anahtari_yenilendi", None, hedef.username)
+        request.session["k_anahtar"] = {"uid": hedef.id, "kullanici": hedef.username, "anahtar": hedef.totp_secret,
+                                        "uri": otpauth_uri(hedef.totp_secret, hedef.username)}
+        return _redirect(s, "/kullanicilar")
+
+    def _kullanici_olustur(s, form, bid: int, yonetici: bool, misafir: bool = False):
+        """Formdan kullanıcı oluşturur; (kullanıcı, hata) döner."""
+        import re
+        from ..auth import new_totp_secret
+        ad_k = str(form.get("kullanici", "")).strip()
+        if not re.fullmatch(r"[A-Za-z0-9._-]{3,32}", ad_k):
+            return None, "Kullanıcı adı 3–32 karakter olmalı; yalnızca harf (Türkçe karakter olmadan), rakam, nokta, tire."
+        if s.scalar(select(User).where(func.lower(User.username) == ad_k.lower())):
+            return None, "Bu kullanıcı adı zaten var."
+        pw, n = str(form.get("parola", "")), parola_en_az(misafir)
+        if len(pw) < n:
+            return None, f"Parola en az {n} karakter olmalı."
+        if pw != str(form.get("parola2", "")):
+            return None, "İki parola birbirini tutmuyor."
+        u = User(username=ad_k, password_hash=hash_password(pw), totp_secret=new_totp_secret(), misafir=misafir,
+                 buro_id=bid, yonetici=yonetici and not misafir, ad=str(form.get("ad", "")).strip()[:128] or None,
+                 unvan=str(form.get("unvan", "")).strip()[:64] or None)
+        s.add(u)
+        s.flush()
+        return u, None
+
+    def _anahtar_goster(request, u):
+        from ..auth import otpauth_uri
+        if telefon_kodu() and not u.misafir:
+            request.session["k_anahtar"] = {"uid": u.id, "kullanici": u.username, "anahtar": u.totp_secret,
+                                            "uri": otpauth_uri(u.totp_secret, u.username)}
+
+    @app.post("/kullanicilar/yeni")
+    async def kullanici_yeni(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if not (user.yonetici or user.sistem) or user.misafir:
+            raise HTTPException(403, "Yalnızca büro yöneticisi kullanıcı ekleyebilir")
+        misafir = bool(form.get("misafir")) and bool(user.sistem)
+        u, hata = _kullanici_olustur(s, form, buro_no(user), bool(form.get("yonetici")), misafir)
+        if hata:
+            _k_mesaj(request, "yeni", hata, True)
+            return _redirect(s, "/kullanicilar")
+        audit(s, user, "kullanici_ekle", None, u.username)
+        _anahtar_goster(request, u)
+        _k_mesaj(request, "yeni", f"{u.username} kullanıcısı eklendi.")
+        return _redirect(s, "/kullanicilar")
+
+    @app.post("/kullanicilar/{uid}/bilgi")
+    async def kullanici_bilgi(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        hedef = s.get(User, uid)
+        if not _yonetebilir(user, hedef):
+            raise HTTPException(403, "Yapılamaz")
+        hedef.ad = str(form.get("ad", "")).strip()[:128] or None
+        hedef.unvan = str(form.get("unvan", "")).strip()[:64] or None
+        if hedef.id != user.id and (user.yonetici or user.sistem) and not hedef.misafir:
+            hedef.yonetici = bool(form.get("yonetici"))
+        _k_mesaj(request, f"u{uid}", "Bilgiler kaydedildi.")
+        return _redirect(s, "/kullanicilar")
+
+    @app.post("/kullanicilar/{uid}/sil")
+    async def kullanici_sil(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        await form_checked(request)
+        hedef = s.get(User, uid)
+        if not _yonetebilir(user, hedef) or hedef.id == user.id or hedef.sistem:
+            raise HTTPException(403, "Bu kullanıcı silinemez")
+        audit(s, user, "kullanici_sil", None, hedef.username)
+        s.delete(hedef)
+        _k_mesaj(request, "yeni", f"{hedef.username} kullanıcısı silindi.")
+        return _redirect(s, "/kullanicilar")
+
+    @app.post("/buro/bilgiler")
+    async def buro_bilgi_kaydet(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if not (user.yonetici or user.sistem) or user.misafir:
+            raise HTTPException(403, "Yalnızca büro yöneticisi")
+        bid = buro_no(user)
+        buro.kaydet(bid, {k: form.get(k) for k in buro.ALANLAR},
+                    str(form.get("telefonlar", "")).replace(",", "\n").splitlines())
+        b = s.get(Buro, bid)
+        if b is not None and str(form.get("unvan", "")).strip():
+            b.ad = str(form.get("unvan")).strip()[:256]
+        hata = None
+        for tema in buro.LOGOLAR:
+            up = form.get(f"logo_{tema}")
+            if up is not None and getattr(up, "filename", ""):
+                try:
+                    buro.logo_kaydet(bid, tema, await up.read())
+                except ValueError as exc:
+                    hata = str(exc) if str(exc) != "tema" else "Logo kaydedilemedi."
+        audit(s, user, "buro_bilgileri", None, f"buro={bid}")
+        _k_mesaj(request, "buro", hata or "Büro bilgileri kaydedildi.", bool(hata))
+        return _redirect(s, "/kullanicilar#buro")
+
+    @app.post("/burolar/yeni")
+    async def buro_yeni(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if not user.sistem:
+            raise HTTPException(403, "Yalnızca sistem yöneticisi büro açabilir")
+        ad = str(form.get("buro_ad", "")).strip()
+        if not ad:
+            _k_mesaj(request, "burolar", "Büro adı gerekli.", True)
+            return _redirect(s, "/kullanicilar#burolar")
+        b = Buro(ad=ad[:256], yz_aylik_sinir=_sinir(form.get("sinir"), 2.0))
+        s.add(b)
+        s.flush()
+        u, hata = _kullanici_olustur(s, form, b.id, True)
+        if hata:
+            s.rollback()
+            _k_mesaj(request, "burolar", hata, True)
+            return _redirect(s, "/kullanicilar#burolar")
+        buro.kaydet(b.id, {"unvan": ad}, [])
+        audit(s, user, "buro_ac", None, f"buro={b.id} yonetici={u.username}")
+        _anahtar_goster(request, u)
+        _k_mesaj(request, "burolar", f"{ad} bürosu açıldı. Yönetici kullanıcı: {u.username}.")
+        return _redirect(s, "/kullanicilar#burolar")
+
+    @app.post("/burolar/{bid}")
+    async def buro_guncelle(bid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if not user.sistem:
+            raise HTTPException(403, "Yalnızca sistem yöneticisi")
+        b = s.get(Buro, bid) or _404()
+        b.yz_aylik_sinir = _sinir(form.get("sinir"), None)
+        if bid != buro_no(user):
+            b.aktif = bool(form.get("aktif"))
+        audit(s, user, "buro_guncelle", None, f"buro={bid} sinir={b.yz_aylik_sinir} aktif={b.aktif}")
+        _k_mesaj(request, "burolar", f"{b.ad} güncellendi.")
+        return _redirect(s, "/kullanicilar#burolar")
+
     @app.post("/mukellef/yeni")
     async def client_create(request: Request, user=Depends(current_user), s=Depends(get_session)):
         form = await form_checked(request)
         unvan = str(form.get("unvan", "")).strip()
         if not unvan:
             raise HTTPException(400, "Unvan gerekli")
-        c = Client(unvan=unvan[:256], sirket_turu=str(form.get("sirket_turu", ""))[:64] or None,
+        c = Client(buro_id=buro_no(user), unvan=unvan[:256], sirket_turu=str(form.get("sirket_turu", ""))[:64] or None,
                    faaliyet=str(form.get("faaliyet", ""))[:256] or None, vkn=str(form.get("vkn", "")).strip()[:16] or None)
         s.add(c)
         s.flush()
@@ -432,7 +792,7 @@ def create_app() -> FastAPI:
             return render(request, "error.html", title="Liste okunamadı", message=str(exc), back="/")
         except Exception:
             return render(request, "error.html", title="Liste okunamadı", message="Dosya açılamadı. Luca'dan .xlsx olarak yeniden alın.", back="/")
-        mark_existing(rows, list(s.scalars(select(Client))))
+        mark_existing(rows, [x for x in gorunen_mukellefler(s, user) if not x.is_demo])
         data = _signer().dumps([r.__dict__ for r in rows])
         return render(request, "client_list.html", rows=rows, filename=up.filename, data=data)
 
@@ -444,7 +804,7 @@ def create_app() -> FastAPI:
         except BadSignature:
             raise HTTPException(400, "Liste verisi bozulmuş; listeyi yeniden yükleyin.")
         chosen = {int(v) for v in form.getlist("sec") if str(v).isdigit()}
-        existing = list(s.scalars(select(Client)))
+        existing = [x for x in gorunen_mukellefler(s, user) if not x.is_demo]
         added = 0
         for i, r in enumerate(rows):
             if i not in chosen or r["durum"] != "yeni":
@@ -452,7 +812,7 @@ def create_app() -> FastAPI:
             # Onay ile yükleme arasında eklenmiş olabilir; tekrar kontrol et.
             if mark_existing([ClientRow(**r)], existing)[0].durum != "yeni":
                 continue
-            c = Client(unvan=r["unvan"], vkn=r["vkn"], vergi_dairesi=r["vergi_dairesi"], luca_kodu=r["luca_kodu"],
+            c = Client(buro_id=buro_no(user), unvan=r["unvan"], vkn=r["vkn"], vergi_dairesi=r["vergi_dairesi"], luca_kodu=r["luca_kodu"],
                        sirket_turu=(r["sirket_turu"] or None) and r["sirket_turu"][:64], faaliyet=r["faaliyet"])
             s.add(c)
             existing.append(c)
@@ -596,8 +956,20 @@ def create_app() -> FastAPI:
     def documents_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
-        from ..config import arsiv_dir
-        return render(request, "documents.html", active="belgeler", arsiv_yolu=str(arsiv_dir()), **_view(s, c, p, request))
+        from .. import arsiv
+        return render(request, "documents.html", active="belgeler", arsiv_yolu=str(arsiv.mukellef_klasoru(c)),
+                      sunucu=sunucu(), **_view(s, c, p, request))
+
+    @app.get("/mukellef/{cid}/arsiv.zip")
+    def archive_zip(cid: int, user=Depends(current_user), s=Depends(get_session)):
+        from .. import arsiv
+        c = s.get(Client, cid) or _404()
+        icerik = arsiv.zip_olarak(c) or _404()
+        audit(s, user, "arsiv_indir", client_id=c.id)
+        s.commit()
+        ad = quote(f"{arsiv._temiz(c.unvan)} - belgeler.zip")
+        return Response(icerik, media_type="application/zip",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{ad}"})
 
     @app.get("/mukellef/{cid}/finansal", response_class=HTMLResponse)
     def finance_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
@@ -615,6 +987,8 @@ def create_app() -> FastAPI:
         v["analysis"] = next(a for a in v["analyses"] if a.key == "finansal")
         gv = gv_for(s, c, p, v["decls"])[0] if p else None
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], gv, p)
+        if p:
+            _nakit_view(s, c, p, v)
         return render(request, "finance.html", active="finansal", **v)
 
     @app.get("/mukellef/{cid}/ceyrek", response_class=HTMLResponse)
@@ -630,8 +1004,100 @@ def create_app() -> FastAPI:
                             and (x.bitis.month - x.baslangic.month) == 2 and x.baslangic.year == x.bitis.year]
         return render(request, "ceyrek.html", active="ceyrek", **v)
 
+    def _konu_ozetleri(s, c, p, v) -> list:
+        """Genel rapordaki 'Konulara göre durum' tablosu: her konu için belge durumu, kontrol ve bulgu sayısı."""
+        out = []
+        by_key = {a.key: a for a in v["analyses"]}
+        results = v["results"]
+        harita = [("kdv", "kdv"), ("gecici", "gecici"), ("risk", "risk"), ("mutabakat", "mutabakat"), ("finansal", "finansal")]
+        for konu, akey in harita:
+            a = by_key.get(akey)
+            if a is None:
+                continue
+            rs = [r for r in results if r["id"] in a.rules]
+            out.append({"konu": konu, "baslik": raporlar.KONU[konu].baslik, "durum": a.status,
+                        "eksik": [n.label for n in a.missing],
+                        "gecti": sum(1 for r in rs if r["status"] == "gecti"), "kontrol": len(rs),
+                        "bulgu": sum(1 for f in v["findings"] if f.rule_id in a.rules)})
+        k30 = [f for f in v["findings"] if f.rule_id == "K-30"]
+        r30 = next((r for r in results if r["id"] == "K-30"), None)
+        out.insert(3, {"konu": "fatura", "baslik": raporlar.KONU["fatura"].baslik,
+                       "durum": "hazir" if v.get("fatura_listeleri") else "eksik",
+                       "eksik": [] if v.get("fatura_listeleri") else ["e-Fatura / e-Arşiv listesi"],
+                       "gecti": int(bool(r30 and r30["status"] == "gecti")), "kontrol": int(bool(r30)), "bulgu": len(k30)})
+        return out
+
+    def _rapor_konu(s, c, p, v, konu, request) -> None:
+        """Seçilen konunun ayrıntılı rapor bölümü için gereken verileri v'ye ekler."""
+        by_key = {a.key: a for a in v["analyses"]}
+
+        def filtre(a):
+            return ([r for r in v["results"] if r["id"] in a.rules], [f for f in v["findings"] if f.rule_id in a.rules])
+
+        if konu == "finansal":
+            fin = v["fin"]
+            rf = raporlar.finansal(fin, v["prev_fin"], raporlar.aylik(s, c, p))
+            v["rf"] = rf
+            v["rf_aylik"] = aylik_grafik(rf.aylar)
+            v["rf_selale"] = selale(fin.gelir_tablosu) if fin and fin.has_income else None
+            v["rf_gider"] = yatay_cubuk([(f"{kod} {ad}".strip(), t) for kod, ad, t in rf.giderler])
+            _nakit_view(s, c, p, v)
+            if fin and fin.has_balance:
+                b = fin.bilanco
+                v["balance_chart"] = balance_bars(
+                    [("Dönen varlıklar", b["1"], "--s1"), ("Duran varlıklar", b["2"], "--s2")],
+                    [("Kısa vadeli yabancı kaynaklar", b["3"], "--s3"), ("Uzun vadeli yabancı kaynaklar", b["4"], "--s4"),
+                     ("Özkaynaklar + dönem sonucu", b["5"] + (fin.donem_sonucu_kapanmamis or 0), "--s5")])
+        elif konu == "kdv":
+            _kdv_view(s, c, p, v)
+            a = by_key["kdv"]
+            v["kdv_a"] = a
+            v["kdv_results"], v["kdv_findings"] = filtre(a)
+            if beyannameler.tek_ay(p.baslangic, p.bitis):
+                v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
+        elif konu == "fatura":
+            if "efatura" not in v:
+                _kdv_view(s, c, p, v)
+            v["k30"] = next((r for r in v["results"] if r["id"] == "K-30"), None)
+            v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
+        elif konu == "gecici":
+            gp = gv_donemi(s, c, p, create=False) or p
+            ctx, src = gv_kaynak(s, c, p.bitis)
+            a = by_key["gecici"]
+            results, findings = v["results"], v["findings"]
+            if src is not None and src.id != p.id:
+                sv = _view(s, c, src, request)
+                a = next(x for x in sv["analyses"] if x.key == "gecici")
+                results, findings = sv["results"], sv["findings"]
+            v["gv_a"] = a
+            v["gv_results"] = [r for r in results if r["id"] in a.rules]
+            v["gv_findings"] = [f for f in findings if f.rule_id in a.rules]
+            v["gv_donem"] = gp
+            v["GV_DONEM"], v["GV_PARAM"] = GV_DONEM_ADI, GECICI_VERGI
+            if v["gv"] is not None:
+                v["gv_adim"] = gv_adimlar.adimlar(c, gp, v["gv"], v["gv_results"], v["gv_findings"])
+        elif konu == "ceyrek":
+            from .. import ceyrek
+            cy = ceyrek.analiz(s, c, p.bitis)
+            v["cy"] = cy
+            v["cy_grafik"] = aylik_grafik(cy.aylar) if cy else None
+        elif konu == "kredibilite":
+            _nakit_view(s, c, p, v)
+            v["kr"] = raporlar.kredibilite(v["fin"], v.get("nakit"))
+            v["NOTLAR"], v["BANKA_BELGELERI"] = raporlar.NOTLAR, raporlar.BANKA_BELGELERI
+        elif konu in ("risk", "mutabakat"):
+            a = by_key[konu]
+            v[f"{konu}_a"] = a
+            v[f"{konu}_results"], v[f"{konu}_findings"] = filtre(a)
+            if konu == "risk":
+                if "stopaj" in by_key:  # stopaj kontrolleri ayrı sayfada; raporda risk başlığı altında
+                    r2, f2 = filtre(by_key["stopaj"])
+                    v["risk_results"], v["risk_findings"] = v["risk_results"] + r2, v["risk_findings"] + f2
+                _benford_view(s, c, p, v)
+
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
-    def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+    def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
+                    konu: list[str] = Query(default=[])):
         c = s.get(Client, cid) or _404()
         _, p = _period_of(s, cid, donem)
         if not p:
@@ -642,6 +1108,14 @@ def create_app() -> FastAPI:
         v["gv"] = gv_for(s, c, p, v["decls"])[0]
         v["GV_ALANLAR"] = GV_ALANLAR
         v["oneriler"] = oneriler_build(v["fin"], v["prev_fin"], v["findings"], v["gv"], p)
+        v["whatsapp"] = _whatsapp_ozeti(c, p, v)
+        v["hazirlayan"] = buro.hazirlayan(user.username, user.ad, user.unvan, buro_no(user))
+        v["konular"] = raporlar.secilen(konu)
+        v["KONULAR"], v["KONU"] = raporlar.KONULAR, raporlar.KONU
+        v["rapor_baslik"] = raporlar.baslik(v["konular"])
+        v["konu_ozet"] = _konu_ozetleri(s, c, p, v)
+        for k in v["konular"]:
+            _rapor_konu(s, c, p, v, k, request)
         return render(request, "report.html", active="rapor", **v)
 
     @app.get("/mukellef/{cid}/gecici-vergi", response_class=HTMLResponse)
@@ -786,10 +1260,16 @@ def create_app() -> FastAPI:
         v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
         return render(request, "fatura.html", active="fatura", analysis=a, **v)
 
+    @app.get("/mukellef/{cid}/kredibilite")
+    def kredibilite_page(cid: int, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):
+        s.get(Client, cid) or _404()
+        _, p = _period_of(s, cid, donem)
+        return RedirectResponse(f"/mukellef/{cid}/rapor?" + (f"donem={p.id}&" if p else "") + "konu=kredibilite", status_code=303)
+
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
-        keys = {"kdv": "kdv", "mutabakat": "mutabakat"}
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk", "stopaj": "stopaj"}
         if key not in keys:
             _404()
         c = s.get(Client, cid) or _404()
@@ -804,6 +1284,8 @@ def create_app() -> FastAPI:
             v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
         if p and key == "kdv":
             _kdv_view(s, c, p, v)
+        if p and key == "risk":
+            _benford_view(s, c, p, v)
         return render(request, "analysis.html", active=keys[key], **v)
 
     @app.post("/mukellef/{cid}/donem/{pid}/devreden-kdv")
@@ -842,7 +1324,7 @@ def create_app() -> FastAPI:
         form = await form_checked(request)
         period = owned(s, Period, int(form["donem"]), cid) if str(form.get("donem", "")).isdigit() else None
         outcomes, touched, held = [], {}, []
-        others = [x for x in s.scalars(select(Client)) if x.id != c.id]
+        others = [x for x in gorunen_mukellefler(s, user) if x.id != c.id]
         uploads = []
         for up in form.getlist("dosya"):
             if getattr(up, "filename", ""):
@@ -900,7 +1382,7 @@ def create_app() -> FastAPI:
         b = request.session.get("bekleyen")
         if not b or b.get("cid") != cid:
             return _redirect(s, f"/mukellef/{cid}")
-        clients = sorted(s.scalars(select(Client)), key=lambda x: (x.is_demo, tr_sira(x.unvan)))
+        clients = sorted(gorunen_mukellefler(s, user), key=lambda x: (x.is_demo, tr_sira(x.unvan)))
         names = {x.id: x.unvan for x in clients}
         flash = request.session.pop("flash", None)
         return render(request, "upload_check.html", c=c, items=b["items"], clients=clients, names=names, flash=flash)
@@ -920,7 +1402,7 @@ def create_app() -> FastAPI:
                 continue
             if choice.isdigit():
                 target = s.get(Client, int(choice))
-                if target:
+                if target and gorebilir(user, target):
                     period = s.get(Period, b["donem"]) if target.id == cid and b.get("donem") else None
                     o = ingest(s, target, it["filename"], path.read_bytes(), period)
                     o.filename = f"{it['filename']} → {target.unvan}"
@@ -1253,6 +1735,32 @@ def _redirect(s, url):
     return RedirectResponse(url, status_code=303)
 
 
+CIHAZ_CEREZI = "denetci_cihaz"
+CIHAZ_GUN = 30
+
+
+def _cihaz_imzaci():
+    return URLSafeTimedSerializer(_secret_key(), salt="cihaz-hatirla")
+
+
+def _anahtar_izi(user) -> str:
+    """Telefon kodu anahtarı yenilenince hatırlanan cihazlar geçersiz olsun diye anahtarın kısa özeti."""
+    import hashlib
+    return hashlib.sha256(user.totp_secret.encode()).hexdigest()[:16]
+
+
+def _cihaz_hatirlaniyor(request, user) -> bool:
+    """Bu tarayıcı son 30 gün içinde bu kullanıcı için 'bu bilgisayarı hatırla' ile işaretlendiyse telefon kodu sorulmaz."""
+    tok = request.cookies.get(CIHAZ_CEREZI)
+    if not tok:
+        return False
+    try:
+        v = _cihaz_imzaci().loads(tok, max_age=CIHAZ_GUN * 86400)
+    except BadSignature:
+        return False
+    return v.get("u") == user.id and v.get("k") == _anahtar_izi(user)
+
+
 def _signer():
     return URLSafeSerializer(_secret_key(), salt="mukellef-listesi")
 
@@ -1260,6 +1768,31 @@ def _signer():
 def summarize_empty():
     from ..finance import Summary
     return Summary()
+
+
+def _whatsapp_ozeti(c, p, v) -> str:
+    """Rapordan mükellefe WhatsApp ile gönderilebilecek kısa düz metin özet."""
+    tl = kurus_str
+    satir = [f"*{c.unvan}*", f"{donem_adi(p)} dönem kontrolü ({_now():%d.%m.%Y})", ""]
+    findings = v.get("findings") or []
+    if v.get("run") is None:
+        satir.append("Bu dönem için henüz kontrol yapılmadı.")
+    elif not findings:
+        satir.append("✅ Kontrollerde açık bulgu yok.")
+    else:
+        satir.append(f"⚠️ {len(findings)} konuya bakılması gerekiyor:")
+        for f in findings[:6]:
+            tutar = f" ({tl(abs(f.amount))} TL)" if f.amount else ""
+            satir.append(f"• {f.title}{tutar}")
+        if len(findings) > 6:
+            satir.append(f"• … ve {len(findings) - 6} konu daha (ayrıntılar raporda)")
+    eksik = [al["text"] for al in v.get("alerts") or [] if al.get("action") == "Tamamla"]
+    if eksik:
+        satir += ["", "📄 Bizden istenen belgeler:"] + [f"• {e}" for e in eksik[:5]]
+    b = buro.bilgiler(c.buro_id or 1)
+    if b.get("unvan"):
+        satir += ["", b["unvan"]] + ([b["telefonlar"][0]] if b.get("telefonlar") else [])
+    return "\n".join(satir)
 
 
 def _404():
@@ -1284,6 +1817,37 @@ def _oneri(info: dict, ref: str, others):
         if by_vkn:
             return by_vkn
     return firma_en_iyi(ref, others)
+
+
+def _nakit_view(s, c, p, v) -> None:
+    """Nakit akım tablosu ve köprü grafiği (finansal analiz ve kredibilite)."""
+    from .. import nakit
+    if "nakit" in v:
+        return
+    ctx = build_context(s, c, p)[0]
+    na = nakit.hesapla(ctx) if ctx else None
+    v["nakit"], v["NAKIT_BOLUM"] = na, nakit.BOLUMLER
+    if na:
+        v["nakit_grafik"] = kopru([("Dönem başı nakit", na.nakit_bas, "toplam"),
+                                   ("Faaliyetler", na.toplam.get("faaliyet", 0), "adim"),
+                                   ("Yatırımlar", na.toplam.get("yatirim", 0), "adim"),
+                                   ("Finansman", na.toplam.get("finansman", 0), "adim"),
+                                   ("Dönem sonu nakit (hesaplanan)", na.nakit_bas + na.degisim, "toplam")], "Nakit köprüsü")
+
+
+def _benford_view(s, c, p, v) -> None:
+    """Benford analizi (risk sayfası ve risk raporu): ilk rakam dağılımı ve grafiği."""
+    from .. import benford
+    from ..checks.risk import _kayitlar
+    ctx = build_context(s, c, p)[0]
+    if ctx is None:
+        return
+    lines, kaynak = _kayitlar(ctx)
+    b = benford.analiz([max(j.borc, j.alacak) for j in lines]) if lines else None
+    if b is not None:
+        v["benford"], v["benford_kaynak"] = b, kaynak
+        v["benford_grafik"] = benford_grafik(b)
+        v["BENFORD_UYGUNLUK"], v["BENFORD_BEKLENEN"] = benford.UYGUNLUK_ADI, benford.BEKLENEN
 
 
 def _kdv_view(s, c, p, v) -> None:

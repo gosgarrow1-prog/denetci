@@ -29,8 +29,17 @@ def test_demo_dashboard(app_client):
     fin = tc.get(loc + "/finansal").text
     for text in ("Gelir tablosu özeti", "Bilanço özeti", "Oranlar", "<svg"):
         assert text in fin, text
+    risk = tc.get(loc + "/risk").text
+    for text in ("Hata ve Risk Taraması", "Ters bakiye veren hesaplar", "Kasadan yüksek tutarlı tahsilat ve ödeme",
+                 "Tatil günü gider kayıtları", "Mükerrer fatura kaydı"):
+        assert text in risk, text
     for sub in ("/kdv", "/mutabakat", "/gecici-vergi", "/belgeler"):
         assert tc.get(loc + sub).status_code == 200, sub
+    st = tc.get(loc + "/stopaj").text
+    for text in ("Stopaj ve Muhtasar", "360 hesabındaki stopajlar", "Muhtasar ve prim hizmet beyannamesi"):
+        assert text in st, text
+    kr = tc.get(loc + "/kredibilite")
+    assert kr.status_code == 200 and "Kredibilite" in kr.text and "konu=kredibilite" in str(kr.url)
     assert tc.get(loc + "/olmayan").status_code == 404
     # İkinci tıklama yeni DEMO oluşturmaz.
     tc.post("/demo", data={"csrf": csrf(tc, "/")})
@@ -67,6 +76,8 @@ def test_multi_upload_creates_period_and_runs(app_client, data_root):
     for pid in pids:
         for x in ("", "/belgeler", "/kdv", "/mutabakat", "/finansal", "/ceyrek", "/gecici-vergi", "/fatura-mutabakati", "/rapor"):
             assert tc.get(f"/mukellef/{cid}{x}?donem={pid}").status_code == 200, (x, pid)
+        hepsi = "&".join(f"konu={k}" for k in ("genel", "finansal", "kdv", "gecici", "ceyrek", "risk", "mutabakat", "fatura"))
+        assert tc.get(f"/mukellef/{cid}/rapor?donem={pid}&{hepsi}").status_code == 200, pid
     # Aynı dosyalar tekrar yüklenirse çoğalmaz.
     r = tc.post(f"/mukellef/{cid}/yukle", data={"csrf": tok},
                 files=[("dosya", (p.name, p.read_bytes())) for p in files.values()], follow_redirects=True)
@@ -257,7 +268,7 @@ def test_report_and_finance_show_recommendations(app_client):
     loc = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False).headers["location"]
     cid = int(loc.rsplit("/", 1)[1].split("?")[0])
     rep = tc.get(f"/mukellef/{cid}/rapor").text
-    assert "2. Değerlendirme ve öneriler" in rep and "Dayanak:" in rep
+    assert "3. Değerlendirme ve öneriler" in rep and "Dayanak:" in rep
     assert "Değerlendirme ve Öneriler" in tc.get(f"/mukellef/{cid}/finansal").text
 
 
@@ -396,3 +407,133 @@ def test_yuklenen_dosya_arsive_kopyalanir(app_client, data_root, monkeypatch, tm
     assert len(kopyalar) == len(files)
     assert any(k.name.startswith("Yevmiye - ") for k in kopyalar)
     assert "arsiv" in tc.get(f"/mukellef/{cid}/belgeler").text
+    z = tc.get(f"/mukellef/{cid}/arsiv.zip")
+    assert z.status_code == 200 and z.headers["content-type"] == "application/zip"
+    import io, zipfile
+    adlar = zipfile.ZipFile(io.BytesIO(z.content)).namelist()
+    assert len(adlar) == len(files) and all(a.startswith("2026/") for a in adlar)
+    r = tc.post("/mukellef/yeni", data={"csrf": tok, "unvan": "DEMO BOŞ A.Ş."}, follow_redirects=False)
+    assert tc.get(r.headers["location"] + "/arsiv.zip").status_code == 404
+
+
+def test_sunucu_kipinde_telefon_kodu_ve_yedek(data_root, monkeypatch):
+    import os, zipfile
+    from datetime import datetime, timedelta
+    from denetci import config, yedek
+    assert not config.telefon_kodu()
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")
+    assert config.telefon_kodu() and config.sunucu()
+    (config.data_dir() / "dosyalar").mkdir()
+    (config.data_dir() / "dosyalar" / "a.xlsx").write_bytes(b"x")
+    eski = config.yedek_dir() / "denetci-2026-01-01-0300.zip"
+    eski.write_bytes(b"")
+    t = (datetime.now() - timedelta(days=20)).timestamp()
+    os.utime(eski, (t, t))
+    yol = yedek.al()
+    adlar = zipfile.ZipFile(yol).namelist()
+    assert "veri/denetci.db" in adlar and "veri/dosyalar/a.xlsx" in adlar
+    assert not eski.exists() and yol.exists()
+
+
+def test_buro_logosu_ve_whatsapp_ozeti(app_client, monkeypatch, tmp_path):
+    import json
+    tc = app_client
+    login(tc)
+    r = tc.post("/demo", data={"csrf": csrf(tc, "/")}, follow_redirects=False)
+    loc = r.headers["location"].split("?")[0]
+    # Büro klasörü yokken Denetçi adıyla çalışır.
+    monkeypatch.setenv("DENETCI_BURO", str(tmp_path / "yok"))
+    assert tc.get("/buro/logo-acik.png").status_code == 404
+    rapor = tc.get(loc + "/rapor").text
+    assert "Mükellefe gönderilecek kısa özet" in rapor and "konuya bakılması gerekiyor" in rapor
+    assert 'src="/buro/logo-acik.png"' not in rapor
+    # Büro bilgileri ve logo eklenince raporda ve menüde görünür.
+    d = tmp_path / "buro"
+    d.mkdir()
+    (d / "buro.json").write_text(json.dumps({"unvan": "Örnek Müşavirlik", "telefonlar": ["0212 000 0000"],
+                                                         "kullanicilar": {"x": {"ad": "Başka Kişi"}, "y": "Üçüncü"}}), encoding="utf-8")
+    (d / "logo-acik.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (d / "logo-koyu.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    monkeypatch.setenv("DENETCI_BURO", str(d))
+    rapor = tc.get(loc + "/rapor").text
+    assert 'src="/buro/logo-acik.png"' in rapor and "Örnek Müşavirlik" in rapor and "Kaşe / İmza" in rapor
+    assert "Örnek Müşavirlik\n0212 000 0000" in rapor
+    # Tanımlı olmayan kullanıcıda kullanıcı adı yazılır; tanımlıysa ad ve unvan.
+    import re as _re
+    hazir = _re.search(r'r-hazirlayan">(.*?)</div>\s*</div>', rapor, _re.S).group(1)
+    assert 'src="/buro/logo-acik.png"' in hazir and "<strong>burak</strong>" in hazir and "Başka Kişi" not in hazir
+    from denetci import buro
+    assert buro.hazirlayan("x") == {"ad": "Başka Kişi", "unvan": ""}
+    assert buro.hazirlayan("yok") == {"ad": "yok", "unvan": ""}
+    assert buro.hazirlayan("X") == {"ad": "Başka Kişi", "unvan": ""}  # büyük/küçük harf farkı önemsiz
+    (d / "buro.json").write_text(json.dumps({"kullanicilar": {"baltinok": {"ad": "Burak ALTINOK", "unvan": "SMMM"}}}), encoding="utf-8")
+    assert buro.hazirlayan("Baltinok") == {"ad": "Burak ALTINOK", "unvan": "SMMM"}
+    assert buro.hazirlayan("misafir") == {"ad": "misafir", "unvan": ""}  # başka kullanıcıya Burak'ın adı yazılmaz
+    assert 'src="/buro/logo-koyu.png"' in tc.get(loc).text
+    assert tc.get("/buro/logo-koyu.png").status_code == 200
+    assert tc.get("/buro/logo-baska.png").status_code == 404
+
+
+def test_misafir_yalnizca_demo_gorur(app_client, monkeypatch):
+    from denetci.auth import hash_password, new_totp_secret
+    from denetci.models import User
+    from tests.test_web import csrf as _csrf
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")  # telefon kodu açık; misafire sorulmaz
+    tc = app_client
+    with db.SessionLocal() as s:
+        gercek = Client(unvan="GERÇEK MÜKELLEF A.Ş.")
+        s.add(gercek)
+        s.add(User(username="misafir", password_hash=hash_password("misafir-parola-123"), totp_secret=new_totp_secret(), misafir=True))
+        s.commit()
+        gid = gercek.id
+    r = tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "misafir", "parola": "misafir-parola-123"},
+                follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert "GERÇEK MÜKELLEF" not in tc.get("/").text
+    assert tc.get(f"/mukellef/{gid}").status_code == 404
+    assert tc.post("/mukellef/yeni", data={"csrf": _csrf(tc, "/"), "unvan": "X"}).status_code == 403
+    loc = tc.post("/demo", data={"csrf": _csrf(tc, "/")}, follow_redirects=False).headers["location"]
+    page = tc.get(loc).text
+    assert "Gösterge Paneli" in page and "GERÇEK MÜKELLEF" not in page
+
+
+def test_tasinan_veride_dosya_yollari_duzelir(data_root, capsys):
+    from denetci import config
+    from denetci.__main__ import main
+    from denetci.models import SourceFile
+    hedef = config.data_dir() / "dosyalar" / "3" / "abc.xlsx"
+    hedef.parent.mkdir(parents=True)
+    hedef.write_bytes(b"x")
+    with db.SessionLocal() as s:
+        c = Client(unvan="DEMO Y", is_demo=True)
+        s.add(c)
+        s.flush()
+        s.add(SourceFile(client_id=c.id, sha256="a" * 64, orig_name="a.xlsx", size=1,
+                         stored_path="C:\\Users\\Burak\\DenetciVeri\\dosyalar\\3\\abc.xlsx"))
+        s.commit()
+    main(["yollari-duzelt"])
+    assert "Bulunamayan dosya: 0" in capsys.readouterr().out
+    with db.SessionLocal() as s:
+        assert s.scalar(select(SourceFile)).stored_path == str(hedef)
+
+
+def test_bu_bilgisayari_hatirla(app_client, monkeypatch):
+    from denetci.auth import totp
+    from denetci.models import User
+    from tests.test_web import csrf as _csrf
+    monkeypatch.setenv("DENETCI_SUNUCU", "1")
+    tc = app_client
+    giris = lambda **ek: tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "burak",
+                                                 "parola": "cok-gizli-parola-123", **ek}, follow_redirects=False)
+    assert giris().status_code == 200  # kod yok, hatırlanmıyor: giriş yok
+    r = giris(kod=totp(tc.secret), hatirla="1")
+    assert r.status_code == 303 and "denetci_cihaz" in r.headers.get("set-cookie", "")
+    tc.cookies.set("denetci_cihaz", r.cookies.get("denetci_cihaz") or tc.cookies.get("denetci_cihaz"))
+    tc.post("/cikis", data={"csrf": _csrf(tc, "/")})
+    assert giris().status_code == 303  # hatırlanan bilgisayar: kodsuz giriş
+    tc.post("/cikis", data={"csrf": _csrf(tc, "/")})
+    with db.SessionLocal() as s:  # anahtar yenilenince hatırlama geçersiz
+        u = s.scalar(select(User).where(User.username == "burak"))
+        u.totp_secret = "JBSWY3DPEHPK3PXP"
+        s.commit()
+    assert giris().status_code == 200

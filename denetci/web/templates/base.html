@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{% if c is defined and c %}{{ c.unvan }} · {% endif %}Denetçi{% endblock %}</title>
 <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
+<link rel="stylesheet" href="/static/rapor.css?v={{ static_v }}">
 </head>
 <body>
 {% set sh = shell if shell is defined else {} %}
@@ -12,11 +13,26 @@
 {% set q = ('?donem=' ~ sp.id) if sp else '' %}
 {% set active = active if active is defined else '' %}
 <div class="app">
-<nav class="side" aria-label="Ana menü">
+<nav class="side" id="yan-menu" aria-label="Ana menü">
+  <div class="side-top">
+  {% set bu = shell.bu if shell is defined and shell.bu is defined else buro() %}
+  {% if bu.logolar.koyu %}
+  <a class="brand brand-logo" href="/" title="Denetçi · {{ bu.get('unvan', '') }}">
+    <img src="/buro/logo-koyu.png" alt="{{ bu.get('unvan', 'Büro logosu') }}">
+    <span class="brand-sub">{{ icon('shield', 14) }} Denetçi · kontrol paneli</span>
+  </a>
+  {% else %}
   <a class="brand" href="/">
     <span class="brand-mark">{{ icon('shield', 24) }}</span>
     <span class="brand-text"><span class="brand-name">Denetçi</span><span class="brand-sub">Mali müşavirlik kontrol paneli</span></span>
   </a>
+  {% endif %}
+  <button type="button" class="menu-btn" aria-controls="yan-menu" aria-expanded="false" onclick="var m = document.getElementById('yan-menu'), a = m.classList.toggle('acik'); this.setAttribute('aria-expanded', a);">
+    <svg class="mb-ac" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <svg class="mb-kapa" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    <span>Menü</span></button>
+  </div>
+  <div class="side-links">
   {% if sc %}
   <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
   <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>
@@ -28,7 +44,10 @@
   <div class="sect">Vergi ve analiz</div>
   <a class="nav {{ 'on' if active == 'kdv' }}" href="/mukellef/{{ sc.id }}/kdv{{ q }}">{{ icon('percent') }}KDV Ön Kontrol</a>
   <a class="nav {{ 'on' if active == 'mutabakat' }}" href="/mukellef/{{ sc.id }}/mutabakat{{ q }}">{{ icon('book') }}Defter Mutabakatı</a>
+  <a class="nav {{ 'on' if active == 'risk' }}" href="/mukellef/{{ sc.id }}/risk{{ q }}">{{ icon('shield') }}Hata ve Risk Taraması</a>
+  <a class="nav {{ 'on' if active == 'stopaj' }}" href="/mukellef/{{ sc.id }}/stopaj{{ q }}">{{ icon('checks') }}Stopaj ve Muhtasar</a>
   <a class="nav {{ 'on' if active == 'finansal' }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
+  <a class="nav {{ 'on' if active == 'kredibilite' }}" href="/mukellef/{{ sc.id }}/kredibilite{{ q }}">{{ icon('building') }}Kredibilite (Banka)</a>
   <a class="nav {{ 'on' if active == 'ceyrek' }}" href="/mukellef/{{ sc.id }}/ceyrek{{ q }}">{{ icon('panel') }}Çeyrek Analizi</a>
   <a class="nav {{ 'on' if active == 'gecici' }}" href="/mukellef/{{ sc.id }}/gecici-vergi{{ q }}">{{ icon('calendar') }}Geçici Vergi</a>
   <a class="nav {{ 'on' if active == 'fatura' }}" href="/mukellef/{{ sc.id }}/fatura-mutabakati{{ q }}">{{ icon('receipt') }}Fatura Mutabakatı</a>
@@ -36,7 +55,10 @@
   {% endif %}
   <div class="sect">Yönetim</div>
   <a class="nav {{ 'on' if active == 'mukellefler' }}" href="/">{{ icon('building') }}Mükellefler</a>
-  <div class="side-foot"><span class="dot"></span>Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz</div>
+  <a class="nav {{ 'on' if active == 'mevzuat' }}" href="/mevzuat">{{ icon('bot') }}Mevzuat Asistanı</a>
+  {% if sh and not sh.get('misafir') %}<a class="nav {{ 'on' if active == 'kullanicilar' }}" href="/kullanicilar">{{ icon('users') }}Kullanıcılar ve Parolalar</a>{% endif %}
+  <div class="side-foot"><span class="dot"></span>{% if sunucu %}Güvenli bağlantı · büro sunucusu{% else %}Bu bilgisayarda çalışıyor · veriler dışarı çıkmaz{% endif %}</div>
+  </div>
 </nav>
 
 <div class="main">
@@ -83,6 +105,12 @@
 </div>
 </div>
 <script>
+// Dar ekranda geniş tablolar sayfayı taşırmasın: kayan kutu içine alınmayan tabloları sar.
+document.querySelectorAll('main table').forEach(function (t) {
+  if (t.closest('.scroll')) return;
+  var w = document.createElement('div'); w.className = 'scroll';
+  t.parentNode.insertBefore(w, t); w.appendChild(t);
+});
 // Sürükle-bırak alanı: seçilen dosya adlarını göster, seçince gönder.
 document.querySelectorAll('.drop').forEach(function (z) {
   var inp = z.querySelector('input[type=file]'), out = z.querySelector('.files');

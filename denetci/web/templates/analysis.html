@@ -4,13 +4,15 @@
 {% block content %}
 {% set a = analysis %}{% set q = ('?donem=' ~ p.id) if p else '' %}
 <div class="page-head">
-  <span class="ph-ic">{{ icon({'kdv': 'percent', 'mutabakat': 'book', 'gecici': 'calendar'}[a.key], 24) }}</span>
+  <span class="ph-ic">{{ icon({'kdv': 'percent', 'mutabakat': 'book', 'risk': 'shield', 'gecici': 'calendar', 'stopaj': 'checks'}[a.key], 24) }}</span>
   <div class="ph-text"><h1>{{ a.title }}</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}.
     {% if a.key == 'kdv' %}Oranlara göre matrah ve KDV, mahsup kaydı, devreden KDV ve beyanname karşılaştırması. Beyan veya vergi görüşü yerine geçmez.
     {% elif a.key == 'mutabakat' %}Defterlerin kendi içinde ve birbirleriyle tutarlılığı.
+    {% elif a.key == 'risk' %}Ters bakiyeler, kasadan yüksek tutarlı nakit hareketleri, tatil günü giderleri, mükerrer fatura kayıtları, ortaklar cari hesapları, taşıt giderleri, amortisman ve yansıtma uyumu. Bulgular kesin hata değildir; bakılması gereken kayıtları gösterir.
+    {% elif a.key == 'stopaj' %}Kira ve serbest meslek ödemelerinde %20 stopaj kesilmiş mi, 360 hesabındaki stopajlar izleyen ay ödenmiş mi ve muhtasar beyannamesindeki vergi defterle tutuyor mu. Muhtasar karşılaştırması aylık dönemde yapılır.
     {% else %}Geçici vergi matrahı ve beyanname karşılaştırmaları.{% endif %}</p></div>
-  <div class="ph-actions">{{ status_pill(a) }}</div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu={{ analysis.key }}">{{ icon('file', 16) }}Raporu al</a>{% endif %}{{ status_pill(a) }}</div>
 </div>
 {{ flash_list(flash) }}
 
@@ -78,4 +80,5 @@
 </section>
 {% endif %}
 {% endif %}
+{% include "_benford.html" %}
 {% endblock %}

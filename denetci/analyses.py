@@ -42,6 +42,8 @@ class Analysis:
 
 KDV_RULES = ("K-21", "K-22", "K-22D", "K-23", "K-24", "K-25", "K-26", "K-30")
 GECICI_RULES = ("K-27", "K-28", "K-29")
+RISK_RULES = ("K-10", "K-11", "K-12", "K-13", "K-14", "K-15", "K-16", "K-17", "K-18", "K-19", "K-20", "K-31", "K-32", "K-33")
+STOPAJ_RULES = ("K-34", "K-35", "K-36")
 MUTABAKAT_RULES = ("K-00", "K-01", "K-02", "K-03", "K-04", "K-05", "K-05K", "K-05M", "K-09")
 
 
@@ -127,6 +129,26 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
         Need("Mizan", has_mizan, "Mizan denkliği ve yevmiye–mizan karşılaştırması için.", optional=True),
     ]
 
+    # --- Hata ve risk taraması ---
+    r = Analysis("risk", "Hata ve Risk Taraması", RISK_RULES, link="risk")
+    r.needs = [
+        Need("Yevmiye defteri", has_yev or has_kebir or has_muavin,
+             "Kasa hareketleri, tatil günü giderleri ve mükerrer fatura kayıtları buradan taranır."),
+        Need("Dönem sonu bakiyeleri", bool(fin and fin.has_balance),
+             "Ters bakiye kontrolü için yılbaşından alınmış mizan, defteri kebir veya yılbaşından yevmiye.", optional=True),
+    ]
+
+    # --- Stopaj ve muhtasar ---
+    st = Analysis("stopaj", "Stopaj ve Muhtasar", STOPAJ_RULES, link="stopaj")
+    muh_eksik = [(y, mm) for y, mm in aylar if beyannameler.bul(decls, "muhtasar", y, mm) is None]
+    st.needs = [
+        Need("Yevmiye defteri", has_yev, "Kira ve serbest meslek ödemelerindeki stopaj ve 360 hesabı buradan taranır."),
+        Need("Muhtasar ve prim hizmet beyannamesi" + (f" ({_liste(muh_eksik)})" if muh_eksik else ""),
+             bool(aylar) and not muh_eksik,
+             "GİB'den indirilen PDF'i Belgeler ve Yükleme'den yükleyin; beyandaki stopaj defterle karşılaştırılır "
+             "(aylık dönemde).", optional=True),
+    ]
+
     # --- Finansal analiz ---
     f = Analysis("finansal", "Finansal Analiz", (), link="finansal")
     balance_hint = ("Yüklenen mizan yalnızca ayın hareketlerini içeriyor; yılbaşından alınmış mizan veya defteri kebir yükleyin."
@@ -156,7 +178,7 @@ def build(period, batches: dict, ctx: Context | None, fin, prev_ctx_exists: bool
              beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month) is not None,
              "Beyan verildiyse PDF'ini yükleyin; beyandaki kâr defterle karşılaştırılır.", optional=True),
     ]
-    return [k, m, f, g]
+    return [k, m, r, st, f, g]
 
 
 def kdv_amounts(ctx: Context | None) -> dict:

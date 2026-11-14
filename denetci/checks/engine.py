@@ -98,6 +98,8 @@ def build_context(session: Session, client: Client, period: Period):
             ctx.devreden_kdv, ctx.devreden_kaynak = d.alanlar.get("sonraki_devreden"), "beyanname"
         if d := beyannameler.bul(decls, "kdv", period.bitis.year, period.bitis.month):
             ctx.kdv_beyan = d.alanlar
+        if d := beyannameler.bul(decls, "muhtasar", period.bitis.year, period.bitis.month):
+            ctx.muhtasar_beyan = d.alanlar
     if d := beyannameler.bul(decls, "gecici", period.bitis.year, period.bitis.month):
         ctx.gv_beyan = d.alanlar
     for lst in session.scalars(select(InvoiceList).where(InvoiceList.client_id == client.id, InvoiceList.durum == "aktif",

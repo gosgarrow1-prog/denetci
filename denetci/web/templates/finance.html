@@ -10,7 +10,7 @@
   <span class="ph-ic">{{ icon('trend', 24) }}</span>
   <div class="ph-text"><h1>Finansal Analiz</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Gelir tablosu, bilanço ve temel oranlar. Bilgi amaçlıdır; kapanış kayıtları yapılmamışsa dönem sonucu hesaplanarak gösterilir.</p></div>
-  <div class="ph-actions">{{ status_pill(analysis) }}</div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=finansal">{{ icon('file', 16) }}Raporu al</a>{% endif %}{{ status_pill(analysis) }}</div>
 </div>
 {{ flash_list(flash) }}
 
@@ -82,6 +82,8 @@
   {% else %}<p class="muted">Bilanço için dönem sonu bakiyesi gerekli: yılbaşından alınmış mizan veya defteri kebir yükleyin.</p>{% endif %}
   {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
 </section>
+
+{% include "_nakit.html" %}
 
 <section class="block" id="oneriler">
   <div class="block-head"><h2>Değerlendirme ve Öneriler</h2><a class="more" href="/mukellef/{{ c.id }}/rapor{{ q }}">Dönem raporunda gör →</a></div>

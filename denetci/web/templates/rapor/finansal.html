@@ -1,0 +1,110 @@
+{% from "rapor/_ortak.html" import pct, gelir_tablosu, eksik_belge %}
+{% set fa = analyses|selectattr('key', 'equalto', 'finansal')|first %}
+<p class="r-giris">Bu bölüm şirketin dönem içindeki satış ve kârlılığını, dönem sonundaki varlık–borç yapısını ve bunlardan hesaplanan oranları grafiklerle anlatır.
+  {% if fin and fin.flows_window %}Gelir ve giderler {{ fin.flows_window[0].strftime('%d.%m.%Y') }} – {{ fin.flows_window[1].strftime('%d.%m.%Y') }} arası {{ fin.flows_source }} kayıtlarından{% endif %}{% if fin and fin.has_balance %}, bilanço {{ p.bitis.strftime('%d.%m.%Y') }} tarihli {{ fin.balances_source }} bakiyelerinden{% endif %} alınmıştır.</p>
+{{ eksik_belge(fa) }}
+
+{% if not fin %}
+<p>Finansal analiz için yüklenmiş defter kaydı yok.</p>
+{% else %}
+
+<h2>Özet</h2>
+<div class="r-kutular">
+{% for ad, deger, onceki, _ in rf.ozet %}
+  <div class="r-kutu"><span class="r-kutu-ad">{{ ad }}</span><span class="r-kutu-v">{{ deger|tl if deger is not none else '—' }} <small>TL</small></span>
+    {% if onceki %}{% set d = (deger - onceki) / (onceki|abs) %}<span class="r-kutu-d">önceki dönem {{ tl_short(onceki) }} · <span class="{{ 'up' if d > 0 else 'down' }}">{{ '+' if d > 0 }}{{ '%.0f'|format(d * 100) }}%</span></span>{% endif %}</div>
+{% endfor %}
+</div>
+
+{% if rf.aylar %}
+<h2>Aylara göre satış ve kâr</h2>
+<figure class="r-fig">{{ rf_aylik }}
+  <figcaption>Her ay yalnızca o ayın kayıtlarıdır (TL). Dönem kârı vergi öncesidir; maliyet kaydı yapılmamış aylarda kâr yüksek görünür.</figcaption></figure>
+{% endif %}
+{% if rf.yorumlar %}<ul class="r-yorum">{% for y in rf.yorumlar %}<li>{{ y }}</li>{% endfor %}</ul>{% endif %}
+
+{% if fin.has_income %}
+<h2>Satıştan kâra</h2>
+<p>Aşağıdaki grafik net satışlardan başlayıp her gelir ve gider kaleminin kârı ne kadar azalttığını ya da artırdığını, en altta da dönem kârını gösterir.</p>
+<figure class="r-fig">{{ rf_selale }}</figure>
+<div class="r-dar">{{ gelir_tablosu(fin.gelir_tablosu, prev_fin.gelir_tablosu if prev_fin and prev_fin.has_income else none) }}</div>
+{% endif %}
+
+{% if fin.has_balance %}
+<h2>Bilanço yapısı</h2>
+<p>Üst çubuk şirketin varlıklarını (aktif), alt çubuk bu varlıkların nasıl finanse edildiğini (pasif: borçlar ve özkaynak) gösterir. İki çubuğun boyu eşittir.</p>
+<figure class="r-fig r-chart">{{ balance_chart }}
+  <div class="legend">
+    {% for key, name, var in [('1','Dönen varlıklar','--s1'),('2','Duran varlıklar','--s2'),('3','Kısa vadeli yabancı kaynaklar','--s3'),('4','Uzun vadeli yabancı kaynaklar','--s4'),('5','Özkaynaklar + dönem sonucu','--s5')] %}
+    <span><i style="background:var({{ var }})"></i>{{ name }} <strong>{{ tl_short(fin.bilanco[key] + (fin.donem_sonucu_kapanmamis if key == '5' else 0)) }}</strong></span>
+    {% endfor %}
+  </div></figure>
+<div class="r-two">
+  {% for side in [['1','2'], ['3','4','5']] %}
+  <table class="grid small"><tbody>
+    {% for s_ in side %}
+    <tr class="subtotal"><td>{{ SINIFLAR[s_] }}</td><td class="num">{{ fin.bilanco[s_]|tl }}</td></tr>
+    {% for g, name, val in fin.bilanco_gruplar.get(s_, []) %}<tr><td>{{ g }} {{ name }}</td><td class="num">{{ val|tl }}</td></tr>{% endfor %}
+    {% endfor %}
+    {% if '5' in side %}<tr><td>Kapanmamış dönem sonucu</td><td class="num">{{ fin.donem_sonucu_kapanmamis|tl }}</td></tr>
+    <tr class="total"><td>Pasif toplamı</td><td class="num">{{ fin.pasif|tl }}</td></tr>
+    {% else %}<tr class="total"><td>Aktif toplamı</td><td class="num">{{ fin.aktif|tl }}</td></tr>{% endif %}
+  </tbody></table>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="r-kdv">{% include "_nakit.html" %}</div>
+
+{% if rf.gostergeler %}
+<h2>Oranlar ve ne anlama geldikleri</h2>
+<p>Taralı alan genel kabul gören aralığı gösterir; koyu çubuk şirketin değeridir. Bu aralıklar yaklaşık değerlerdir ve sektöre göre değişir.</p>
+{% for grup in rf.gostergeler|map(attribute='grup')|unique %}
+<h3>{{ grup }}</h3>
+<div class="r-oranlar">
+{% for g in rf.gostergeler if g.grup == grup %}
+  <div class="r-oran">
+    <div class="r-oran-ust">
+      <span class="r-oran-ad">{{ g.ad }}</span>
+      <span class="r-oran-v">{{ g.metin }}{% if g.onceki is not none %} <small>önceki {{ g.onceki_metin }}</small>{% endif %}</span>
+      {% if g.durum != 'notr' %}<span class="r-durum r-d-{{ g.durum }}">{{ {'iyi': '✓ Yeterli', 'dikkat': '! Dikkat', 'zayif': '✕ Zayıf'}[g.durum] }}</span>{% endif %}
+    </div>
+    {% if g.aralik %}<div class="r-oran-g">{{ gosterge(g.deger, g.aralik, g.olcek) }}</div>{% endif %}
+    <p>{{ g.yorum }}</p>
+    <div class="muted r-formul">{{ g.formul }}</div>
+  </div>
+{% endfor %}
+</div>
+{% endfor %}
+{% if rf.gun and rf.gun < 360 %}<p class="muted">Kârlılık oranları {{ rf.gun }} günlük dönem içindir, yıllık değere çevrilmemiştir. Devir süreleri dönem gün sayısıyla hesaplanmıştır.</p>{% endif %}
+{% endif %}
+
+{% if rf.dupont %}{% set d = rf.dupont %}
+<h3>Özkaynak kârlılığının kaynağı (DuPont)</h3>
+<div class="r-dupont">
+  <div><span>{{ pct(d.marj) }}</span><small>Kâr marjı<br>kâr / satış</small></div><b>×</b>
+  <div><span>{{ '%.2f'|format(d.devir)|replace('.', ',') }}</span><small>Aktif devir hızı<br>satış / aktif</small></div><b>×</b>
+  <div><span>{{ '%.2f'|format(d.carpan)|replace('.', ',') }}</span><small>Özkaynak çarpanı<br>aktif / özkaynak</small></div><b>=</b>
+  <div class="r-dupont-son"><span>{{ pct(d.roe) }}</span><small>Özkaynak kârlılığı</small></div>
+</div>
+<p>Özkaynak kârlılığı üç şeyden gelir: satıştan kalan kâr payı, varlıkların ne kadar satış ürettiği ve borçla büyüme. {% if d.carpan > 2.5 %}Çarpanın yüksek olması kârlılığın önemli ölçüde borçla desteklendiğini gösterir.{% elif d.marj < 0.03 %}Kâr marjının düşüklüğü kârlılığı sınırlayan ana etken görünüyor.{% else %}Üç etken dengeli görünüyor.{% endif %}</p>
+{% endif %}
+
+{% if rf.giderler %}
+<h2>En büyük gider kalemleri</h2>
+<figure class="r-fig">{{ rf_gider }}
+  <figcaption>{{ rf.aylar[0].ad }} – {{ rf.aylar[-1].ad }} arası, faaliyet, finansman ve diğer gider hesaplarının (63, 65, 66, 68, 75–78) tutarları (TL).</figcaption></figure>
+{% endif %}
+
+{% set sirket = oneriler|selectattr('grup', 'equalto', 'sirket')|list %}
+<h2>Değerlendirme ve öneriler</h2>
+{% if sirket %}
+<div class="r-scroll"><table class="grid small r-oneri"><thead><tr><th>Öncelik</th><th>Konu</th><th>Öneri</th></tr></thead><tbody>
+{% for o in sirket %}
+  <tr><td><span class="lv-{{ {'yuksek': 'onemli', 'orta': 'dikkat'}.get(o.oncelik, 'bilgi') }}"><span class="lv-pill">{{ ONCELIK_ADI[o.oncelik] }}</span></span></td>
+    <td>{{ o.alan }}</td><td><strong>{{ o.baslik }}</strong><div>{{ o.metin }}</div></td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}<p>Mevcut verilerle finansal yapı ve kârlılık açısından öne çıkan bir konu yok.</p>{% endif %}
+{% if fin.notlar %}<h3>Notlar</h3><ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+{% endif %}

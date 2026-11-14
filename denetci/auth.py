@@ -9,6 +9,11 @@ import time
 from urllib.parse import quote
 
 
+def parola_en_az(misafir: bool) -> int:
+    """Misafir (yalnızca DEMO verisi) için 6, büro kullanıcıları için 12 karakter. Girişte 5 hatalı denemede 5 dk bekleme var."""
+    return 6 if misafir else 12
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1)

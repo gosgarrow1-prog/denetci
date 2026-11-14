@@ -103,6 +103,6 @@ def nasil(gorev: Gorev, p) -> list[str]:
                "Kebir ve muavin isteğe bağlıdır; yüklenenler yevmiyeyle karşılaştırılır."]
     elif gorev.key == "kapanis":
         out = [f"Dönemin yevmiyesini ({aralik}) ve yılbaşından mizanı ({ytd}) Luca'dan Excel olarak alın.",
-               "KDV ve geçici vergi beyannamelerini GİB'den PDF olarak yükleyin.",
+               "KDV, geçici vergi ve muhtasar beyannamelerini GİB'den PDF olarak yükleyin.",
                "Kontrolleri inceleyip notunuzu yazdıktan sonra dönemi panelden kesinleştirin ve raporu yazdırın."]
     return out

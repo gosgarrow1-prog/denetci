@@ -14,7 +14,8 @@ from denetci.web.app import create_app
 def app_client(data_root):
     secret = new_totp_secret()
     with db.SessionLocal() as s:
-        s.add(User(username="burak", password_hash=hash_password("cok-gizli-parola-123"), totp_secret=secret))
+        s.add(User(username="burak", password_hash=hash_password("cok-gizli-parola-123"), totp_secret=secret,
+                   buro_id=1, yonetici=True, sistem=True))
         s.commit()
     tc = TestClient(create_app())
     tc.secret = secret
@@ -155,3 +156,128 @@ def test_luca_upload_without_mapping(app_client, data_root):
     page = tc.get(r.headers["location"]).text
     assert "Defteri kebir" in page and "Muavin defter" in page
     assert "Yevmiye–kebir mutabakatı" in page and "Kasa" in page
+
+
+def test_mevzuat_asistani(app_client, monkeypatch):
+    from types import SimpleNamespace as N
+
+    import anthropic
+
+    from denetci import yz
+    login(app_client)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    r = app_client.get("/mevzuat")
+    assert r.status_code == 200 and "Asistan henüz açılmadı" in r.text
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anahtar")
+    istekler = []
+
+    class Sahte:
+        def __init__(self, **kw):
+            self.beta = N(messages=N(create=self.create))
+
+        def create(self, **kw):
+            istekler.append(kw)
+            cite = N(url="https://www.gib.gov.tr/x", title="GİB 2009/14592")
+            return N(stop_reason="end_turn", content=[N(type="server_tool_use"), N(type="text", text="Kira stopajı **%20**.\n\n- GVK 94/5-a", citations=[cite])],
+                     usage=N(input_tokens=1000, output_tokens=200, cache_read_input_tokens=0, server_tool_use=N(web_search_requests=2)))
+
+    monkeypatch.setattr(anthropic, "Anthropic", Sahte)
+    tok = csrf(app_client, "/mevzuat")
+    r = app_client.post("/mevzuat", data={"csrf": tok, "soru": "Kira stopaj oranı?"})
+    assert r.status_code == 200
+    assert "<strong>%20</strong>" in r.text and "GİB 2009/14592" in r.text and "2 arama" in r.text
+    kw = istekler[0]
+    assert kw["model"] == yz.MODEL and kw["tools"][0]["allowed_domains"] == yz.ALANLAR
+    assert kw["messages"] == [{"role": "user", "content": "Kira stopaj oranı?"}]
+
+
+def test_kullanicilar_parola_web(app_client):
+    from denetci.auth import verify_password
+    with db.SessionLocal() as s:
+        s.add(User(username="misafir", password_hash=hash_password("eski-parola-1"), totp_secret=new_totp_secret(), misafir=True))
+        s.commit()
+        mid = s.query(User).filter_by(username="misafir").one().id
+        bid = s.query(User).filter_by(username="burak").one().id
+    login(app_client)
+    r = app_client.get("/kullanicilar")
+    assert r.status_code == 200 and "misafir" in r.text and "Kullanıcılar ve Parolalar" in r.text
+    tok = csrf(app_client, "/kullanicilar")
+    r = app_client.post(f"/kullanicilar/{mid}/parola", data={"csrf": tok, "yeni": "12345", "tekrar": "12345"})
+    assert "en az 6 karakter" in r.text
+    r = app_client.post(f"/kullanicilar/{mid}/parola", data={"csrf": tok, "yeni": "482913", "tekrar": "482913"})
+    assert "parolası değiştirildi" in r.text
+    r = app_client.post(f"/kullanicilar/{bid}/parola", data={"csrf": tok, "mevcut": "yanlis", "yeni": "yeni-uzun-parola-1", "tekrar": "yeni-uzun-parola-1"})
+    assert "Şu anki parolanız yanlış" in r.text
+    with db.SessionLocal() as s:
+        assert verify_password("482913", s.get(User, mid).password_hash)
+        assert verify_password("cok-gizli-parola-123", s.get(User, bid).password_hash)
+    # misafir bu sayfayı açamaz
+    app_client.cookies.clear()
+    tok = csrf(app_client, "/giris")
+    app_client.post("/giris", data={"csrf": tok, "kullanici": "misafir", "parola": "482913"})
+    assert app_client.get("/kullanicilar").status_code == 403
+    assert "/kullanicilar" not in app_client.get("/").text
+
+
+def test_burolar_birbirini_gormez(app_client):
+    login(app_client)
+    tok = csrf(app_client, "/kullanicilar")
+    r = app_client.post("/mukellef/yeni", data={"csrf": tok, "unvan": "BIZIM MUKELLEF A.S."})
+    bizim = int(r.url.path.rstrip("/").split("/")[-1])
+    r = app_client.post("/burolar/yeni", data={"csrf": tok, "buro_ad": "Yilmaz Musavirlik", "sinir": "0",
+                                               "kullanici": "ayilmaz", "ad": "Ayse YILMAZ", "unvan": "SMMM",
+                                               "parola": "baska-buro-parola-1", "parola2": "baska-buro-parola-1"})
+    assert "bürosu açıldı" in r.text
+    # ikinci büronun yöneticisi girer
+    app_client.cookies.clear()
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "ayilmaz", "parola": "baska-buro-parola-1"})
+    assert r.status_code == 200
+    assert "BIZIM MUKELLEF" not in r.text
+    assert app_client.get(f"/mukellef/{bizim}").status_code == 404
+    tok = csrf(app_client, "/")
+    r = app_client.post("/mukellef/yeni", data={"csrf": tok, "unvan": "ONLARIN MUKELLEFI LTD"})
+    onlarin = int(r.url.path.rstrip("/").split("/")[-1])
+    with db.SessionLocal() as s:
+        from denetci.models import Buro
+        c = s.get(Client, onlarin)
+        assert c.buro_id == s.scalar(__import__("sqlalchemy").select(Buro.id).where(Buro.ad == "Yilmaz Musavirlik"))
+    sayfa = app_client.get("/kullanicilar").text
+    assert "ayilmaz" in sayfa and "burak" not in sayfa and "Yeni büro aç" not in sayfa
+    # sınır 0 $: asistan kullanılamaz
+    import os
+    os.environ["ANTHROPIC_API_KEY"] = "test"
+    try:
+        tok = csrf(app_client, "/mevzuat")
+        r = app_client.post("/mevzuat", data={"csrf": tok, "soru": "Kira stopajı?"})
+        assert "sınırı" in r.text
+    finally:
+        del os.environ["ANTHROPIC_API_KEY"]
+    # büro bilgileri ve hazırlayan
+    r = app_client.post("/buro/bilgiler", data={"csrf": tok, "unvan": "Yilmaz Mali Musavirlik", "telefonlar": "0212 000 00 00"})
+    assert "Büro bilgileri kaydedildi" in r.text
+    # ilk büro onların mükellefini görmez
+    app_client.cookies.clear()
+    login(app_client)
+    assert "ONLARIN MUKELLEFI" not in app_client.get("/").text
+    assert app_client.get(f"/mukellef/{onlarin}").status_code == 404
+    sayfa = app_client.get("/kullanicilar").text
+    assert "Yilmaz Mali Musavirlik" in sayfa  # büro bilgilerindeki unvan büro listesine de yansır
+
+
+def test_eski_veri_buro_1e_gecer(data_root):
+    """Büro ayrımından önceki veritabanı: mükellefler ve kullanıcılar 1 numaralı büroya, büro kullanıcıları yönetici olur."""
+    from sqlalchemy import text
+    from denetci.models import Buro
+    with db.SessionLocal() as s:
+        s.add(User(username="eski", password_hash="x", totp_secret="x"))
+        s.add(Client(unvan="ESKI MUKELLEF"))
+        s.execute(text("DELETE FROM burolar"))
+        s.commit()
+    db.init_db()
+    with db.SessionLocal() as s:
+        assert s.get(Buro, 1) is not None
+        u = s.query(User).filter_by(username="eski").one()
+        assert u.buro_id == 1 and u.yonetici and u.sistem
+        assert s.query(Client).filter_by(unvan="ESKI MUKELLEF").one().buro_id == 1

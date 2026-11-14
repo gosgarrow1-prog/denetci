@@ -36,7 +36,7 @@ def peek(filename: str, content: bytes) -> dict:
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf":
         return beyanname.peek(content)
-    if suffix not in (".xlsx", ".csv"):
+    if suffix not in (".xlsx", ".csv", ".xml", ".zip"):
         return {}
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -101,6 +101,8 @@ def ingest_beyanname(session: Session, client: Client, filename: str, content: b
     msg = f"{beyanname.TUR_ADLARI[b.tur]} ({beyanname.donem_adi(b.tur, b.yil, b.ay)}) okundu"
     if b.tur == "kdv":
         msg += f"; sonraki döneme devreden KDV {_tl(b.alanlar.get('sonraki_devreden'))} TL"
+    elif b.tur == "muhtasar":
+        msg += f"; tahakkuk eden vergi {_tl(b.alanlar.get('tahakkuk_eden'))} TL"
     else:
         msg += f"; hesaplanan geçici vergi {_tl(b.alanlar.get('nihai', b.alanlar.get('hesaplanan')))} TL"
     if eski:
