@@ -557,31 +557,33 @@ def create_app() -> FastAPI:
         return {"durum": "bekliyor"}
 
     @app.get("/takip", response_class=HTMLResponse)
-    def takip_page(request: Request, ay: str | None = None, user=Depends(current_user), s=Depends(get_session)):
+    def takip_page(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        """Bu ay ne kaldı: son güne göre sıralı iş kartları; her kartta yalnızca bitmemiş mükellefler ve yapılacak işlem."""
         bugun = date.today()
-        try:
-            yil, a = (int(x) for x in ay.split("-")) if ay else takip.varsayilan_ay(bugun)
-            date(yil, a, 1)
-        except (ValueError, AttributeError):
-            yil, a = takip.varsayilan_ay(bugun)
-        clients = [c for c in gorunen_mukellefler(s, user)]
+        clients = gorunen_mukellefler(s, user)
         clients.sort(key=lambda c: (c.is_demo, tr_sira(c.unvan)))
         durumlar = {(d.client_id, d.yil, d.ay, d.is_turu): d for d in s.scalars(
             select(IsDurumu).where(IsDurumu.client_id.in_([c.id for c in clients] or [0])))}
-        isler = [(kod, ad) for kod, ad, *_ in takip.ISLER if takip.son_gun(kod, yil, a)]
-        satirlar, sayac = [], {k: {"verildi": 0, "kontrol": 0, "bekliyor": 0} for k, _ in isler}
-        for c in clients:
-            decls = beyannameler.aktif(s, c.id)
-            h = {kod: _takip_hucre(s, c, kod, yil, a, decls, durumlar) for kod, _ad in isler}
-            for kod, x in h.items():
-                sayac[kod][x["durum"]] += 1
-            satirlar.append({"c": c, "h": h})
-        onceki, sonraki = takip._ay_ekle(yil, a, -1), takip._ay_ekle(yil, a, 1)
-        return render(request, "takip.html", active="takip", satirlar=satirlar, isler=isler, sayac=sayac,
-                      yil=yil, ay=a, donem=takip.donem_adi(yil, a), vadeler=takip.yaklasan(bugun, 45), bugun=bugun,
-                      sonlar={kod: takip.son_gun(kod, yil, a) for kod, _ in isler},
-                      onceki=f"{onceki[0]}-{onceki[1]:02d}", sonraki=f"{sonraki[0]}-{sonraki[1]:02d}",
-                      varsayilan="%d-%02d" % takip.varsayilan_ay(bugun))
+        decls = {c.id: beyannameler.aktif(s, c.id) for c in clients}
+        kartlar = []
+        for ofs in range(-3, 1):
+            yil, a = takip._ay_ekle(bugun.year, bugun.month, ofs)
+            for kod, ad in [(k, n) for k, n, *_ in takip.ISLER]:
+                son = takip.son_gun(kod, yil, a)
+                if not son or not (bugun - timedelta(days=10) <= son <= bugun + timedelta(days=45)):
+                    continue
+                bekleyen, biten = [], []
+                for c in clients:
+                    h = _takip_hucre(s, c, kod, yil, a, decls[c.id], durumlar)
+                    (biten if h["durum"] == "verildi" else bekleyen).append({"c": c, "h": h})
+                if not clients:
+                    continue
+                kartlar.append({"kod": kod, "ad": ad, "yil": yil, "ay": a, "donem": takip.donem_adi(yil, a), "son": son,
+                                "kalan": (son - bugun).days, "bekleyen": bekleyen, "biten": biten, "toplam": len(clients)})
+        kartlar.sort(key=lambda k: (k["son"], k["ad"]))
+        acik = [k for k in kartlar if k["bekleyen"]]
+        return render(request, "takip.html", active="takip", kartlar=kartlar, acik=len(acik), bugun=bugun,
+                      vadeler=[v for v in takip.yaklasan(bugun, 45) if v.ad.startswith(("KDV 2", "Damga"))])
 
     @app.post("/takip/isaretle")
     async def takip_isaretle(request: Request, user=Depends(current_user), s=Depends(get_session)):
@@ -602,7 +604,7 @@ def create_app() -> FastAPI:
         elif form.get("islem") != "geri" and not mevcut:
             s.add(IsDurumu(client_id=cid, yil=yil, ay=a, is_turu=kod, kullanici=user.username))
         audit(s, user, "is_isaretle", cid, f"{kod} {yil}-{a:02d} {form.get('islem', 'verildi')}")
-        return _redirect(s, f"/takip?ay={yil}-{a:02d}")
+        return _redirect(s, "/takip")
 
     @app.get("/mevzuat", response_class=HTMLResponse)
     def mevzuat_page(request: Request, soru: int | None = None, user=Depends(current_user), s=Depends(get_session)):

@@ -624,3 +624,10 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
 .tk-f { display: inline; margin-left: 6px; }
 .tk-b { background: none; border: 0; padding: 0; color: var(--blue); font-size: 12px; cursor: pointer; text-decoration: underline; }
 .tbl-scroll { overflow-x: auto; }
+.tk-kart { margin-bottom: 22px; }
+.tk-bar { height: 6px; background: var(--gray-soft); border-radius: 999px; overflow: hidden; margin: 6px 0 12px; }
+.tk-bar span { display: block; height: 100%; background: var(--green-ink, #2f7d4f); }
+.tk-biten { margin-top: 10px; font-size: 13.5px; }
+.tk-biten summary { cursor: pointer; color: var(--muted); }
+.cl-counts .btn { margin-right: 6px; }
+.cl-counts .tk-f { margin-left: 0; }

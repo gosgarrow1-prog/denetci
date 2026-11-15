@@ -22,25 +22,28 @@ def test_yaklasan_liste():
 
 def test_takip_sayfasi_ve_isaretleme(app_client):
     login(app_client)
-    with __import__("denetci.db", fromlist=["x"]).SessionLocal() as s:
+    from denetci import db
+    with db.SessionLocal() as s:
         c = Client(unvan="ORNEK LTD", buro_id=1)
         s.add(c)
         s.commit()
         cid = c.id
-    r = app_client.get("/takip?ay=2026-10")
-    assert r.status_code == 200 and "ORNEK LTD" in r.text and "Bekliyor" in r.text
-    tok = csrf(app_client, "/takip?ay=2026-10")
-    r = app_client.post("/takip/isaretle", data={"csrf": tok, "client_id": cid, "yil": 2026, "ay": 10, "is_turu": "muhtasar"},
+    page = app_client.get("/takip").text
+    assert "Bu Ay Ne Kaldı?" in page and "ORNEK LTD" in page and "Belge yükle" in page
+    tok = csrf(app_client, "/takip")
+    # Bugüne en yakın muhtasar dönemini işaretle
+    import re
+    m = re.search(r'name="yil" value="(\d+)"><input type="hidden" name="ay" value="(\d+)"><input type="hidden" name="is_turu" value="muhtasar"', page)
+    yil, ay = int(m.group(1)), int(m.group(2))
+    r = app_client.post("/takip/isaretle", data={"csrf": tok, "client_id": cid, "yil": yil, "ay": ay, "is_turu": "muhtasar"},
                         follow_redirects=False)
     assert r.status_code == 303
-    assert "Verildi" in app_client.get("/takip?ay=2026-10").text
-    tok = csrf(app_client, "/takip?ay=2026-10")
-    app_client.post("/takip/isaretle", data={"csrf": tok, "client_id": cid, "yil": 2026, "ay": 10, "is_turu": "muhtasar",
+    assert "Tamamlananlar (1)" in app_client.get("/takip").text
+    tok = csrf(app_client, "/takip")
+    app_client.post("/takip/isaretle", data={"csrf": tok, "client_id": cid, "yil": yil, "ay": ay, "is_turu": "muhtasar",
                                              "islem": "geri"})
-    from denetci import db
     with db.SessionLocal() as s:
         assert s.query(IsDurumu).count() == 0
-    assert app_client.get("/takip?ay=bozuk").status_code == 200
 
 
 def test_yil_sonu_sayfasi(app_client):
@@ -67,5 +70,3 @@ def test_yil_sonu_demo_otomatik(app_client):
     cid = int(r.headers["location"].split("/mukellef/")[1].split("?")[0].split("/")[0])
     page = app_client.get(f"/mukellef/{cid}/yil-sonu").text
     assert "Yıllık amortisman ayrıldı" in page and ("TAMAM" in page or "BULGU VAR" in page)
-    t = app_client.get("/takip?ay=2026-09").text
-    assert "Geçici vergi" in t
