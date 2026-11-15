@@ -134,6 +134,7 @@ templates.env.globals["STATUS_LABELS"] = STATUS_LABELS
 KIND_LABELS = {"A": "Aritmetik/veri tutarsızlığı", "K": "Kurala dayalı olası uygunsuzluk", "I": "İstatistiksel anomali",
                "D": "Ek belge / mesleki değerlendirme"}
 templates.env.globals["KIND_LABELS"] = KIND_LABELS
+templates.env.globals["kod_aranir"] = lambda u: kod_aranir(u)
 SEVERITY_ORDER = {"Kritik": 0, "Yüksek": 1, "Orta": 2, "Düşük": 3}
 
 throttle = LoginThrottle()
@@ -449,6 +450,12 @@ def owned(s, model, obj_id: int, client_id: int):
     return obj
 
 
+def kod_aranir(user) -> bool:
+    """Telefon kodu yalnızca sunucu sahibi büronun (1 numaralı) kullanıcılarından istenir; diğer bürolara verilen hesaplarda
+    ve misafirde yalnızca parola yeterlidir."""
+    return bool(telefon_kodu() and user is not None and not user.misafir and buro_no(user) == 1)
+
+
 def audit(s, user, action, client_id=None, detail=None):
     s.add(AuditLog(user_id=user.id if user else None, client_id=client_id, action=action, detail=detail))
 
@@ -487,7 +494,7 @@ def create_app() -> FastAPI:
             user = None
         hatirlandi = bool(user) and _cihaz_hatirlaniyor(request, user)
         ok = user and verify_password(str(form.get("parola", "")), user.password_hash) and \
-            (not telefon_kodu() or user.misafir or hatirlandi or verify_totp(user.totp_secret, str(form.get("kod", ""))))
+            (not kod_aranir(user) or hatirlandi or verify_totp(user.totp_secret, str(form.get("kod", ""))))
         if not ok:
             throttle.fail(username)
             audit(s, None, "giris_basarisiz", detail=username[:64])
@@ -499,7 +506,7 @@ def create_app() -> FastAPI:
         request.session["csrf"] = secrets.token_urlsafe(24)
         audit(s, user, "giris")
         r = _redirect(s, "/takip")
-        if telefon_kodu() and not user.misafir and form.get("hatirla") and not hatirlandi:
+        if kod_aranir(user) and form.get("hatirla") and not hatirlandi:
             r.set_cookie(CIHAZ_CEREZI, _cihaz_imzaci().dumps({"u": user.id, "k": _anahtar_izi(user)}),
                          max_age=CIHAZ_GUN * 86400, httponly=True, secure=sunucu(), samesite="strict")
         return r
@@ -707,7 +714,7 @@ def create_app() -> FastAPI:
     async def kullanici_telefon(uid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
         await form_checked(request)
         hedef = s.get(User, uid)
-        if not _yonetebilir(user, hedef) or hedef.misafir:
+        if not _yonetebilir(user, hedef) or not kod_aranir(hedef):
             raise HTTPException(403, "Yapılamaz")
         from ..auth import new_totp_secret, otpauth_uri
         hedef.totp_secret = new_totp_secret()
@@ -739,7 +746,7 @@ def create_app() -> FastAPI:
 
     def _anahtar_goster(request, u):
         from ..auth import otpauth_uri
-        if telefon_kodu() and not u.misafir:
+        if kod_aranir(u):
             request.session["k_anahtar"] = {"uid": u.id, "kullanici": u.username, "anahtar": u.totp_secret,
                                             "uri": otpauth_uri(u.totp_secret, u.username)}
 

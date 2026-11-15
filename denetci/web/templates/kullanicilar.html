@@ -50,7 +50,7 @@
       <button class="btn primary" type="submit">Parolayı değiştir</button>
     </form>
   </details>
-  {% if telefon_kodu and not k.misafir and (yonetici or k.id == ben.id) %}
+  {% if kod_aranir(k) and (yonetici or k.id == ben.id) %}
   <form method="post" action="/kullanicilar/{{ k.id }}/telefon-anahtari" class="k-satir" onsubmit="return confirm('Yeni telefon kodu anahtarı üretilsin mi? Eski telefondaki kod çalışmaz olur.')">
     <input type="hidden" name="csrf" value="{{ csrf }}"><button class="btn secondary sm" type="submit">Telefon kodu anahtarını yenile</button>
   </form>

@@ -281,3 +281,20 @@ def test_eski_veri_buro_1e_gecer(data_root):
         u = s.query(User).filter_by(username="eski").one()
         assert u.buro_id == 1 and u.yonetici and u.sistem
         assert s.query(Client).filter_by(unvan="ESKI MUKELLEF").one().buro_id == 1
+
+
+def test_baska_buro_telefon_kodu_istemez(app_client, monkeypatch):
+    from denetci.models import Buro
+    monkeypatch.setenv("DENETCI_TELEFON_KODU", "1")
+    with db.SessionLocal() as s:
+        s.add(Buro(id=2, ad="Diğer Büro"))
+        s.add(User(username="diger", password_hash=hash_password("diger-parola-12345"), totp_secret=new_totp_secret(), buro_id=2))
+        s.commit()
+    # Ana büro kullanıcısı kodsuz giremez
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "cok-gizli-parola-123"}, follow_redirects=False)
+    assert r.status_code == 200 and "hatalı" in r.text
+    # Başka bürodaki kullanıcı yalnızca parolayla girer
+    tok = csrf(app_client, "/giris")
+    r = app_client.post("/giris", data={"csrf": tok, "kullanici": "diger", "parola": "diger-parola-12345"}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/takip"
