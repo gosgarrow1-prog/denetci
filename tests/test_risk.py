@@ -221,3 +221,16 @@ def test_stopaj_kira_ve_odeme():
                    _adli(J(agu, "360.01", alacak=1_000_00), "Kira Stopajı")]   # Ağustos tahakkuku Eylül'de ödenmemiş
     r = k35(ctx)
     assert r.status == "bulgu" and r.drafts[0].amount == 1_000_00
+
+
+def test_kdv_tevkifati_odeme():
+    from denetci.checks.stopaj import k37
+    ctx = Context("THP_VUK", date(2026, 7, 1), date(2026, 9, 30), None, None)
+    tem, agu = date(2026, 7, 20), date(2026, 8, 21)
+    ctx.yevmiye = [_adli(J(tem, "360.02", alacak=1_800_00), "KDV Tevkifatı (Sorumlu Sıfatıyla)"),
+                   _adli(J(agu, "360.02", borc=1_800_00), "KDV Tevkifatı (Sorumlu Sıfatıyla)"),
+                   _adli(J(agu, "360.02", alacak=900_00), "KDV Tevkifatı (Sorumlu Sıfatıyla)")]  # Ağustos Eylül'de ödenmemiş
+    r = k37(ctx)
+    assert r.status == "bulgu" and r.drafts[0].amount == 900_00
+    ctx.yevmiye = [_adli(J(tem, "360.01", alacak=2_000_00), "Kira Stopajı")]  # stopaj hesabı KDV 2 sayılmaz
+    assert k37(ctx).status == "gecti"

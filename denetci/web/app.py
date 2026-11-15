@@ -23,7 +23,7 @@ from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, 
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..yz import maliyet as yz_maliyet
-from .. import takip
+from .. import takip, yil_sonu
 from ..models import (Buro, IsDurumu, YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
@@ -1336,6 +1336,72 @@ def create_app() -> FastAPI:
         v["k30"] = next((r for r in v["results"] if r["id"] == "K-30"), None)
         v["k30_findings"] = [f for f in v["findings"] if f.rule_id == "K-30"]
         return render(request, "fatura.html", active="fatura", analysis=a, **v)
+
+
+    # ---- Yıl sonu kontrol listesi -----------------------------------------------
+
+    def _ys_durumlar(s, cid, yil):
+        return {d.is_turu: d for d in s.scalars(select(IsDurumu).where(IsDurumu.client_id == cid, IsDurumu.yil == yil,
+                                                                       IsDurumu.ay == 12,
+                                                                       IsDurumu.is_turu.like("ys-%")))}
+
+    @app.get("/mukellef/{cid}/yil-sonu", response_class=HTMLResponse)
+    def yil_sonu_page(cid: int, request: Request, yil: int | None = None, user=Depends(current_user), s=Depends(get_session)):
+        c = s.get(Client, cid) or _404()
+        periods = list(s.scalars(select(Period).where(Period.client_id == cid).order_by(Period.bitis.desc())))
+        yillar = sorted({p.bitis.year for p in periods}, reverse=True) or [_today().year]
+        yil = yil if yil in yillar else yillar[0]
+        run = None
+        for p in [p for p in periods if p.bitis.year == yil]:  # yılın en son dönemi, analizi olan
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.period_id == p.id).order_by(AnalysisRun.id.desc()))
+            if run:
+                kaynak = p
+                break
+        sonuc = {r["id"]: r for r in (run.rule_results if run else [])}
+        marks = _ys_durumlar(s, cid, yil)
+        satirlar = []
+        for i in yil_sonu.ISLER:
+            elle = marks.get(yil_sonu.sakla_kodu(i.key))
+            if i.kurallar:
+                rs = [sonuc[k] for k in i.kurallar if k in sonuc]
+                if any(r["status"] == "bulgu" for r in rs):
+                    otomatik = "bulgu"
+                elif rs and all(r["status"] == "gecti" for r in rs):
+                    otomatik = "gecti"
+                else:
+                    otomatik = "yok"
+                mesaj = " ".join(r["message"] for r in rs if r["status"] == "bulgu")
+            else:
+                otomatik, mesaj = None, ""
+            durum = "yapildi" if elle else (otomatik or "bekliyor")
+            satirlar.append({"i": i, "durum": durum, "otomatik": otomatik, "mesaj": mesaj, "elle": bool(elle)})
+        yapilan = sum(1 for x in satirlar if x["durum"] in ("yapildi", "gecti"))
+        return render(request, "yil_sonu.html", active="yilsonu", c=c, p=kaynak if run else None, yil=yil, yillar=yillar,
+                      satirlar=satirlar, yapilan=yapilan, analiz_var=bool(run))
+
+    @app.post("/mukellef/{cid}/yil-sonu/isaretle")
+    async def yil_sonu_isaretle(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabı işaretleme yapamaz.")
+        s.get(Client, cid) or _404()
+        try:
+            yil = int(form["yil"])
+        except (KeyError, ValueError):
+            raise HTTPException(400, "Geçersiz istek.")
+        key = str(form.get("is", ""))
+        if key not in yil_sonu.ISIM:
+            raise HTTPException(404, "Bulunamadı.")
+        kod = yil_sonu.sakla_kodu(key)
+        mevcut = s.scalar(select(IsDurumu).where(IsDurumu.client_id == cid, IsDurumu.yil == yil, IsDurumu.ay == 12,
+                                                 IsDurumu.is_turu == kod))
+        if form.get("islem") == "geri":
+            if mevcut:
+                s.delete(mevcut)
+        elif not mevcut:
+            s.add(IsDurumu(client_id=cid, yil=yil, ay=12, is_turu=kod, kullanici=user.username))
+        audit(s, user, "yil_sonu_isaretle", cid, f"{key} {yil} {form.get('islem', 'yapildi')}")
+        return _redirect(s, f"/mukellef/{cid}/yil-sonu?yil={yil}")
 
     @app.get("/mukellef/{cid}/kredibilite")
     def kredibilite_page(cid: int, user=Depends(current_user), s=Depends(get_session), donem: int | None = None):

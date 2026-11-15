@@ -48,6 +48,7 @@
   <a class="nav {{ 'on' if active == 'stopaj' }}" href="/mukellef/{{ sc.id }}/stopaj{{ q }}">{{ icon('checks') }}Stopaj ve Muhtasar</a>
   <a class="nav {{ 'on' if active in ('finansal', 'ceyrek') }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
   <a class="nav {{ 'on' if active == 'gecici' }}" href="/mukellef/{{ sc.id }}/gecici-vergi{{ q }}">{{ icon('calendar') }}Geçici Vergi</a>
+  <a class="nav {{ 'on' if active == 'yilsonu' }}" href="/mukellef/{{ sc.id }}/yil-sonu{{ q }}">{{ icon('checks') }}Yıl Sonu Kontrol</a>
   <a class="nav {{ 'on' if active == 'fatura' }}" href="/mukellef/{{ sc.id }}/fatura-mutabakati{{ q }}">{{ icon('receipt') }}Fatura Mutabakatı</a>
   <a class="nav {{ 'on' if active == 'rapor' }}" href="/mukellef/{{ sc.id }}/rapor{{ q }}">{{ icon('bars') }}Dönem Raporu</a>
   {% endif %}

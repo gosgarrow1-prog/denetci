@@ -143,14 +143,15 @@ def k34(ctx: Context) -> Result:
     return Result(K34, "gecti", f"{bakilan} kira/serbest meslek maddesinde stopaj kaydı tutarlı ya da fatura (KDV) ile.")
 
 
-def k35(ctx: Context) -> Result:
+def _izleyen_ay_odeme(ctx: Context, K, secici, yok: str, baslik: str, ad_kisa: str, fp: str, sonra: str) -> Result:
+    """360'ın seçilen alt hesaplarında tahakkuk eden tutarın izleyen ay içinde ödenip ödenmediği."""
     if not ctx.yevmiye:
-        return Result(K35, "calistirilamadi", "Çalıştırılamadı: yevmiye yüklenmemiş.")
+        return Result(K, "calistirilamadi", "Çalıştırılamadı: yevmiye yüklenmemiş.")
     ad = _adlar(ctx)
     kaynak = ctx.ytd or ctx.yevmiye
     tah, ode, rows = defaultdict(int), defaultdict(int), defaultdict(list)
     for j in kaynak:
-        if not _stopaj_hesabi(ad, j.hesap_kodu):
+        if not secici(ad, j.hesap_kodu):
             continue
         ay = (j.tarih.year, j.tarih.month)
         tah[ay] += j.alacak
@@ -159,25 +160,54 @@ def k35(ctx: Context) -> Result:
     aylar = sorted(a for a in tah if tah[a] and (ctx.period_start.year, ctx.period_start.month) <= a
                    < (ctx.period_end.year, ctx.period_end.month))
     if not tah:
-        return Result(K35, "gecti", "360 hesabında adında stopaj/gelir vergisi geçen alt hesap hareketi yok.")
+        return Result(K, "gecti", yok)
     if not aylar:
-        return Result(K35, "bilgi", "Stopaj tahakkuku yalnızca dönemin son ayında; ödemesi izleyen ayda görüleceği için değerlendirilmedi.")
+        return Result(K, "bilgi", f"{ad_kisa} tahakkuku yalnızca dönemin son ayında; ödemesi izleyen ayda görüleceği için değerlendirilmedi.")
     eksik = []
     for y, m in aylar:
         sonraki = (y + (m == 12), 1 if m == 12 else m + 1)
         if ode[sonraki] + ctx.tolerance < tah[(y, m)]:
             eksik.append(((y, m), tah[(y, m)], ode[sonraki]))
     if not eksik:
-        return Result(K35, "gecti", f"{len(aylar)} ayın stopaj tahakkuku izleyen ayda 360 hesabından ödenmiş görünüyor.")
+        return Result(K, "gecti", f"{len(aylar)} ayın {ad_kisa} tahakkuku izleyen ayda 360 hesabından ödenmiş görünüyor.")
     fark = sum(t - o for _, t, o in eksik)
     ornek = "; ".join(f"{m:02d}/{y}: tahakkuk {kurus_str(t)} TL, izleyen ay ödeme {kurus_str(o)} TL" for (y, m), t, o in eksik)
     ev = [Evidence(j.raw_row_id, f"{j.tarih:%d.%m.%Y} {j.hesap_kodu} {kurus_str(j.alacak)} TL")
           for a, _, _ in eksik for j in rows[a] if j.alacak][:10]
-    d = Draft("Stopajlar izleyen ayda ödenmemiş görünüyor", "Orta", "360", fark, "stopaj-odeme",
-              f"360 stopaj alt hesaplarında: {ornek}.", "Tutarlar kesin. " + K35.exceptions,
-              "Muhtasar beyannamesinin verilip tahakkukun ödendiğini kontrol edin; ödendiyse ödeme kaydını 360'a yapın, "
-              "ödenmediyse gecikme zammı doğar.", ev)
-    return Result(K35, "bulgu", f"{len(eksik)} ayın stopajı izleyen ayda tam ödenmemiş görünüyor.", [d])
+    d = Draft(baslik, "Orta", "360", fark, fp, f"360 {ad_kisa} alt hesaplarında: {ornek}.", "Tutarlar kesin. " + K.exceptions, sonra, ev)
+    return Result(K, "bulgu", f"{len(eksik)} ayın {ad_kisa} izleyen ayda tam ödenmemiş görünüyor.", [d])
+
+
+def k35(ctx: Context) -> Result:
+    return _izleyen_ay_odeme(
+        ctx, K35, _stopaj_hesabi, "360 hesabında adında stopaj/gelir vergisi geçen alt hesap hareketi yok.",
+        "Stopajlar izleyen ayda ödenmemiş görünüyor", "stopaj", "stopaj-odeme",
+        "Muhtasar beyannamesinin verilip tahakkukun ödendiğini kontrol edin; ödendiyse ödeme kaydını 360'a yapın, "
+        "ödenmediyse gecikme zammı doğar.")
+
+
+K37 = Rule("K-37", "1.0", "KDV tevkifatının (KDV 2) izleyen ayda ödenmesi",
+           "Tevkifatlı fatura alan mükellef KDV'nin bir kısmını sorumlu sıfatıyla beyan edip öder. 360 hesabının adında "
+           "'KDV' ve 'tevkifat' ya da 'sorumlu' geçen alt hesaplarında bir ay içinde tahakkuk eden tutarın izleyen ayda "
+           "ödenip (360 borç) ödenmediğine bakılır. Dönemin son ayı değerlendirilmez.",
+           "D", ("THP_VUK",), ("yevmiye",), "KDVK 9 ve KDV Genel Uygulama Tebliği (kısmi tevkifat): sorumlu sıfatıyla KDV 2 numaralı "
+           "KDV beyannamesiyle izleyen ayın 23'ünde (son gün) beyan edilip ödenir. Süreler doğrulanmalı.", False,
+           "KDV 2 ödemesi 360 dışındaki bir hesaptan yapılmışsa ya da alt hesap adı tevkifat/sorumlu içermiyorsa kayıt görünmeyebilir.",
+           D0, "Orta")
+
+
+def _kdv_tevkifat_hesabi(ad: dict, kod: str) -> bool:
+    if not kod.startswith("360"):
+        return False
+    isim = _tam_ad(ad, kod)
+    return "kdv" in isim.split() and any(w in isim for w in ("tevkifat", "sorumlu", "kdv 2"))
+
+
+def k37(ctx: Context) -> Result:
+    return _izleyen_ay_odeme(
+        ctx, K37, _kdv_tevkifat_hesabi, "360 hesabında KDV tevkifatı (sorumlu sıfatıyla) alt hesap hareketi yok.",
+        "KDV tevkifatı izleyen ayda ödenmemiş görünüyor", "KDV tevkifatı", "kdv2-odeme",
+        "KDV 2 beyannamesinin verilip tahakkukun ödendiğini kontrol edin; ödendiyse ödeme kaydını 360'a yapın, ödenmediyse gecikme zammı doğar.")
 
 
 K36 = Rule("K-36", "1.0", "Muhtasar beyannamesi ile defterdeki stopaj tahakkuku",
@@ -243,4 +273,4 @@ def k36(ctx: Context) -> Result:
     return Result(K36, "bulgu", f"Muhtasar beyannamesi ile defter arasında {len(farklar)} fark var.", [dr])
 
 
-STOPAJ_RULES = [(K34, k34), (K35, k35), (K36, k36)]
+STOPAJ_RULES = [(K34, k34), (K35, k35), (K36, k36), (K37, k37)]

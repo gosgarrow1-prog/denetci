@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+{% set q = ('?donem=' ~ p.id) if p else '' %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('checks', 24) }}</span>
+  <div class="ph-text"><h1>Yıl Sonu Kontrol Listesi</h1>
+    <p>{{ c.unvan }} · {{ yil }} hesap dönemi. Defterden anlaşılabilen işlemler kendiliğinden işaretlenir; diğerlerini yaptıkça siz "yapıldı" diye işaretlersiniz. Kapanıştan önce eksik kalan iş olmasın diye düşünülmüş bir hatırlatma listesidir; vergi görüşü yerine geçmez.</p></div>
+  <div class="ph-actions"><span class="st-pill {{ 'green' if yapilan == satirlar|length else 'blue' }}">{{ yapilan }} / {{ satirlar|length }} tamam</span></div>
+</div>
+{% if yillar|length > 1 %}<div class="seg">{% for y in yillar %}<a class="seg-i {{ 'on' if y == yil }}" href="/mukellef/{{ c.id }}/yil-sonu?yil={{ y }}">{{ y }}</a>{% endfor %}</div>{% endif %}
+{% if not analiz_var %}<section class="card"><p>Bu yıl için yüklenmiş ve analiz edilmiş dönem yok; defterden anlaşılabilen işlemler "kontrol edilemedi" görünür. Aralık ayı ya da yıl sonu yevmiye ve mizanını yüklerseniz bunlar otomatik dolar.</p>
+  <a class="btn sm" href="/mukellef/{{ c.id }}/belgeler">{{ icon('upload', 16) }}Dosya yükle</a></section>{% endif %}
+<section class="block">
+  <div class="alerts">
+  {% for x in satirlar %}
+    <div class="alert-row lv-{{ {'yapildi': 'bilgi', 'gecti': 'bilgi', 'bulgu': 'onemli'}.get(x.durum, 'dikkat') }}">
+      <span class="al-ic">{{ icon('info' if x.durum in ('yapildi', 'gecti') else ('alert' if x.durum == 'bulgu' else 'warn'), 22) }}</span>
+      <span class="lv-pill">{{ {'yapildi': 'YAPILDI', 'gecti': 'TAMAM', 'bulgu': 'BULGU VAR', 'yok': 'KONTROL EDİLEMEDİ', 'bekliyor': 'BEKLİYOR'}[x.durum] }}</span>
+      <span class="al-text">{{ x.i.baslik }}<span class="al-detail">{{ x.i.aciklama }}{% if x.mesaj %} <strong>{{ x.mesaj }}</strong>{% endif %}</span></span>
+      {% if not sh.misafir %}<form method="post" action="/mukellef/{{ c.id }}/yil-sonu/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="yil" value="{{ yil }}"><input type="hidden" name="is" value="{{ x.i.key }}">
+        {% if x.elle %}<button class="tk-b" name="islem" value="geri">geri al</button>{% elif x.durum != 'gecti' %}<button class="tk-b" name="islem" value="yapildi">yapıldı işaretle</button>{% endif %}</form>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}
