@@ -1023,6 +1023,8 @@ def create_app() -> FastAPI:
                         analyses = _view(s, c, src, request)["analyses"]
                 av["analizler"] = [a for a in analyses if a.key in g.analizler]
                 av["nasil"] = asistan_nasil(g, p)
+                if not any(a.missing for a in av["analizler"]):  # belgeler tamam: doğrudan seçilen analiz açılır
+                    return _redirect(s, f"/mukellef/{cid}/{g.link}?donem={p.id}")
             else:
                 av["secenekler"] = asistan_secenekler(g, _today())
         v["asistan"] = av

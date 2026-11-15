@@ -322,8 +322,18 @@ def test_assistant_guides_to_documents(app_client):
     assert "Hangi geçici vergi dönemi?" in page and "2026 / 3. dönem (Ocak–Eylül)" in page
     r = tc.get(f"/mukellef/{cid}/asistan?gorev=gecici&bas=2026-01-01&bit=2026-09-30", follow_redirects=False)
     assert "asistan=gecici" in r.headers["location"]
+    # Belgeler tamamsa asistan doğrudan geçici vergi sayfasını açar (gösterge paneli değil).
+    r2 = tc.get(r.headers["location"], follow_redirects=False)
+    assert r2.status_code == 303 and "/gecici-vergi?donem=" in r2.headers["location"]
+    assert "Tahmini geçici vergi matrahı" in tc.get(r2.headers["location"], follow_redirects=True).text
+    # Belge eksikse asistan neyin gerektiğini ve nasıl alınacağını gösterir (KDV ve finansal özet olmadan).
+    with db.SessionLocal() as s:
+        from denetci.models import ImportBatch as _IB
+        for b in s.query(_IB).filter(_IB.client_id == cid):
+            b.status = "iptal"
+        s.commit()
     page = tc.get(r.headers["location"]).text
-    assert "Nasıl alınır?" in page and "01.01.2026 – 30.09.2026" in page and "Analizi aç" in page
+    assert "Nasıl alınır?" in page and "belge eksik" in page and "Dönemin Finansal Özeti" not in page and "KDV hesap özeti" not in page
     # Aylık KDV: Eylül, çeyrek yevmiyesinden ayrılır ve analiz edilir.
     r = tc.get(f"/mukellef/{cid}/asistan?gorev=kdv&bas=2026-09-01&bit=2026-09-30", follow_redirects=False)
     page = tc.get(r.headers["location"]).text
