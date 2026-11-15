@@ -326,6 +326,11 @@ def test_assistant_guides_to_documents(app_client):
     r2 = tc.get(r.headers["location"], follow_redirects=False)
     assert r2.status_code == 303 and "/gecici-vergi?donem=" in r2.headers["location"]
     assert "Tahmini geçici vergi matrahı" in tc.get(r2.headers["location"], follow_redirects=True).text
+    # Aylık KDV: Eylül, çeyrek yevmiyesinden ayrılır ve analiz edilir.
+    r = tc.get(f"/mukellef/{cid}/asistan?gorev=kdv&bas=2026-09-01&bit=2026-09-30", follow_redirects=False)
+    assert "yevmiyesinden" in tc.get(r.headers["location"].replace("&asistan=kdv#asistan", "")).text  # panelde bilgi notu
+    page = tc.get(r.headers["location"], follow_redirects=True).text  # belgeler tamam: doğrudan KDV sayfası
+    assert "KDV Ön Kontrol" in page and "kontrol edildi" in page
     # Belge eksikse asistan neyin gerektiğini ve nasıl alınacağını gösterir (KDV ve finansal özet olmadan).
     with db.SessionLocal() as s:
         from denetci.models import ImportBatch as _IB
@@ -334,11 +339,6 @@ def test_assistant_guides_to_documents(app_client):
         s.commit()
     page = tc.get(r.headers["location"]).text
     assert "Nasıl alınır?" in page and "belge eksik" in page and "Dönemin Finansal Özeti" not in page and "KDV hesap özeti" not in page
-    # Aylık KDV: Eylül, çeyrek yevmiyesinden ayrılır ve analiz edilir.
-    r = tc.get(f"/mukellef/{cid}/asistan?gorev=kdv&bas=2026-09-01&bit=2026-09-30", follow_redirects=False)
-    page = tc.get(r.headers["location"]).text
-    assert "yevmiyesinden" in page and "KDV Ön Kontrol" in page and "kontrol edildi" in page
-
 
 def test_back_button(app_client):
     tc = app_client
