@@ -29,7 +29,7 @@
     <div class="r-oran-ust">
       <span class="r-oran-ad">{{ g.ad }}</span>
       <span class="r-oran-v">{{ g.metin }}</span>
-      <span class="r-durum r-d-{{ g.durum }}">{{ g.puan }} puan</span>
+      <span class="r-durum r-d-{{ g.durum }}">{% if g.puanli %}{{ g.puan }} puan{% else %}bilgi{% endif %}</span>
     </div>
     {% if g.aralik and g.deger is not none %}<div class="r-oran-g">{{ gosterge(g.deger, g.aralik, g.olcek) }}</div>{% endif %}
     <p>{{ g.yorum }}</p>
@@ -53,7 +53,7 @@
 
 <h2>Notu iyileştirmek için</h2>
 <ul class="r-yorum">
-{% for g in kr.gostergeler if g.puan < 2 %}
+{% for g in kr.gostergeler if g.puanli and g.puan < 2 %}
   {% if g.ad.startswith('Cari') %}<li>Kısa vadeli banka kredilerinin uzun vadeye çevrilmesi ve alacak tahsilatının hızlandırılması cari oranı yükseltir.</li>
   {% elif g.ad.startswith('Özkaynak') %}<li>Sermaye artırımı, ortaklara olan borcun (331) sermayeye eklenmesi veya kârın dağıtılmadan şirkette bırakılması özkaynağı güçlendirir.</li>
   {% elif g.ad.startswith('Faiz') %}<li>Yüksek faizli borçların yapılandırılması ve faaliyet giderlerinin azaltılması faiz karşılama oranını artırır.</li>

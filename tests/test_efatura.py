@@ -60,7 +60,7 @@ def test_invoice_list_matching(app_client, tmp_path):
         assert lst.yon == "giden" and lst.yon_kaynak == "defter"
     pid = re.search(r"donem=(\d+)", r.url.query.decode() if isinstance(r.url.query, bytes) else str(r.url)).group(1)
     page = tc.get(f"/mukellef/{cid}/kdv?donem={pid}").text
-    for text in ("Fatura mutabakatı · Giden (satış)", "Eşleşti", "Tutar farklı", "Defterde yok", "K-30",
+    for text in ("Fatura mutabakatı · Giden (satış)", "Eşleşti", "Tutar farklı", "Defterde yok", "Fatura listesi ile defter",
                  "Defterde olup listede olmayan KDV'li fişler", "PERAKENDE SATIŞ"):
         assert text in page, text
     assert "Giden (satış): 3 faturadan 1 eşleşti" in page

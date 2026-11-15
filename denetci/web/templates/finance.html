@@ -12,6 +12,7 @@
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Gelir tablosu, bilanço ve temel oranlar. Bilgi amaçlıdır; kapanış kayıtları yapılmamışsa dönem sonucu hesaplanarak gösterilir.</p></div>
   <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=finansal">{{ icon('file', 16) }}Raporu al</a>{% endif %}{{ status_pill(analysis) }}</div>
 </div>
+{% include "_sekme_finans.html" %}
 {{ flash_list(flash) }}
 
 {% if analysis.missing or not fin %}

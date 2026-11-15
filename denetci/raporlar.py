@@ -329,6 +329,7 @@ class KrediGosterge:
     yorum: str
     aralik: tuple | None = None
     olcek: float | None = None
+    puanli: bool = True  # False: yalnızca bilgi; nota ve güçlü/zayıf listesine girmez
 
     @property
     def metin(self):
@@ -406,7 +407,7 @@ def kredibilite(fin, nakit=None) -> Kredibilite:
         p = 2 if z > 2.6 else (1 if z >= 1.1 else 0)
         G.append(KrediGosterge("Altman Z puanı", z, "x", p, "> 2,6 güvenli · 1,1–2,6 gri bölge · < 1,1 riskli",
                                {2: "Mali sıkıntı riski düşük bölgede.", 1: "Gri bölgede: yakından izlenmeli.",
-                                0: "Mali sıkıntı riski yüksek bölgede."}[p], (2.6, 8), 8))
+                                0: "Mali sıkıntı riski yüksek bölgede."}[p], (2.6, 8), 8, puanli=False))
     cari = _div(k.get("donen", 0), k.get("kvyk", 0))
     if cari is not None:
         p = 2 if cari >= 1.5 else (1 if cari >= 1 else 0)
@@ -459,9 +460,10 @@ def kredibilite(fin, nakit=None) -> Kredibilite:
         G.append(KrediGosterge("Faaliyetlerden sağlanan nakit", fn, "tl", p, "artı ve kârın yarısından fazla iyi · artı orta · eksi zayıf",
                                f"Dönemde faaliyetler {kurus_str(fn)} TL nakit {'sağladı' if fn >= 0 else 'tüketti'}; kâr "
                                f"{kurus_str(k.get('donem_kari', 0))} TL. Bankalar kârın nakde dönüşüp dönüşmediğine bakar.", None, None))
-    kr.puan = sum(g.puan for g in G)
-    kr.en_fazla = 2 * len(G)
+    P = [g for g in G if g.puanli]  # Altman Z küçük işletmelerde güvenilir değil: gösterilir ama not belirlemez
+    kr.puan = sum(g.puan for g in P)
+    kr.en_fazla = 2 * len(P)
     kr.harf = _harf(kr.yuzde) if kr.en_fazla else None
-    kr.guclu = [g for g in G if g.puan == 2]
-    kr.zayif = [g for g in G if g.puan == 0]
+    kr.guclu = [g for g in P if g.puan == 2]
+    kr.zayif = [g for g in P if g.puan == 0]
     return kr

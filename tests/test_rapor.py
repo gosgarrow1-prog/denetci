@@ -67,7 +67,7 @@ def test_kredibilite_notu():
                          "finansman_gideri": 20_000_00})
     fin.donem_sonucu_kapanmamis = 100_000_00
     kr = raporlar.kredibilite(fin)
-    assert kr.harf in "ABCDE" and kr.en_fazla == 2 * len(kr.gostergeler)
+    assert kr.harf in "ABCDE" and kr.en_fazla == 2 * len([g for g in kr.gostergeler if g.puanli])
     g = {x.ad: x for x in kr.gostergeler}
     assert g["Cari oran"].puan == 2 and g["Özkaynak / aktif"].puan == 2  # 2,0 ve %40
     z = kr.altman

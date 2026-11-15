@@ -334,3 +334,19 @@ class InvoiceRow(Base):
     @property
     def matrah_toplam(self) -> int:
         return sum((self.matrah or {}).values()) + (self.ozel_matrah or 0)
+
+
+class IsDurumu(Base):
+    """Büro iş takibinde elle işaretlenen durum (ör. beyanname verildi). Beyanname PDF'i yüklenmişse
+    ayrıca işaret gerekmez. is_turu: kdv, muhtasar, gecici."""
+
+    __tablename__ = "is_durumlari"
+    __table_args__ = (UniqueConstraint("client_id", "yil", "ay", "is_turu"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    yil: Mapped[int] = mapped_column(Integer)
+    ay: Mapped[int] = mapped_column(Integer)
+    is_turu: Mapped[str] = mapped_column(String(16))
+    durum: Mapped[str] = mapped_column(String(16), default="verildi")
+    kullanici: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

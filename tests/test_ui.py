@@ -220,7 +220,7 @@ def test_gecici_vergi_page_and_inputs(app_client):
     loc = r.headers["location"]
     page = tc.get(loc + "/gecici-vergi").text
     assert "3. dönem (Ocak–Eylül)" in page and "17.11.2026" in page and "Tahmini geçici vergi matrahı" in page
-    assert "K-27" in page
+    assert "Geçici vergi dönem sonu hazırlığı" in page
     with db.SessionLocal() as s:
         p = s.scalars(select(Period)).first()
         cid = p.client_id
@@ -303,7 +303,7 @@ def test_gecici_vergi_uses_cumulative_period(app_client):
         g = s.get(Period, gid)
         assert (g.baslangic.isoformat(), g.bitis.isoformat()) == ("2026-01-01", "2026-09-30")
     page = tc.get(r.headers["location"]).text
-    assert "Temmuz–Eylül 2026 dosyalarından" in page and "Tahmini geçici vergi matrahı" in page and "K-27" in page
+    assert "Temmuz–Eylül 2026 dosyalarından" in page and "Tahmini geçici vergi matrahı" in page and "Geçici vergi dönem sonu hazırlığı" in page
     tc.post(f"/mukellef/{cid}/donem/{gid}/gecici-vergi",
             data={"csrf": tok, "kkeg": "1.234,00", "istisna": "", "gecmis_zarar": "", "indirim": "", "onceki_odenen": "",
                   "tur": "kurum", "oran": "", "maliyet": "yok"})
@@ -488,8 +488,9 @@ def test_misafir_yalnizca_demo_gorur(app_client, monkeypatch):
         gid = gercek.id
     r = tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "misafir", "parola": "misafir-parola-123"},
                 follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/takip"
     assert "GERÇEK MÜKELLEF" not in tc.get("/").text
+    assert "GERÇEK MÜKELLEF" not in tc.get("/takip").text
     assert tc.get(f"/mukellef/{gid}").status_code == 404
     assert tc.post("/mukellef/yeni", data={"csrf": _csrf(tc, "/"), "unvan": "X"}).status_code == 403
     loc = tc.post("/demo", data={"csrf": _csrf(tc, "/")}, follow_redirects=False).headers["location"]

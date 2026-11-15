@@ -33,6 +33,7 @@
     <span>Menü</span></button>
   </div>
   <div class="side-links">
+  <a class="nav {{ 'on' if active == 'takip' }}" href="/takip">{{ icon('calendar') }}Büro Takip</a>
   {% if sc %}
   <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
   <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>
@@ -43,12 +44,9 @@
   {% endif %}
   <div class="sect">Vergi ve analiz</div>
   <a class="nav {{ 'on' if active == 'kdv' }}" href="/mukellef/{{ sc.id }}/kdv{{ q }}">{{ icon('percent') }}KDV Ön Kontrol</a>
-  <a class="nav {{ 'on' if active == 'mutabakat' }}" href="/mukellef/{{ sc.id }}/mutabakat{{ q }}">{{ icon('book') }}Defter Mutabakatı</a>
-  <a class="nav {{ 'on' if active == 'risk' }}" href="/mukellef/{{ sc.id }}/risk{{ q }}">{{ icon('shield') }}Hata ve Risk Taraması</a>
+  <a class="nav {{ 'on' if active in ('risk', 'mutabakat') }}" href="/mukellef/{{ sc.id }}/risk{{ q }}">{{ icon('shield') }}Hata ve Risk Taraması</a>
   <a class="nav {{ 'on' if active == 'stopaj' }}" href="/mukellef/{{ sc.id }}/stopaj{{ q }}">{{ icon('checks') }}Stopaj ve Muhtasar</a>
-  <a class="nav {{ 'on' if active == 'finansal' }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
-  <a class="nav {{ 'on' if active == 'kredibilite' }}" href="/mukellef/{{ sc.id }}/kredibilite{{ q }}">{{ icon('building') }}Kredibilite (Banka)</a>
-  <a class="nav {{ 'on' if active == 'ceyrek' }}" href="/mukellef/{{ sc.id }}/ceyrek{{ q }}">{{ icon('panel') }}Çeyrek Analizi</a>
+  <a class="nav {{ 'on' if active in ('finansal', 'ceyrek') }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
   <a class="nav {{ 'on' if active == 'gecici' }}" href="/mukellef/{{ sc.id }}/gecici-vergi{{ q }}">{{ icon('calendar') }}Geçici Vergi</a>
   <a class="nav {{ 'on' if active == 'fatura' }}" href="/mukellef/{{ sc.id }}/fatura-mutabakati{{ q }}">{{ icon('receipt') }}Fatura Mutabakatı</a>
   <a class="nav {{ 'on' if active == 'rapor' }}" href="/mukellef/{{ sc.id }}/rapor{{ q }}">{{ icon('bars') }}Dönem Raporu</a>

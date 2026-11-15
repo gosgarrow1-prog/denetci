@@ -7,7 +7,7 @@
 {% if results %}
 <div class="r-scroll"><table class="grid small"><thead><tr><th>Kontrol</th><th>Sonuç</th><th>Açıklama</th></tr></thead><tbody>
 {% for r in results %}
-  <tr><td><strong>{{ r.id }}</strong> {{ r.title }}</td>
+  <tr><td>{{ r.title }}</td>
     <td><span class="r-sonuc r-{{ r.status }}">{{ sonuc_adi(r.status) }}</span></td><td>{{ r.message }}</td></tr>
 {% endfor %}
 </tbody></table></div>
@@ -16,12 +16,12 @@
 
 {% macro bulgu_tablo(findings, cases) -%}
 {% if findings %}
-<div class="r-scroll"><table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
+<div class="r-scroll"><table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
 {% for f in findings %}
   {% set cs = cases.get(f.fingerprint) %}
   <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
     <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
-    <td>{{ f.rule_id }}</td><td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
+    <td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
     <td>{{ STATUS_LABELS[cs.status] if cs else 'Yeni' }}</td></tr>
 {% endfor %}
 </tbody></table></div>

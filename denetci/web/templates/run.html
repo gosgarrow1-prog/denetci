@@ -25,7 +25,7 @@
   {% for f in findings %}
     {% set st = STATUS_LABELS[cases[f.fingerprint].status] if f.fingerprint in cases else 'Yeni' %}
     {{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title,
-       'detail': f.rule_id ~ ' · ' ~ KIND_LABELS[f.kind] ~ ' · ' ~ f.severity ~ ' önem · takip: ' ~ st, 'amount': f.amount,
+       'detail': KIND_LABELS[f.kind] ~ ' · ' ~ f.severity ~ ' önem · takip: ' ~ st, 'amount': f.amount,
        'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}
   {% endfor %}
   </div>
@@ -43,7 +43,7 @@
 {% if gone %}
 <section class="card">
   <div class="block-head"><h2>Önceki analizde olup bu analizde görülmeyenler</h2></div>
-  <ul class="notes">{% for f in gone %}<li>{{ f.rule_id }} · {{ f.title }}</li>{% endfor %}</ul>
+  <ul class="notes">{% for f in gone %}<li>{{ f.title }}</li>{% endfor %}</ul>
 </section>
 {% endif %}
 {% endblock %}

@@ -17,13 +17,14 @@ from .. import db
 from ..auth import LoginThrottle, hash_password, parola_en_az, verify_password, verify_totp
 from ..checks.engine import RELIABILITY_LABELS, NoData, run_analysis
 from ..config import RULESET_VERSION
-from ..checks.registry import ALL_RULES
+from ..checks.registry import ALL_RULES, ARKA_PLAN
 from ..config import MAX_YUKLEME_BAYT, data_dir, sunucu, telefon_kodu
 from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, preview
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..yz import maliyet as yz_maliyet
-from ..models import (Buro, YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
+from .. import takip
+from ..models import (Buro, IsDurumu, YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
 from ..finance import SINIFLAR, summarize
@@ -269,7 +270,7 @@ def _shell(uid: int, c, p) -> dict:
                     FindingCase.client_id == c.id, FindingCase.status == "aciklandi"))}
                 sh["run"] = run
                 sh["badge"] = sum(1 for f in s.scalars(select(Finding).where(Finding.run_id == run.id))
-                                  if f.fingerprint not in closed)
+                                  if f.fingerprint not in closed and f.rule_id not in ARKA_PLAN)
         s.expunge_all()
         return sh
 
@@ -497,7 +498,7 @@ def create_app() -> FastAPI:
         request.session["uid"] = user.id
         request.session["csrf"] = secrets.token_urlsafe(24)
         audit(s, user, "giris")
-        r = _redirect(s, "/")
+        r = _redirect(s, "/takip")
         if telefon_kodu() and not user.misafir and form.get("hatirla") and not hatirlandi:
             r.set_cookie(CIHAZ_CEREZI, _cihaz_imzaci().dumps({"u": user.id, "k": _anahtar_izi(user)}),
                          max_age=CIHAZ_GUN * 86400, httponly=True, secure=sunucu(), samesite="strict")
@@ -520,13 +521,88 @@ def create_app() -> FastAPI:
                            .order_by(AnalysisRun.id.desc())) if period else None
             sev = {"Kritik": 0, "Yüksek": 0, "Orta": 0}
             if run:
-                for sv, n in s.execute(select(Finding.severity, func.count()).where(Finding.run_id == run.id)
+                for sv, n in s.execute(select(Finding.severity, func.count()).where(Finding.run_id == run.id,
+                                                                            Finding.rule_id.notin_(ARKA_PLAN))
                                        .group_by(Finding.severity)):
                     sev[sv] = n
             rows.append({"c": c, "run": run, "period": period, "sev": sev, "open_high": sev["Kritik"] + sev["Yüksek"],
                          "rel": run.reliability if run else None})
         rows.sort(key=lambda r: (r["c"].is_demo, tr_sira(r["c"].unvan)))
         return render(request, "portfolio.html", active="mukellefler", rows=rows, has_demo=any(r["c"].is_demo for r in rows))
+
+
+    # ---- Büro iş takibi ---------------------------------------------------------
+
+    def _takip_hucre(s, c, kod, yil, ay, decls, durumlar):
+        """Bir mükellefin bir ay işi için durum: verildi / kontrol (n önemli bulgu) / bekliyor."""
+        tur_beyan = {"kdv": "kdv", "muhtasar": "muhtasar", "gecici": "gecici"}[kod]
+        elle = durumlar.get((c.id, yil, ay, kod))
+        d = beyannameler.bul(decls, tur_beyan, yil, ay)
+        if d is not None or elle:
+            return {"durum": "verildi", "elle": bool(elle) and d is None, "beyan": d is not None}
+        if kod == "muhtasar":
+            return {"durum": "bekliyor"}
+        ay_bas, ay_son = date(yil, ay, 1), date(yil + (ay == 12), ay % 12 + 1, 1) - timedelta(days=1)
+        for p in s.scalars(select(Period).where(Period.client_id == c.id, Period.baslangic <= ay_son, Period.bitis >= ay_bas)
+                           .order_by(Period.bitis)):
+            if kod == "gecici" and p.bitis != ay_son:
+                continue
+            if kod == "kdv" and not (p.baslangic <= ay_bas and p.bitis >= ay_son):
+                continue
+            run = s.scalar(select(AnalysisRun).where(AnalysisRun.period_id == p.id).order_by(AnalysisRun.id.desc()))
+            if run:
+                n = s.scalar(select(func.count()).select_from(Finding).where(Finding.run_id == run.id,
+                             Finding.severity.in_(["Kritik", "Yüksek"]), Finding.rule_id.notin_(ARKA_PLAN)))
+                return {"durum": "kontrol", "onemli": n, "donem": p.id}
+        return {"durum": "bekliyor"}
+
+    @app.get("/takip", response_class=HTMLResponse)
+    def takip_page(request: Request, ay: str | None = None, user=Depends(current_user), s=Depends(get_session)):
+        bugun = date.today()
+        try:
+            yil, a = (int(x) for x in ay.split("-")) if ay else takip.varsayilan_ay(bugun)
+            date(yil, a, 1)
+        except (ValueError, AttributeError):
+            yil, a = takip.varsayilan_ay(bugun)
+        clients = [c for c in gorunen_mukellefler(s, user)]
+        clients.sort(key=lambda c: (c.is_demo, tr_sira(c.unvan)))
+        durumlar = {(d.client_id, d.yil, d.ay, d.is_turu): d for d in s.scalars(
+            select(IsDurumu).where(IsDurumu.client_id.in_([c.id for c in clients] or [0])))}
+        isler = [(kod, ad) for kod, ad, *_ in takip.ISLER if takip.son_gun(kod, yil, a)]
+        satirlar, sayac = [], {k: {"verildi": 0, "kontrol": 0, "bekliyor": 0} for k, _ in isler}
+        for c in clients:
+            decls = beyannameler.aktif(s, c.id)
+            h = {kod: _takip_hucre(s, c, kod, yil, a, decls, durumlar) for kod, _ad in isler}
+            for kod, x in h.items():
+                sayac[kod][x["durum"]] += 1
+            satirlar.append({"c": c, "h": h})
+        onceki, sonraki = takip._ay_ekle(yil, a, -1), takip._ay_ekle(yil, a, 1)
+        return render(request, "takip.html", active="takip", satirlar=satirlar, isler=isler, sayac=sayac,
+                      yil=yil, ay=a, donem=takip.donem_adi(yil, a), vadeler=takip.yaklasan(bugun, 45), bugun=bugun,
+                      sonlar={kod: takip.son_gun(kod, yil, a) for kod, _ in isler},
+                      onceki=f"{onceki[0]}-{onceki[1]:02d}", sonraki=f"{sonraki[0]}-{sonraki[1]:02d}",
+                      varsayilan="%d-%02d" % takip.varsayilan_ay(bugun))
+
+    @app.post("/takip/isaretle")
+    async def takip_isaretle(request: Request, user=Depends(current_user), s=Depends(get_session)):
+        form = await form_checked(request)
+        if user.misafir:
+            raise HTTPException(403, "Misafir hesabı işaretleme yapamaz.")
+        try:
+            cid, yil, a = int(form["client_id"]), int(form["yil"]), int(form["ay"])
+        except (KeyError, ValueError):
+            raise HTTPException(400, "Geçersiz istek.")
+        kod = str(form.get("is_turu", ""))
+        if kod not in takip.ISIM or cid not in {c.id for c in gorunen_mukellefler(s, user)}:
+            raise HTTPException(404, "Bulunamadı.")
+        mevcut = s.scalar(select(IsDurumu).where(IsDurumu.client_id == cid, IsDurumu.yil == yil, IsDurumu.ay == a,
+                                                 IsDurumu.is_turu == kod))
+        if form.get("islem") == "geri" and mevcut:
+            s.delete(mevcut)
+        elif form.get("islem") != "geri" and not mevcut:
+            s.add(IsDurumu(client_id=cid, yil=yil, ay=a, is_turu=kod, kullanici=user.username))
+        audit(s, user, "is_isaretle", cid, f"{kod} {yil}-{a:02d} {form.get('islem', 'verildi')}")
+        return _redirect(s, f"/takip?ay={yil}-{a:02d}")
 
     @app.get("/mevzuat", response_class=HTMLResponse)
     def mevzuat_page(request: Request, soru: int | None = None, user=Depends(current_user), s=Depends(get_session)):
@@ -882,7 +958,9 @@ def create_app() -> FastAPI:
             for b in latest.values():  # başka döneme yüklenmiş (geniş) yevmiyenin dosyası da listelensin
                 if b and b.source_file_id not in v["files"]:
                     v["files"][b.source_file_id] = s.get(SourceFile, b.source_file_id)
-            v.update(run=run, findings=open_f, cases=cases, latest={k: b for k, b in latest.items() if b},
+            tum_f = open_f
+            open_f = [f for f in open_f if f.rule_id not in ARKA_PLAN]  # büro içi ek incelemeler sayılara girmez
+            v.update(run=run, findings=open_f, findings_tum=tum_f, cases=cases, latest={k: b for k, b in latest.items() if b},
                      sev_counts={k: sum(1 for f in open_f if f.severity == k) for k in ("Kritik", "Yüksek", "Orta", "Düşük")},
                      results=run.rule_results if run else [])
             if ctx:
@@ -1093,7 +1171,6 @@ def create_app() -> FastAPI:
                 if "stopaj" in by_key:  # stopaj kontrolleri ayrı sayfada; raporda risk başlığı altında
                     r2, f2 = filtre(by_key["stopaj"])
                     v["risk_results"], v["risk_findings"] = v["risk_results"] + r2, v["risk_findings"] + f2
-                _benford_view(s, c, p, v)
 
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
     def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
@@ -1278,7 +1355,7 @@ def create_app() -> FastAPI:
         a = next(x for x in v["analyses"] if x.key == keys[key])
         v["analysis"] = a
         v["a_results"] = [r for r in v["results"] if r["id"] in a.rules]
-        v["a_findings"] = [f for f in v["findings"] if f.rule_id in a.rules]
+        v["a_findings"] = [f for f in (v.get("findings_tum", v["findings"]) if key == "risk" else v["findings"]) if f.rule_id in a.rules]
         if p and key == "kdv" and beyannameler.tek_ay(p.baslangic, p.bitis):
             v["kdv_onceki"] = beyannameler.onceki_ay_kdv(v["decls"], p.baslangic)
             v["kdv_bu"] = beyannameler.bul(v["decls"], "kdv", p.bitis.year, p.bitis.month)
