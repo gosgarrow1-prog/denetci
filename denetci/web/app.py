@@ -570,7 +570,8 @@ def create_app() -> FastAPI:
             yil, a = takip._ay_ekle(bugun.year, bugun.month, ofs)
             for kod, ad in [(k, n) for k, n, *_ in takip.ISLER]:
                 son = takip.son_gun(kod, yil, a)
-                if not son or not (bugun - timedelta(days=10) <= son <= bugun + timedelta(days=45)):
+                donem_sonu = date(yil + (a == 12), a % 12 + 1, 1) - timedelta(days=1)
+                if not son or donem_sonu >= bugun or not (bugun - timedelta(days=10) <= son <= bugun + timedelta(days=45)):
                     continue
                 bekleyen, biten = [], []
                 for c in clients:

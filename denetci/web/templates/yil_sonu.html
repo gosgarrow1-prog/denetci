@@ -19,7 +19,7 @@
       <span class="lv-pill">{{ {'yapildi': 'YAPILDI', 'gecti': 'TAMAM', 'bulgu': 'BULGU VAR', 'yok': 'KONTROL EDİLEMEDİ', 'bekliyor': 'BEKLİYOR'}[x.durum] }}</span>
       <span class="al-text">{{ x.i.baslik }}<span class="al-detail">{{ x.i.aciklama }}{% if x.mesaj %} <strong>{{ x.mesaj }}</strong>{% endif %}</span></span>
       {% if not sh.misafir %}<form method="post" action="/mukellef/{{ c.id }}/yil-sonu/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="yil" value="{{ yil }}"><input type="hidden" name="is" value="{{ x.i.key }}">
-        {% if x.elle %}<button class="tk-b" name="islem" value="geri">geri al</button>{% elif x.durum != 'gecti' %}<button class="tk-b" name="islem" value="yapildi">yapıldı işaretle</button>{% endif %}</form>{% endif %}
+        {% if x.elle %}<button class="btn sm" name="islem" value="geri">geri al</button>{% elif x.durum != 'gecti' %}<button class="btn sm" name="islem" value="yapildi">yapıldı işaretle</button>{% endif %}</form>{% endif %}
     </div>
   {% endfor %}
   </div>

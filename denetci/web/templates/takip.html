@@ -24,30 +24,30 @@
   <p class="muted">Son gün {{ ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'][k.son.weekday()] }}, {{ k.son.strftime('%d.%m.%Y') }} · {{ k.biten|length }} / {{ k.toplam }} mükellef tamam</p>
   <div class="tk-bar"><span style="width: {{ (k.biten|length * 100 // k.toplam) if k.toplam else 0 }}%"></span></div>
   {% if k.bekleyen %}
-  <div class="alerts">
+  <div class="tbl-scroll"><table class="grid tk-tbl"><tbody>
   {% for r in k.bekleyen %}{% set x = r.h %}
-    <div class="client-row" style="cursor:default">
-      <span class="cl-av">{{ r.c.unvan[:2]|upper }}</span>
-      <span class="cl-main"><span class="cl-name"><a href="/mukellef/{{ r.c.id }}">{{ r.c.unvan }}</a>{% if r.c.is_demo %} <span class="demo-tag">Örnek</span>{% endif %}</span>
-        <span class="muted">{% if x.durum == 'kontrol' %}Kontrol edildi{% if x.onemli %} · <strong>{{ x.onemli }} önemli bulgu</strong>{% else %} · önemli bulgu yok{% endif %}{% elif k.kod == 'muhtasar' %}Muhtasar beyanı/belgesi henüz yüklenmedi{% else %}Belgeler henüz yüklenmedi{% endif %}</span></span>
-      <span class="cl-counts">
+    <tr>
+      <td class="tk-ad"><a href="/mukellef/{{ r.c.id }}">{{ r.c.unvan }}</a>{% if r.c.is_demo %} <span class="demo-tag">Örnek</span>{% endif %}</td>
+      <td>{% if x.durum == 'kontrol' %}<span class="st-pill {{ 'red' if x.onemli else 'blue' }}">Kontrol edildi{% if x.onemli %} · {{ x.onemli }} önemli bulgu{% endif %}</span>
+        {% else %}<span class="st-pill gray">{{ 'Muhtasar belgesi yok' if k.kod == 'muhtasar' else 'Belge yok' }}</span>{% endif %}</td>
+      <td class="tk-act">
         {% if x.durum == 'kontrol' %}<a class="btn sm" href="/mukellef/{{ r.c.id }}/{{ 'gecici-vergi' if k.kod == 'gecici' else 'kdv' }}?donem={{ x.donem }}">{% if x.onemli %}Bulguları aç{% else %}Analizi aç{% endif %}</a>
         {% elif k.kod == 'muhtasar' %}<a class="btn sm" href="/mukellef/{{ r.c.id }}/stopaj">Muhtasarı yükle</a>
         {% else %}<a class="btn sm" href="/mukellef/{{ r.c.id }}?asistan={{ k.kod }}#asistan">Belge yükle</a>{% endif %}
         {% if not sh.misafir %}<form method="post" action="/takip/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}">
           <input type="hidden" name="client_id" value="{{ r.c.id }}"><input type="hidden" name="yil" value="{{ k.yil }}"><input type="hidden" name="ay" value="{{ k.ay }}"><input type="hidden" name="is_turu" value="{{ k.kod }}">
           <button class="btn sm" name="islem" value="verildi">Verildi</button></form>{% endif %}
-      </span>
-    </div>
+      </td>
+    </tr>
   {% endfor %}
-  </div>
+  </tbody></table></div>
   {% endif %}
   {% if k.biten %}
   <details class="tk-biten"><summary>Tamamlananlar ({{ k.biten|length }})</summary>
     <ul class="notes">{% for r in k.biten %}<li>{{ r.c.unvan }} — {{ 'beyanname alındı' if r.h.beyan else 'verildi işaretli' }}
       {% if r.h.elle and not sh.misafir %}<form method="post" action="/takip/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}">
         <input type="hidden" name="client_id" value="{{ r.c.id }}"><input type="hidden" name="yil" value="{{ k.yil }}"><input type="hidden" name="ay" value="{{ k.ay }}"><input type="hidden" name="is_turu" value="{{ k.kod }}">
-        <button class="tk-b" name="islem" value="geri">geri al</button></form>{% endif %}</li>{% endfor %}</ul>
+        <button class="btn sm" name="islem" value="geri">geri al</button></form>{% endif %}</li>{% endfor %}</ul>
   </details>
   {% endif %}
 </section>

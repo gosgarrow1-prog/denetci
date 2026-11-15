@@ -631,3 +631,7 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
 .tk-biten summary { cursor: pointer; color: var(--muted); }
 .cl-counts .btn { margin-right: 6px; }
 .cl-counts .tk-f { margin-left: 0; }
+.tk-tbl td { vertical-align: middle; }
+.tk-tbl .tk-act { text-align: right; white-space: nowrap; }
+.tk-tbl .tk-act .btn { margin-left: 6px; }
+.tbl-scroll { overflow-x: auto; }
