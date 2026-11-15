@@ -33,7 +33,6 @@
     <span>Menü</span></button>
   </div>
   <div class="side-links">
-  <a class="nav {{ 'on' if active == 'takip' }}" href="/takip">{{ icon('calendar') }}Büro Takip</a>
   {% if sc %}
   <a class="nav {{ 'on' if active == 'panel' }}" href="/mukellef/{{ sc.id }}{{ q }}">{{ icon('panel') }}Gösterge Paneli</a>
   <a class="nav {{ 'on' if active == 'belgeler' }}" href="/mukellef/{{ sc.id }}/belgeler{{ q }}">{{ icon('upload') }}Belgeler ve Yükleme</a>

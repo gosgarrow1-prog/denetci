@@ -620,7 +620,5 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
 .k-buro .btn { grid-column: 1 / -1; }
 
 /* Büro takip */
-.tk-h { white-space: nowrap; }
 .tk-f { display: inline; margin-left: 6px; }
 .tk-b { background: none; border: 0; padding: 0; color: var(--blue); font-size: 12px; cursor: pointer; text-decoration: underline; }
-.tbl-scroll { overflow-x: auto; }
