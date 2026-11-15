@@ -498,8 +498,9 @@ def test_misafir_yalnizca_demo_gorur(app_client, monkeypatch):
         gid = gercek.id
     r = tc.post("/giris", data={"csrf": _csrf(tc, "/giris"), "kullanici": "misafir", "parola": "misafir-parola-123"},
                 follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/takip"
     assert "GERÇEK MÜKELLEF" not in tc.get("/").text
+    assert "GERÇEK MÜKELLEF" not in tc.get("/takip").text
     assert tc.get(f"/mukellef/{gid}").status_code == 404
     assert tc.post("/mukellef/yeni", data={"csrf": _csrf(tc, "/"), "unvan": "X"}).status_code == 403
     loc = tc.post("/demo", data={"csrf": _csrf(tc, "/")}, follow_redirects=False).headers["location"]

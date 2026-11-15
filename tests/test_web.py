@@ -30,7 +30,7 @@ def login(tc):
     tok = csrf(tc, "/giris")
     r = tc.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "cok-gizli-parola-123", "kod": totp(tc.secret)},
                 follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/takip"
 
 
 def test_requires_login(app_client):
@@ -54,7 +54,7 @@ def test_password_only_by_default(app_client):
     tok = csrf(app_client, "/giris")
     r = app_client.post("/giris", data={"csrf": tok, "kullanici": "burak", "parola": "cok-gizli-parola-123"},
                         follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/"
+    assert r.status_code == 303 and r.headers["location"] == "/takip"
 
 
 def test_no_signup_route(app_client):
