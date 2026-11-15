@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ c.unvan }} · {{ p|donem_adi }} kontrol raporu</title>
+<title>{{ c.unvan }} · {{ p|donem_adi }} · {{ rapor_baslik }}</title>
 <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
+<link rel="stylesheet" href="/static/rapor.css?v={{ static_v }}">
 </head>
 <body class="report-page">
 <div class="report-bar no-print">
@@ -12,10 +13,50 @@
   <button class="btn primary" onclick="window.print()">{{ icon('file', 16) }}Yazdır / PDF olarak kaydet</button>
   <span class="muted">PDF için yazdırma penceresinde hedef olarak "PDF olarak kaydet"i seçin.</span>
 </div>
+
+<form class="r-sec no-print" method="get" action="/mukellef/{{ c.id }}/rapor">
+  <input type="hidden" name="donem" value="{{ p.id }}">
+  <div class="r-sec-head"><strong>Rapora girecek konular</strong>
+    <span class="muted">Genel rapor tüm konuların özetidir; diğerleri o konuyu ayrıntılı anlatır. Birden fazla seçerseniz her konu yazdırınca ayrı sayfadan başlar.</span></div>
+  <div class="r-sec-list">
+  {% for k in KONULAR %}
+    <label class="r-chip {{ 'on' if k.key in konular }}"><input type="checkbox" name="konu" value="{{ k.key }}" {{ 'checked' if k.key in konular }} onchange="this.parentNode.classList.toggle('on', this.checked)">
+      <span><strong>{{ k.baslik }}</strong><small>{{ k.aciklama }}</small></span></label>
+  {% endfor %}
+  </div>
+  <div class="r-sec-actions">
+    <button class="btn primary" type="submit">Raporu hazırla</button>
+    <button class="btn" type="button" onclick="this.form.querySelectorAll('input[name=konu]').forEach(function(i){i.checked=true;i.parentNode.classList.add('on')})">Hepsini seç</button>
+  </div>
+</form>
+
+{% if 'genel' in konular %}
+<section class="wa-box no-print">
+  <div class="wa-head"><strong>Mükellefe gönderilecek kısa özet</strong><span class="muted">WhatsApp ya da e-postaya yapıştırabilirsiniz; göndermeden önce düzenleyebilirsiniz.</span></div>
+  <textarea id="wa-text" rows="9">{{ whatsapp }}</textarea>
+  <div class="wa-actions">
+    <button class="btn" type="button" onclick="var t=document.getElementById('wa-text');t.select();navigator.clipboard?navigator.clipboard.writeText(t.value):document.execCommand('copy');this.textContent='Kopyalandı ✓'">Metni kopyala</button>
+    <button class="btn primary" type="button" onclick="window.open('https://wa.me/?text='+encodeURIComponent(document.getElementById('wa-text').value),'_blank')">WhatsApp'ta aç</button>
+  </div>
+</section>
+{% endif %}
+
+{% set bu = shell.bu if shell is defined and shell.bu is defined else buro() %}
 <article class="report">
+  {% if bu.logolar.acik or bu.get('unvan') %}
+  <div class="r-buro">
+    {% if bu.logolar.acik %}<img class="r-logo" src="/buro/logo-acik.png" alt="{{ bu.get('unvan', 'Büro logosu') }}">{% endif %}
+    <div class="r-buro-text">
+      {% if bu.get('unvan') %}<strong>{{ bu.unvan }}</strong>{% endif %}
+      {% if bu.get('adres') %}<span>{{ bu.adres }}</span>{% endif %}
+      <span>{{ (bu.get('telefonlar') or [])|join(' · ') }}</span>
+      <span>{{ [bu.get('eposta'), bu.get('web')]|select|join(' · ') }}</span>
+    </div>
+  </div>
+  {% endif %}
   <header class="r-head">
     <div>
-      <div class="r-brand">{{ icon('shield', 20) }} Denetçi · Dönem Kontrol Raporu</div>
+      <div class="r-brand">{{ icon('shield', 20) }} {{ rapor_baslik }}</div>
       <h1>{{ c.unvan }}</h1>
       <p>{% if c.vkn %}VKN/TCKN {{ c.vkn }} · {% endif %}{% if c.vergi_dairesi %}{{ c.vergi_dairesi }} V.D. · {% endif %}Dönem: <strong>{{ p|donem_adi }}</strong> ({{ p.baslangic.strftime('%d.%m.%Y') }} – {{ p.bitis.strftime('%d.%m.%Y') }})</p>
     </div>
@@ -26,121 +67,22 @@
     </div>
   </header>
   {% if c.is_demo %}<p class="demo-tag">Örnek (sentetik) veri: bu rapordaki firma ve tutarlar uydurmadır.</p>{% endif %}
-
-  <h2>1. Özet</h2>
-  {% if run %}
-  {% set gecti = results|selectattr('status', 'equalto', 'gecti')|list|length %}
-  <p>Veri durumu: <strong>{{ RELIABILITY_LABELS[run.reliability] }}</strong>. {{ results|length }} kontrolün {{ gecti }} tanesi sorunsuz;
-    {{ findings|length }} açık bulgu var{% set eksik = alerts|selectattr('action', 'equalto', 'Tamamla')|list %}{% if eksik %}, {{ eksik|length }} analiz için belge eksik{% endif %}.</p>
-  {% else %}<p>Bu dönem için analiz yapılmadı.</p>{% endif %}
-
-  <h2>2. Değerlendirme ve öneriler</h2>
-  {% macro oneri_tablo(items) -%}
-  <table class="grid small r-oneri"><thead><tr><th>Öncelik</th><th>Konu</th><th>Öneri</th></tr></thead><tbody>
-  {% for o in items %}
-    <tr><td><span class="lv-{{ {'yuksek': 'onemli', 'orta': 'dikkat'}.get(o.oncelik, 'bilgi') }}"><span class="lv-pill">{{ ONCELIK_ADI[o.oncelik] }}</span></span></td>
-      <td>{{ o.alan }}</td>
-      <td><strong>{{ o.baslik }}</strong><div>{{ o.metin }}</div>{% if o.dayanak %}<div class="muted">Dayanak: {{ o.dayanak }}</div>{% endif %}</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {%- endmacro %}
-  {% set sirket = oneriler|selectattr('grup', 'equalto', 'sirket')|list %}
-  {% set kayit = oneriler|selectattr('grup', 'equalto', 'kayit')|list %}
-  <h3>Şirkete yönelik</h3>
-  {% if sirket %}{{ oneri_tablo(sirket) }}{% else %}<p>Mevcut verilerle finansal yapı, kârlılık ve vergi açısından öne çıkan bir konu yok.</p>{% endif %}
-  <h3>Muhasebe kayıtlarında yapılacaklar</h3>
-  {% if kayit %}{{ oneri_tablo(kayit) }}{% if findings|length > 5 %}<p class="muted">En önemli 5 bulgu gösterildi; tamamı 4. bölümde ({{ findings|length }} bulgu).</p>{% endif %}
-  {% else %}<p>Açık bulgu yok.</p>{% endif %}
-  <p class="muted">Öneriler yüklenen kayıtlardan kurallarla üretildi. Oran eşikleri genel yaklaşımdır ve sektöre göre değişir; mesleki değerlendirmeyle birlikte kullanın.</p>
-
-  <h2>3. Kullanılan belgeler</h2>
-  <table class="grid small"><thead><tr><th>Belge</th><th>Dosya</th><th>Sürüm</th><th class="num">Kayıt</th></tr></thead><tbody>
-  {% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
-    {% set b = latest.get(d) %}
-    <tr><td>{{ name }}</td><td>{% if b %}{{ files[b.source_file_id].orig_name if b.source_file_id in files else 'dosya' }}{% if b.period_id != p.id %} <span class="muted">(daha geniş dönem yevmiyesinden ayrıldı)</span>{% endif %}{% else %}Yüklenmedi{% endif %}</td><td>{{ b.version if b else '' }}</td>
-      <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b else '' }}</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {% if p.devreden_kdv is not none %}<p class="muted">Önceki aydan devreden KDV (beyannameden elle girildi): {{ p.devreden_kdv|tl }} TL</p>{% endif %}
-  {% set rdecls = decls|selectattr('yil', 'equalto', p.bitis.year)|list %}
-  {% set rdecls = rdecls|selectattr('ay', 'le', p.bitis.month)|list %}
-  {% if rdecls %}<p class="muted">Yüklenen beyannameler (bu yıl, dönem sonuna kadar): {% for d in rdecls %}{{ 'KDV' if d.tur == 'kdv' else 'Geçici vergi' }} {{ beyan_donem(d.tur, d.yil, d.ay) }}{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
-
-  <h2>4. Bulgular</h2>
-  {% if findings %}
-  <table class="grid small"><thead><tr><th>Önem</th><th>Bulgu</th><th>Kural</th><th class="num">Tutar (TL)</th><th>Takip</th></tr></thead><tbody>
-  {% for f in findings %}
-    {% set cs = cases.get(f.fingerprint) %}
-    <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
-      <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
-      <td>{{ f.rule_id }}</td><td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
-      <td>{{ STATUS_LABELS[cs.status] if cs else 'Yeni' }}</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {% elif run %}<p>Açık bulgu yok.</p>{% endif %}
-  {% set eksik = alerts|selectattr('action', 'equalto', 'Tamamla')|list %}
-  {% if eksik %}<h3>Eksik belgeler</h3><ul>{% for al in eksik %}<li>{{ al.text }}</li>{% endfor %}</ul>{% endif %}
-
-  {% if run %}
-  <h2>5. Kontrol sonuçları</h2>
-  <table class="grid small"><thead><tr><th>Kural</th><th>Sonuç</th><th>Açıklama</th></tr></thead><tbody>
-  {% for r in results %}
-    <tr><td><strong>{{ r.id }}</strong> {{ r.title }}</td>
-      <td>{{ {'gecti': 'Geçti', 'bulgu': 'Bulgu', 'calistirilamadi': 'Çalışmadı', 'uygulanmadi': 'Belge yok', 'bilgi': 'Bilgi'}[r.status] }}</td>
-      <td>{{ r.message }}</td></tr>
-  {% endfor %}
-  </tbody></table>
+  {% if konular|length > 1 %}
+  <nav class="r-icindekiler"><strong>İçindekiler</strong><ol>{% for k in konular %}<li>{{ KONU[k].baslik }}</li>{% endfor %}</ol></nav>
   {% endif %}
 
-  {% if fin and (fin.has_income or fin.has_balance) %}
-  <h2>6. Finansal özet</h2>
-  <div class="r-two">
-    {% if fin.has_income %}
-    <table class="grid small"><thead><tr><th>Gelir tablosu</th><th class="num">TL</th></tr></thead><tbody>
-      {% for ln in fin.gelir_tablosu %}{% if ln.value or ln.kind != 'kalem' %}
-      <tr class="{{ 'subtotal' if ln.kind == 'ara_toplam' else ('total' if ln.kind == 'toplam' else '') }}"><td>{{ ln.label }}</td><td class="num">{{ ln.value|tl }}</td></tr>
-      {% endif %}{% endfor %}
-    </tbody></table>
-    {% endif %}
-    <div>
-    {% if fin.has_balance %}
-    <table class="grid small"><thead><tr><th>Bilanço ({{ p.bitis.strftime('%d.%m.%Y') }})</th><th class="num">TL</th></tr></thead><tbody>
-      {% for k_ in ['1', '2', '3', '4', '5'] %}<tr><td>{{ SINIFLAR[k_] }}</td><td class="num">{{ fin.bilanco[k_]|tl }}</td></tr>{% endfor %}
-      <tr><td>Kapanmamış dönem sonucu</td><td class="num">{{ fin.donem_sonucu_kapanmamis|tl }}</td></tr>
-      <tr class="total"><td>Aktif / Pasif</td><td class="num">{{ fin.aktif|tl }} / {{ fin.pasif|tl }}</td></tr>
-    </tbody></table>
-    {% endif %}
-    {% if fin.oranlar %}
-    <table class="grid small" style="margin-top:12px"><thead><tr><th>Oran</th><th class="num">Değer</th></tr></thead><tbody>
-      {% for r in fin.oranlar %}<tr><td>{{ r.label }}</td><td class="num">{% if r.value is none %}—{% elif r.fmt == 'pct' %}%{{ '%.1f'|format(r.value * 100)|replace('.', ',') }}{% else %}{{ '%.2f'|format(r.value)|replace('.', ',') }}{% endif %}</td></tr>{% endfor %}
-    </tbody></table>
-    {% endif %}
-    </div>
+  {% for k in konular %}
+  <section class="r-konu" id="konu-{{ k }}">
+    {% if konular|length > 1 %}<div class="r-konu-baslik"><span>{{ loop.index }}</span>{{ KONU[k].baslik }}</div>{% endif %}
+    {% include "rapor/" ~ k ~ ".html" %}
+  </section>
+  {% endfor %}
+
+  <div class="r-imza">
+    <div><span class="muted">Hazırlayan</span><div class="r-imza-alan r-hazirlayan">{% if bu.logolar.acik %}<img class="r-imza-logo" src="/buro/logo-acik.png" alt="{{ bu.get('unvan', 'Büro logosu') }}">{% elif bu.get('unvan') %}<div>{{ bu.unvan }}</div>{% endif %}<strong>{{ (hazirlayan.unvan ~ ' ' ~ hazirlayan.ad)|trim }}</strong></div></div>
+    <div><span class="muted">Kaşe / İmza</span><div class="r-imza-alan"></div></div>
   </div>
-  {% if kdv %}<p class="muted">Dönem içi hesaplanan KDV (391): {{ kdv.hesaplanan|tl }} TL · indirilecek KDV (191): {{ kdv.indirilecek|tl }} TL</p>{% endif %}
-  {% if fin.notlar %}<ul class="notes">{% for n in fin.notlar %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
-  {% endif %}
-
-  {% if gv and gv.ticari_kar is not none %}
-  <h2>7. Geçici vergi ön hesaplaması</h2>
-  <table class="grid small"><tbody>
-    <tr><td>Ticari kâr (01.01 – {{ p.bitis.strftime('%d.%m.%Y') }})</td><td class="num">{{ gv.ticari_kar|tl }}</td></tr>
-    {% if gv.maliyet and gv.maliyet.ek %}<tr><td>− Tahmini satış maliyeti (kaydı yapılmamış; {{ gv.maliyet.kaynak }})</td><td class="num">{{ gv.maliyet.ek|tl }}</td></tr>{% endif %}
-    {% for key, label, sign in GV_ALANLAR %}{% if sign != 'mahsup' and gv.girdiler[key] %}<tr><td>{{ '+' if sign == '+' else '−' }} {{ label }}</td><td class="num">{{ gv.girdiler[key]|tl }}</td></tr>{% endif %}{% endfor %}
-    <tr class="subtotal"><td>Tahmini matrah</td><td class="num">{{ gv.matrah|tl }}</td></tr>
-    {% if gv.hesaplanan is not none %}<tr><td>Hesaplanan geçici vergi (oran %{{ '%.0f'|format(gv.oran * 100) }})</td><td class="num">{{ gv.hesaplanan|tl }}</td></tr>
-    <tr><td>− Önceki dönemlerde hesaplanan{% if gv.mahsup_kaynak and gv.mahsup_kaynak != 'girildi' %} ({{ gv.mahsup_kaynak }}nden){% endif %}</td><td class="num">{{ gv.mahsup|tl }}</td></tr>
-    <tr class="total"><td>Ödenecek (tahmini)</td><td class="num">{{ gv.odenecek|tl }}</td></tr>{% endif %}
-  </tbody></table>
-  <p class="muted">Ön hesaplamadır, beyan değildir. Oranlar parametre tablosundan alınır ve doğrulanmalıdır.</p>
-  {% endif %}
-
-  {% if p.notlar %}
-  <h2>8. Çalışma notu</h2>
-  <p class="r-pre">{{ p.notlar }}</p>
-  {% endif %}
-
-  <footer class="r-foot">Bu rapor, yüklenen muhasebe kayıtları üzerinde yapılan otomatik ön kontrollerin sonucudur. Denetim görüşü, tasdik veya beyan yerine geçmez; bulgular mesleki değerlendirme gerektirir.</footer>
+  <footer class="r-foot">Bu rapor, yüklenen muhasebe kayıtları üzerinde yapılan otomatik ön kontrollerin sonucudur. Denetim görüşü, tasdik veya beyan yerine geçmez; bulgular mesleki değerlendirme gerektirir.{% if bu.get('unvan') %}<div class="r-foot-buro">{{ bu.unvan }}{% if bu.get('telefonlar') %} · {{ bu.telefonlar|join(' · ') }}{% endif %}{% if bu.get('eposta') %} · {{ bu.eposta }}{% endif %}{% if bu.get('web') %} · {{ bu.web }}{% endif %}</div>{% endif %}</footer>
 </article>
 </body>
 </html>

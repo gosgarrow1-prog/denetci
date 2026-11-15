@@ -6,6 +6,7 @@
   <span class="ph-ic">{{ icon('receipt', 24) }}</span>
   <div class="ph-text"><h1>Fatura Mutabakatı</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. e-Fatura, e-Arşiv ve diğer fatura listelerinin defterle fatura fatura karşılaştırılması.</p></div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=fatura">{{ icon('file', 16) }}Raporu al</a>{% endif %}</div>
 </div>
 {{ flash_list(flash) }}
 {% if not p %}
@@ -22,7 +23,7 @@
 {% endif %}
 {% if k30_findings %}
 <section class="block"><div class="block-head"><h2>Bulgular</h2></div><div class="alerts">
-{% for f in k30_findings %}{{ alert_row({'level': 'dikkat', 'text': f.title, 'detail': f.rule_id, 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
+{% for f in k30_findings %}{{ alert_row({'level': 'dikkat', 'text': f.title, 'detail': '', 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
 </div></section>{% endif %}
 {% if k30 %}<section class="card"><div class="chks">{{ rule_row(k30) }}</div></section>{% endif %}
 {% endif %}

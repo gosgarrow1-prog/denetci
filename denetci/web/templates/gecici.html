@@ -8,7 +8,7 @@
   <span class="ph-ic">{{ icon('calendar', 24) }}</span>
   <div class="ph-text"><h1>Geçici Vergi</h1>
     <p>{{ c.unvan }}{% if p %} · {{ p|donem_adi }}{% endif %}. Yılbaşından dönem sonuna ticari kâr, tahmini matrah ve vergi; dönem sonu kayıt kontrolleri. Ön hesaplamadır, beyan yerine geçmez.</p></div>
-  <div class="ph-actions">{{ status_pill(a) }}</div>
+  <div class="ph-actions">{% if p %}<a class="btn sm" href="/mukellef/{{ c.id }}/rapor?donem={{ p.id }}&konu=gecici">{{ icon('file', 16) }}Raporu al</a>{% endif %}{{ status_pill(a) }}</div>
 </div>
 {{ flash_list(flash) }}
 
@@ -149,7 +149,7 @@
       </div>
       {% if p.kesin %}<p class="muted">Dönem kesinleştirildiği için değiştirilemez.</p>{% else %}<div><button class="btn primary">Kaydet ve hesapla</button></div>{% endif %}
     </form>
-    <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'ü, ödeme {{ GV_PARAM.odeme_gunu }}'si. {{ GV_PARAM.dayanak }}</p>
+    <p class="muted">Parametreler{% if not GV_PARAM.dogrulandi %} <span class="tag warn">doğrulanmadı</span>{% endif %}: kurum oranı {{ pct(GV_PARAM.kurum_orani.get(p.bitis.year, 0)) }}, şahıs oranı {{ pct(GV_PARAM.sahis_orani.get(p.bitis.year, 0)) }}, beyan dönemi izleyen {{ GV_PARAM.beyan_ay_sonra }}. ayın {{ GV_PARAM.beyan_gunu }}'si; beyan ve ödeme aynı gün. {{ GV_PARAM.dayanak }}</p>
   </section>
 </div>
 

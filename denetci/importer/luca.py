@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
+from . import edefter
 from ..parsing import ParseError, code_segments, fold, is_empty, kurus_str, parse_account_code, parse_amount, parse_date
 
 FIS_RE = re.compile(r"^\s*(\d+)\s*-{3,}\s*(\d+)\s*-{3,}\s*([^-]+?)\s*-{3,}\s*(\d{1,2}[./]\d{1,2}[./]\d{4})")
@@ -34,6 +35,8 @@ PROFILE_LABELS = {
     "luca_mizan": "Luca mizan",
 }
 PROFILE_DOC = {"luca_yevmiye": "yevmiye", "luca_kebir": "kebir", "luca_muavin": "muavin", "luca_mizan": "mizan"}
+PROFILE_LABELS.update(edefter.ETIKET)
+PROFILE_DOC.update(edefter.BELGE)
 
 
 @dataclass
@@ -76,7 +79,9 @@ def _amt(v) -> int:
 
 
 def sniff(sheets) -> tuple[str, object] | None:
-    """Luca biçimini tanır. (profil, sayfa) döner."""
+    """Luca (veya e-Defter) biçimini tanır. (profil, sayfa) döner."""
+    if (e := edefter.sniff(sheets)):
+        return e
     for sheet in sheets:
         heads = [fold(" ".join(str(c) for c in vals if c is not None)) for _, vals in sheet.rows[:80]]
         firsts = [vals[0] if vals else None for _, vals in sheet.rows[:80]]
@@ -111,6 +116,9 @@ def _firma(rows) -> str | None:
 
 
 def _info(rows) -> dict:
+    if rows and rows[0][1][:1] == ["E-DEFTER"]:
+        from .tables import Sheet
+        return edefter.info(Sheet("", rows))
     info = {}
     firma = _firma(rows)
     if firma:
@@ -127,6 +135,11 @@ def _info(rows) -> dict:
 
 
 def parse(profile: str, sheet) -> Parsed:
+    if profile in edefter.ETIKET:
+        out = Parsed(profile, PROFILE_DOC[profile], [])
+        out.info = edefter.info(sheet)
+        edefter.parse(profile, sheet, out)
+        return out
     fn = {"luca_yevmiye": _parse_yevmiye, "luca_kebir": _parse_kebir, "luca_muavin": _parse_muavin,
           "luca_mizan": _parse_mizan}[profile]
     out = Parsed(profile, PROFILE_DOC[profile], [])

@@ -36,7 +36,13 @@ def read_tables(path: Path) -> list[Sheet]:
         return [Sheet(sh.name, [(i, list(v)) for i, v in sh.rows]) for sh in _CACHE[key]]
     if suffix == ".csv":
         return [_read_csv(path)]
-    raise UnsupportedFile("Bu dosya türü desteklenmiyor. Luca'dan .xlsx veya .csv olarak dışa aktarın.")
+    if suffix in (".xml", ".zip"):
+        from .edefter import EDefterHatasi, okuyucu_sayfalari
+        try:
+            return okuyucu_sayfalari(path)
+        except EDefterHatasi as exc:
+            raise UnsupportedFile(str(exc)) from exc
+    raise UnsupportedFile("Bu dosya türü desteklenmiyor. Luca'dan .xlsx veya .csv olarak dışa aktarın ya da e-Defter .xml/.zip yükleyin.")
 
 
 def _read_xlsx(path: Path) -> list[Sheet]:

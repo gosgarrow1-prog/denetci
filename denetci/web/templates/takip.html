@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block content %}
+<div class="page-head">
+  <span class="ph-ic">{{ icon('calendar', 24) }}</span>
+  <div class="ph-text"><h1>Bu Ay Ne Kaldı?</h1>
+    <p>Yaklaşan son günler ve her işte henüz bitmemiş mükellefler. Her satırda yapılacak işlem var; beyanname PDF'i yüklenen iş kendiliğinden tamamlanır, ayrıca "Verildi" ile de kapatabilirsiniz.</p></div>
+  <div class="ph-actions"><a class="btn sm" href="/">{{ icon('building', 16) }}Mükellef listesi</a></div>
+</div>
+
+{% if not kartlar %}
+<section class="card empty"><div class="big">Yaklaşan iş yok</div><p class="muted">Henüz mükellef eklenmemiş olabilir. <a href="/">Mükellef ekleyin.</a></p></section>
+{% elif not acik %}
+<section class="card empty"><span class="sum-ic">{{ icon('check', 28) }}</span><div class="big">Yaklaşan tüm işler tamam</div></section>
+{% endif %}
+
+{% for k in kartlar %}
+<section class="block tk-kart">
+  <div class="block-head">
+    <h2>{{ k.ad }} beyanı · {{ k.donem }}</h2>
+    <span class="st-pill {{ 'green' if not k.bekleyen else ('red' if k.kalan < 0 or k.kalan <= 3 else ('amber' if k.kalan <= 10 else 'gray')) }}">
+      {% if not k.bekleyen %}Tamam{% elif k.kalan < 0 %}Süresi {{ -k.kalan }} gün önce doldu{% elif k.kalan == 0 %}Son gün bugün{% else %}{{ k.kalan }} gün kaldı{% endif %}</span>
+  </div>
+  <p class="muted">Son gün {{ ['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'][k.son.weekday()] }}, {{ k.son.strftime('%d.%m.%Y') }} · {{ k.biten|length }} / {{ k.toplam }} mükellef tamam</p>
+  <div class="tk-bar"><span style="width: {{ (k.biten|length * 100 // k.toplam) if k.toplam else 0 }}%"></span></div>
+  {% if k.bekleyen %}
+  <div class="tbl-scroll"><table class="grid tk-tbl"><tbody>
+  {% for r in k.bekleyen %}{% set x = r.h %}
+    <tr>
+      <td class="tk-ad"><a href="/mukellef/{{ r.c.id }}">{{ r.c.unvan }}</a>{% if r.c.is_demo %} <span class="demo-tag">Örnek</span>{% endif %}</td>
+      <td>{% if x.durum == 'kontrol' %}<span class="st-pill {{ 'red' if x.onemli else 'blue' }}">Kontrol edildi{% if x.onemli %} · {{ x.onemli }} önemli bulgu{% endif %}</span>
+        {% else %}<span class="st-pill gray">{{ 'Muhtasar belgesi yok' if k.kod == 'muhtasar' else 'Belge yok' }}</span>{% endif %}</td>
+      <td class="tk-act">
+        {% if x.durum == 'kontrol' %}<a class="btn sm" href="/mukellef/{{ r.c.id }}/{{ 'gecici-vergi' if k.kod == 'gecici' else 'kdv' }}?donem={{ x.donem }}">{% if x.onemli %}Bulguları aç{% else %}Analizi aç{% endif %}</a>
+        {% elif k.kod == 'muhtasar' %}<a class="btn sm" href="/mukellef/{{ r.c.id }}/stopaj">Muhtasarı yükle</a>
+        {% else %}<a class="btn sm" href="/mukellef/{{ r.c.id }}?asistan={{ k.kod }}#asistan">Belge yükle</a>{% endif %}
+        {% if not sh.misafir %}<form method="post" action="/takip/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="client_id" value="{{ r.c.id }}"><input type="hidden" name="yil" value="{{ k.yil }}"><input type="hidden" name="ay" value="{{ k.ay }}"><input type="hidden" name="is_turu" value="{{ k.kod }}">
+          <button class="btn sm" name="islem" value="verildi">Verildi</button></form>{% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody></table></div>
+  {% endif %}
+  {% if k.biten %}
+  <details class="tk-biten"><summary>Tamamlananlar ({{ k.biten|length }})</summary>
+    <ul class="notes">{% for r in k.biten %}<li>{{ r.c.unvan }} — {{ 'beyanname alındı' if r.h.beyan else 'verildi işaretli' }}
+      {% if r.h.elle and not sh.misafir %}<form method="post" action="/takip/isaretle" class="tk-f"><input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="client_id" value="{{ r.c.id }}"><input type="hidden" name="yil" value="{{ k.yil }}"><input type="hidden" name="ay" value="{{ k.ay }}"><input type="hidden" name="is_turu" value="{{ k.kod }}">
+        <button class="btn sm" name="islem" value="geri">geri al</button></form>{% endif %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+{% endfor %}
+
+{% if vadeler %}
+<section class="block"><div class="block-head"><h2>Diğer son günler</h2><span class="muted">Mükellef bazlı takip edilmeyenler</span></div>
+  <ul class="notes">{% for v in vadeler %}<li><strong>{{ v.tarih.strftime('%d.%m.%Y') }}</strong> · {{ v.ad }} ({{ v.donem }}) · {{ v.kalan }} gün kaldı</li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

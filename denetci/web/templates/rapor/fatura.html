@@ -1,0 +1,10 @@
+{% from "rapor/_ortak.html" import kontrol_tablo, bulgu_tablo %}
+<p class="r-giris">Bu bölüm GİB e-Fatura / e-Arşiv listesindeki her faturanın yevmiye defterine işlenip işlenmediğini, işlendiyse KDV ve matrahın tutup tutmadığını gösterir. Defterde olup listede bulunmayan KDV'li fişler de ayrıca listelenir.</p>
+{% if efatura %}
+<div class="r-kdv">{% set efatura_belirsiz = [] %}{% include "_efatura.html" %}</div>
+{% else %}
+<div class="r-eksik">Bu dönem için eşleştirilmiş fatura listesi yok. GİB'den veya entegratörden alınan gelen/giden fatura listesi Excel olarak yüklendiğinde bu bölüm dolar.</div>
+{% endif %}
+<h2>Kontrol ve bulgular</h2>
+{{ kontrol_tablo([k30] if k30 else []) }}
+{% if k30_findings %}{{ bulgu_tablo(k30_findings, cases) }}{% endif %}

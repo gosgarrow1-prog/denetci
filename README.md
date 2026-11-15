@@ -6,7 +6,7 @@ Durum: **Aşama 0 tamam, Luca biçimleri, KDV ön kontrolleri ve finansal panel 
 
 ## Neler yapıyor
 
-- **Giriş:** Kayıt ekranı yok; kullanıcı adı ve parola ile girilir. Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez. Telefon kodu (MFA) varsayılan olarak kapalıdır; uygulama internete açılacaksa `set DENETCI_TELEFON_KODU=1` ile açılmalıdır.
+- **Giriş:** Kayıt ekranı yok; kullanıcı adı ve parola ile girilir. Uygulama yalnızca `127.0.0.1` adresinde çalıştığı için ağdaki başka bilgisayarlar erişemez. Telefon kodu (MFA) varsayılan olarak kapalıdır; sunucu kurulumunda (`DENETCI_SUNUCU=1`) kendiliğinden açılır.
 - **Görünüm:** Solda menü, üstte mükellef ve dönem seçimi. Mükellefler sayfası tüm mükelleflerin son dönem durumunu gösterir. Hiç mükellef yokken **Örnek mükellefle dene** düğmesi sentetik bir mükellef oluşturur.
 - **Mükellef listesi:** Luca'dan alınan mükellef listesi (.xlsx/.csv) yüklenince önizleme gösterilir; onaylanınca mükellefler toplu eklenir. Aynı VKN veya unvan ikinci kez eklenmez. (Luca'nın liste düzeni henüz gerçek bir örnekle denenmedi.)
 - **Gösterge paneli:** Dönem özeti, finansal özet kutucukları, önem sırasıyla "Dikkat Gerektirenler", kontroller ve belgeler tek sayfada.
@@ -89,3 +89,7 @@ Testler bilinen sonuçlu sentetik verilerle şunları doğrular:
 - **Altyapı:** Python, FastAPI, SQLite (SQLAlchemy) ve sunucu tarafında üretilen HTML. Kurulumu kolaylaştırmak için Node.js veya Docker gerekmiyor. İleride sunucuya taşınırken veritabanı PostgreSQL'e geçirilebilir.
 - **Mükellef yalıtımı:** Her tabloda `client_id` var ve tüm adresler mükellef bazında doğrulanıyor.
 - **Kurallar:** `denetci/checks/rules.py` dosyasında. Her kuralda kimlik, sürüm, dayanak, dayanağın doğrulanma durumu ve istisnalar yer alıyor. Kurallar bir çerçeve (`frameworks`) etiketi taşıyor; böylece ileride BOBİ FRS gibi başka çerçeveler eklenebilecek. Dayanaklar siz doğrulayana kadar "doğrulanmadı" olarak işaretli.
+
+## Sunucuya kurulum (internetten erişim)
+
+Ubuntu 24.04 sunucuda depo klasörünün içinden: `sudo bash deploy/kur.sh denetci.ornek.com`. Betik uygulamayı `/opt/denetci` altına kurar, veriyi `/var/lib/denetci` altında tutar, https sertifikasını (Caddy) kendisi alır, telefon kodunu açar ve her gece 03:00'te yedek alır (14 gün saklanır). Alan adının A kaydı önceden sunucunun IP adresine yönlendirilmiş olmalıdır. Kullanıcı işlemleri: `sudo bash deploy/komut.sh kullanici-ekle <ad>`, `sudo bash deploy/komut.sh telefon-kodu <ad>`. Belgeler sayfasındaki "Arşivdeki belgeleri indir" düğmesi mükellefin arşivini zip olarak verir.

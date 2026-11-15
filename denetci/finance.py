@@ -189,7 +189,9 @@ def summarize(ctx: Context) -> Summary:
                            "mali_borclar": -_sum(bal, ("30", "40")), "donen": donen, "kvyk": kvyk,
                            "yabanci_kaynak": kvyk + uvyk, "ozkaynak": ozk + sonuc,
                            "kasa": _sum(bal, "100"), "ortaklardan_alacak": _sum(bal, ("131", "231")),
-                           "sermaye": -_sum(bal, "50"), "devreden_kdv": _sum(bal, "190")})
+                           "sermaye": -_sum(bal, "50"), "devreden_kdv": _sum(bal, "190"),
+                           # Geçmiş yıl kârları ve yedekler (54, 57) − geçmiş yıl zararları (58): dağıtılmamış kârlar
+                           "dagitilmamis_kar": -_sum(bal, ("54", "57", "58"))})
         if abs(s.aktif - s.pasif) > 100:
             s.notlar.append(f"Aktif ile pasif arasında {_tl(s.aktif - s.pasif)} TL fark var; nazım hesaplar dışında "
                             "eksik hesap olabilir.")
@@ -208,6 +210,9 @@ def summarize(ctx: Context) -> Summary:
         lines, kal, notes = income_statement(net)
         s.gelir_tablosu = lines
         s.kalemler.update(kal)
+        # Dönemde ayrılan amortisman: birikmiş amortisman hesaplarının (257, 268) alacak hareketi (FAVÖK için)
+        s.kalemler["amortisman"] = m.total(("257", "268"), "alacak")
+        s.kalemler["finansman_gideri"] = -next((ln.value for ln in lines if ln.label == "Finansman giderleri"), 0)
         s.notlar += notes
 
     k = s.kalemler

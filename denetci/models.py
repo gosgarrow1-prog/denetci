@@ -18,12 +18,34 @@ def now():
     return datetime.now(timezone.utc)
 
 
+class Buro(Base):
+    """Mali müşavirlik bürosu. Her büro yalnızca kendi mükelleflerini ve kullanıcılarını görür (DEMO mükellefler ortaktır).
+    1 numaralı büro sunucunun sahibidir; bilgileri ve logoları buro/ klasöründen de okunabilir."""
+
+    __tablename__ = "burolar"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ad: Mapped[str] = mapped_column(String(256))
+    # Mevzuat asistanı için aylık harcama sınırı ($). Boş: sınırsız.
+    yz_aylik_sinir: Mapped[float | None] = mapped_column()
+    aktif: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(256))
     totp_secret: Mapped[str] = mapped_column(String(64))
+    # Misafir: yalnızca DEMO (sentetik) mükellefleri görür, telefon kodu sorulmaz. Tanıtım için.
+    misafir: Mapped[bool] = mapped_column(Boolean, default=False)
+    buro_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Büro yöneticisi: kendi bürosunun kullanıcılarını ve büro bilgilerini yönetir.
+    yonetici: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Sistem yöneticisi (sunucu sahibi): yeni büro açar.
+    sistem: Mapped[bool] = mapped_column(Boolean, default=False)
+    ad: Mapped[str | None] = mapped_column(String(128))  # raporda "Hazırlayan" (ör. Burak ALTINOK)
+    unvan: Mapped[str | None] = mapped_column(String(64))  # ör. SMMM
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -42,6 +64,7 @@ class Client(Base):
     # Uygulanan çerçeve. Kurallar bu etikete göre seçilir; ileride BOBİ FRS vb. eklenebilir.
     cerceve: Mapped[str] = mapped_column(String(32), default="THP_VUK")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    buro_id: Mapped[int | None] = mapped_column(Integer, index=True)  # DEMO mükelleflerde boş (tüm bürolar görür)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -235,6 +258,21 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class YzSoru(Base):
+    """Mevzuat asistanına sorulan soru ve yanıtı (büro içi arşiv; mükellef verisi içermez)."""
+    __tablename__ = "yz_soru"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    soru: Mapped[str] = mapped_column(Text)
+    cevap: Mapped[str] = mapped_column(Text)
+    kaynaklar: Mapped[list] = mapped_column(JSON, default=list)
+    model: Mapped[str | None] = mapped_column(String(64))
+    giris: Mapped[int] = mapped_column(Integer, default=0)
+    cikis: Mapped[int] = mapped_column(Integer, default=0)
+    arama: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Declaration(Base):
     """GİB'den indirilmiş beyanname (PDF) özeti. Mükellef düzeyindedir; dönemle (yıl, ay) eşleşir.
     tur: kdv (ay = beyan ayı) veya gecici (ay = dönem sonu ayı: 3, 6, 9, 12). Tutarlar kuruş."""
@@ -296,3 +334,19 @@ class InvoiceRow(Base):
     @property
     def matrah_toplam(self) -> int:
         return sum((self.matrah or {}).values()) + (self.ozel_matrah or 0)
+
+
+class IsDurumu(Base):
+    """Büro iş takibinde elle işaretlenen durum (ör. beyanname verildi). Beyanname PDF'i yüklenmişse
+    ayrıca işaret gerekmez. is_turu: kdv, muhtasar, gecici."""
+
+    __tablename__ = "is_durumlari"
+    __table_args__ = (UniqueConstraint("client_id", "yil", "ay", "is_turu"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    yil: Mapped[int] = mapped_column(Integer)
+    ay: Mapped[int] = mapped_column(Integer)
+    is_turu: Mapped[str] = mapped_column(String(16))
+    durum: Mapped[str] = mapped_column(String(16), default="verildi")
+    kullanici: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

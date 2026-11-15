@@ -7,3 +7,5 @@ DenetciVeri/
 *.db
 *.xlsx
 *.csv
+# Büro bilgileri ve logolar (büroya özel, depoya girmez)
+buro/

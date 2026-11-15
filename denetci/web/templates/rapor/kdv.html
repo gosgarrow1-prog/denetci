@@ -1,0 +1,11 @@
+{% from "rapor/_ortak.html" import kontrol_tablo, bulgu_tablo, eksik_belge %}
+<p class="r-giris">Bu bölüm dönemin KDV hesaplarını defter kayıtlarından çıkarır; GİB'den yüklenen beyanname varsa beyandaki tutarlarla karşılaştırır. Satış ve alışlar KDV oranlarına göre ayrılır, farkların olası nedenleri açıklanır.</p>
+{{ eksik_belge(kdv_a) }}
+<div class="r-kdv">{% include "_kdv_ozet.html" %}</div>
+{% if not kdv_ozet %}<p>KDV hesap özeti için dönemin mizanı, defteri kebiri veya yevmiyesi gerekli.</p>{% endif %}
+{% if kdv_bu %}<p class="muted">Bu ayın KDV beyannamesi yüklü; yukarıdaki tablolarda beyandaki tutarlar defterle yan yana gösterilir.</p>
+{% elif kdv_ozet %}<p class="muted">Bu dönemin KDV beyannamesi yüklenmedi; karşılaştırma yalnızca defter üzerinden yapıldı.</p>{% endif %}
+<h2>KDV kontrolleri</h2>
+{{ kontrol_tablo(kdv_results) }}
+<h2>KDV bulguları</h2>
+{{ bulgu_tablo(kdv_findings, cases) }}

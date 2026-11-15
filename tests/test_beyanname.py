@@ -330,3 +330,48 @@ def test_asgari_kurumlar_vergisi():
     assert h.asgari_vergi == 100_00 and h.asgari_uygulandi and h.hesaplanan == 100_00
     period.gv["asgari"] = "yok"
     assert hesapla(ctx, period, client).hesaplanan == 25_00
+
+
+def _muhtasar_pdf():
+    from tests.pdfmaker import make_pdf
+    return make_pdf([
+        [(40, "MUHTASAR VE PRIM HIZMET BEYANNAMESI")],
+        [(40, "DEMO VD"), (200, "DONEM TIPI"), (300, "Yil"), (360, "2026")],
+        [(200, "Aylik"), (300, "Ay"), (360, "Eylul")],
+        [(40, "Vergi Kimlik Numarasi"), (220, "1234567890")],
+        [(40, "Soyadi (Unvani)"), (220, "DEMO A")],
+        [(40, "MATRAH VE VERGI BILDIRIMI")],
+        [(40, "Odemelerin Tur Kodu"), (200, "Odemelerin Gayrisafi Tutari"), (400, "Vergi Kesinti Tutari")],
+        [(40, "012"), (200, "100.000,00"), (400, "8.000,00")],
+        [(40, "041"), (200, "10.000,00"), (400, "2.000,00")],
+        [(40, "302"), (200, "100.000,00"), (400, "500,00")],
+        [(40, "Toplam"), (200, "110.000,00"), (400, "10.000,00")],
+        [(40, "Tevkifata Iliskin Damga Vergisi"), (400, "500,00")],
+        [(40, "TAHAKKUKA ESAS ICMAL CETVELI")],
+        [(40, "Tahakkuk Eden"), (400, "10.000,00")],
+        [(40, "Odenecek"), (400, "10.000,00")],
+    ])
+
+
+def test_muhtasar_okunur_ve_defterle_karsilastirilir():
+    from denetci.checks.stopaj import k36
+    from denetci.importer.beyanname import parse
+    b = parse(_muhtasar_pdf())
+    assert (b.tur, b.yil, b.ay, b.vkn) == ("muhtasar", 2026, 9, "1234567890")
+    assert b.alanlar["tahakkuk_eden"] == 10_000_00 and b.alanlar["damga"] == 500_00
+    assert b.alanlar["gruplar"]["kira"] == {"gayrisafi": 10_000_00, "kesinti": 2_000_00}
+    assert b.alanlar["gruplar"]["damga"]["kesinti"] == 500_00
+
+    def nl(code, name, alacak):
+        return SimpleNamespace(tarih=date(2026, 9, 30), hesap_kodu=code, borc=0, alacak=alacak, hesap_adi=name, raw_row_id=1,
+                               fis_no="1", madde_no="1", aciklama=None, evrak_no=None)
+    yev = [nl("360.01", "Ücret Gelir Vergisi Stopajı", 8_000_00), nl("360.02", "Kira Stopajı", 2_000_00),
+           nl("360.03", "Damga Vergisi", 500_00)]
+    ctx = Context("THP_VUK", date(2026, 9, 1), date(2026, 9, 30), None, yev)
+    ctx.muhtasar_beyan = b.alanlar
+    assert k36(ctx).status == "gecti"
+    yev[1].alacak = 1_000_00
+    r = k36(ctx)
+    assert r.status == "bulgu" and "Kira stopajı" in r.drafts[0].explanation
+    ctx.muhtasar_beyan = None
+    assert k36(ctx).status == "uygulanmadi"

@@ -1,0 +1,22 @@
+{% if nakit %}{% set na = nakit %}
+<section class="card r-nakit" id="nakit">
+  <div class="block-head"><h2>Nakit akışı</h2><span class="muted">{{ p.baslangic.strftime('%d.%m.%Y') }} – {{ p.bitis.strftime('%d.%m.%Y') }} · dolaylı yöntem</span></div>
+  <p>Kârın ne kadarının nakde dönüştüğünü ve paranın nereden gelip nereye gittiğini gösterir. Dönem başı ({{ na.bas_kaynak }}) ve dönem sonu ({{ na.son_kaynak }}) bakiyelerinin farkından hesaplanır.</p>
+  <figure class="r-fig">{{ nakit_grafik }}</figure>
+  <div class="r-dar r-scroll"><table class="grid small"><tbody>
+    <tr class="subtotal"><td>Dönem başı nakit ve banka (10)</td><td class="num">{{ na.nakit_bas|tl }}</td></tr>
+    {% for b in ['faaliyet', 'yatirim', 'finansman'] %}
+      {% for ad, t in na.satirlar[b] if t %}<tr><td>{{ ad }}</td><td class="num">{{ t|tl }}</td></tr>{% endfor %}
+      <tr class="subtotal"><td>{{ NAKIT_BOLUM[b] }}</td><td class="num">{{ na.toplam[b]|tl }}</td></tr>
+    {% endfor %}
+    <tr class="total"><td>Dönem sonu nakit ve banka (10)</td><td class="num">{{ na.nakit_son|tl }}</td></tr>
+  </tbody></table></div>
+  {% set f = na.toplam.faaliyet %}{% set kar = (na.satirlar.faaliyet[0][1]) %}
+  <ul class="r-yorum">
+    <li>{% if f >= 0 %}Faaliyetler dönemde {{ f|tl }} TL nakit sağladı{% else %}Faaliyetler dönemde {{ (-f)|tl }} TL nakit tüketti{% endif %}; dönem kârı {{ kar|tl }} TL.
+      {% if kar > 0 and f < kar * 0.5 %}Kârın önemli kısmı alacak veya stokta bağlı kaldı; tahsilat ve stok yönetimine bakılmalı.{% elif kar > 0 %}Kâr büyük ölçüde nakde dönmüş.{% endif %}</li>
+    {% if na.toplam.finansman > 0 and f < 0 %}<li>Faaliyetlerin nakit açığı borçlanma veya ortak desteğiyle kapatılmış.</li>{% endif %}
+    {% if na.fark|abs > 100 %}<li class="muted">Hesaplanan nakit değişimi ile kasa-banka bakiyesindeki gerçek değişim arasında {{ na.fark|tl }} TL fark var (aktif–pasif farkı veya nazım hesaplar).</li>{% endif %}
+  </ul>
+</section>
+{% endif %}

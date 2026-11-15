@@ -1,0 +1,21 @@
+{% from "rapor/_ortak.html" import kontrol_tablo, bulgu_tablo, eksik_belge %}
+{% set gecti = mutabakat_results|selectattr('status', 'equalto', 'gecti')|list|length %}
+<p class="r-giris">Bu bölüm yüklenen defterlerin kendi içinde ve birbiriyle tutarlı olup olmadığını gösterir: yevmiye fişlerinin borç–alacak denkliği, mizanın denkliği, yevmiye ile defteri kebir, muavin ve mizanın hesap hesap karşılaştırması, dönem kapsamı ve bakiyelerin sürekliliği.</p>
+{{ eksik_belge(mutabakat_a) }}
+<div class="r-kutular">
+  <div class="r-kutu"><span class="r-kutu-ad">Çalışan kontrol</span><span class="r-kutu-v">{{ mutabakat_results|length }}</span></div>
+  <div class="r-kutu"><span class="r-kutu-ad">Tutarlı</span><span class="r-kutu-v">{{ gecti }}</span></div>
+  <div class="r-kutu"><span class="r-kutu-ad">Açık bulgu</span><span class="r-kutu-v">{{ mutabakat_findings|length }}</span></div>
+</div>
+<h2>Kullanılan defterler</h2>
+<div class="r-scroll"><table class="grid small"><thead><tr><th>Belge</th><th>Dosya</th><th class="num">Kayıt</th></tr></thead><tbody>
+{% for d, name in [('mizan', 'Mizan'), ('yevmiye', 'Yevmiye defteri'), ('kebir', 'Defteri kebir'), ('muavin', 'Muavin defteri')] %}
+  {% set b = latest.get(d) %}
+  <tr><td>{{ name }}</td><td>{% if b %}{{ files[b.source_file_id].orig_name if b.source_file_id in files else 'dosya' }}{% else %}Yüklenmedi{% endif %}</td>
+    <td class="num">{{ (b.summary.get('sayilar', {}).get('kayit', 0))|sayi if b else '' }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<h2>Kontrol sonuçları</h2>
+{{ kontrol_tablo(mutabakat_results) }}
+<h2>Bulgular</h2>
+{{ bulgu_tablo(mutabakat_findings, cases) }}

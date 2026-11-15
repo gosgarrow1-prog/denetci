@@ -53,7 +53,7 @@
   {% if run %}<span class="rel-pill rel-{{ run.reliability }}">{{ icon('check' if run.reliability == 'uygun' else 'alert', 14) }}{{ RELIABILITY_LABELS[run.reliability] }}</span>{% endif %}
 </section>
 
-{% if fin %}
+{% if fin and (not asistan.gorev or asistan.gorev.key in ('finansal', 'kdv')) %}
 {% set k = fin.kalemler %}{% set pk = prev_fin.kalemler if prev_fin else {} %}
 <section class="block">
   <h2>Dönemin Finansal Özeti</h2>
@@ -71,7 +71,7 @@
 </section>
 {% endif %}
 
-{% include '_kdv_ozet.html' %}{% include '_efatura.html' %}
+{% if not asistan.gorev or asistan.gorev.key == 'kdv' %}{% include '_kdv_ozet.html' %}{% include '_efatura.html' %}{% endif %}
 
 <section class="block">
   <div class="block-head"><h2>Dikkat Gerektirenler</h2>{% if alerts %}<span class="muted">{{ onemli }} önemli · {{ bilgi }} bilgilendirme</span>{% endif %}</div>

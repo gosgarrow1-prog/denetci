@@ -1,0 +1,21 @@
+{% if benford %}{% set b = benford %}
+<section class="card r-benford" id="benford">
+  <div class="block-head"><h2>Tutarların ilk rakam dağılımı (Benford analizi)</h2><span class="muted">{{ b.n }} kayıt · {{ benford_kaynak }} · 10 TL altı hariç</span></div>
+  <p>Doğal oluşan tutarlarda ilk rakamın 1 olma olasılığı yaklaşık %30, 9 olma olasılığı yalnızca %5'tir. Elle uydurulmuş ya da bir sınırın altında tutulmaya çalışılmış tutarlar bu dağılımdan sapar. Sapma tek başına hata göstermez; bakılacak kayıtları öne çıkarır.</p>
+  <figure class="r-fig">{{ benford_grafik }}</figure>
+  <p><strong>Sonuç: {{ BENFORD_UYGUNLUK[b.uygunluk] }}</strong> (ortalama mutlak sapma {{ '%.4f'|format(b.mad)|replace('.', ',') }}; 0,012'ye kadar kabul edilebilir, 0,015 üstü uyumsuz){% if not b.yeterli %}. <span class="muted">Kayıt sayısı 300'ün altında olduğu için sonuç yalnızca bilgi amaçlıdır.</span>{% endif %}
+    {% if b.fazla %} İlk rakamı <strong>{{ b.fazla|join(', ') }}</strong> olan tutarlar beklenenden belirgin fazla.{% endif %}</p>
+  <div class="r-two">
+    <div class="r-scroll"><table class="grid small"><thead><tr><th>İlk rakam</th><th class="num">Kayıt</th><th class="num">Gerçekleşen</th><th class="num">Beklenen</th></tr></thead><tbody>
+      {% for d in range(1, 10) %}<tr><td>{{ d }}</td><td class="num">{{ b.adet.get(d, 0) }}</td><td class="num">{{ '%.1f'|format(b.gozlenen[d] * 100)|replace('.', ',') }}%</td><td class="num">{{ '%.1f'|format(BENFORD_BEKLENEN[d] * 100)|replace('.', ',') }}%</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div>
+      {% if b.tekrar %}<h3 style="margin-top:0">En sık tekrar eden tutarlar</h3>
+      <table class="grid small"><thead><tr><th class="num">Tutar (TL)</th><th class="num">Kez</th></tr></thead><tbody>
+        {% for t, n in b.tekrar %}<tr><td class="num">{{ t|tl }}</td><td class="num">{{ n }}</td></tr>{% endfor %}
+      </tbody></table>{% endif %}
+      <p class="muted">1.000 TL'nin tam katı olan (yuvarlak) tutar: {{ b.yuvarlak }} kayıt. Kira, maaş, abonelik gibi düzenli ödemeler tekrar eden tutar olarak görünmesi olağandır.</p>
+    </div>
+  </div>
+</section>
+{% endif %}

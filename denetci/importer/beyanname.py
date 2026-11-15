@@ -55,7 +55,17 @@ GV_ALANLAR = {
     "donem_kari": "Dönem Karı veya Zararı",
 }
 
-TUR_ADLARI = {"kdv": "KDV beyannamesi", "gecici": "Geçici vergi beyannamesi"}
+TUR_ADLARI = {"kdv": "KDV beyannamesi", "gecici": "Geçici vergi beyannamesi", "muhtasar": "Muhtasar ve prim hizmet beyannamesi"}
+MUHTASAR_ALANLAR = {
+    "tahakkuk_eden": "Tahakkuk Eden",
+    "odenecek": "Ödenecek",
+    "terkin_sonrasi": "Terkin Sonrası Kalan Vergi Tutarı",
+    "mahsup": "Mahsup Edilecek Toplam Vergi",
+    "damga": "Tevkifata İlişkin Damga Vergisi",
+}
+# Matrah ve vergi bildirimi tablosundaki ödeme türü kodlarının grupları (ilk iki hane). 3xx damga vergisidir.
+MUHTASAR_GRUP = {"01": "ucret", "02": "serbest_meslek", "04": "kira"}
+_TUR_SATIR_RE = re.compile(r"^\s*(\d{3})\s{2,}(-?\d{1,3}(?:\.\d{3})*,\d{2})\s{2,}(-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$")
 
 AMOUNT_RE = re.compile(r"^(.*?\S)\s{2,}(-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$")
 
@@ -220,23 +230,25 @@ def parse_lines(lines: list[str]) -> Beyanname:
     head = fold(" ".join(lines[:12]))
     if "katma deger vergisi beyannamesi" in head:
         tur, alt = "kdv", None
+    elif "muhtasar ve prim hizmet beyannamesi" in head or "muhtasar beyannamesi" in head:
+        tur, alt = "muhtasar", None
     elif "gecici vergi beyannamesi" in head:
         tur = "gecici"
         alt = "kurum" if "kurumlar vergisi" in head else ("sahis" if "gelir vergisi" in head else None)
     else:
-        raise BeyannameHatasi("Bu PDF tanınan bir beyanname değil. Şimdilik KDV ve geçici vergi beyannameleri okunuyor.")
+        raise BeyannameHatasi("Bu PDF tanınan bir beyanname değil. Şimdilik KDV, geçici vergi ve muhtasar beyannameleri okunuyor.")
 
     m = _bul(lines, r"Yili?\s{2,}(\d{4})")
     if not m:
         raise BeyannameHatasi("Beyannamede yıl bulunamadı.")
     yil = int(m)
-    if tur == "kdv":
+    if tur in ("kdv", "muhtasar"):
         if "3 aylik" in head or "uc aylik" in head:
-            raise BeyannameHatasi("Üç aylık KDV beyannamesi henüz desteklenmiyor.")
+            raise BeyannameHatasi(f"Üç aylık {'KDV' if tur == 'kdv' else 'muhtasar'} beyannamesi henüz desteklenmiyor.")
         m = _bul(lines, r"\bAy\s{2,}(\S+)")
         ay_adi = fold(m) if m else ""
         if ay_adi not in AYLAR:
-            raise BeyannameHatasi("KDV beyannamesinde ay bulunamadı.")
+            raise BeyannameHatasi(f"{'KDV' if tur == 'kdv' else 'Muhtasar'} beyannamesinde ay bulunamadı.")
         ay = AYLAR.index(ay_adi) + 1
     else:
         m = _bul(lines, r"Donem\s{2,}(\d)\.\s*Donem")
@@ -247,16 +259,42 @@ def parse_lines(lines: list[str]) -> Beyanname:
     vkn = _bul(lines, r"Vergi Kimlik Numarasi\s{2,}(\d{10,11})\b")
     vd = _bul(lines, r"^\s*(.+?)\s+VD\b")
     onay = _bul(lines, r"Onay Zamani\s*:\s*([\d.]+\s*-\s*[\d:]+)")
-    alanlar = _alanlar(_tutarlar(lines), KDV_ALANLAR if tur == "kdv" else GV_ALANLAR)
+    alanlar = _alanlar(_tutarlar(lines), {"kdv": KDV_ALANLAR, "gecici": GV_ALANLAR, "muhtasar": MUHTASAR_ALANLAR}[tur])
     if tur == "kdv":
         alanlar.update(_oranli(lines))
         alanlar["_oran_surumu"] = 1
-    need = ("sonraki_devreden", "toplam_kdv") if tur == "kdv" else ("matrah", "hesaplanan")
+    if tur == "muhtasar":
+        alanlar.update(_muhtasar_turler(lines))
+    need = {"kdv": ("sonraki_devreden", "toplam_kdv"), "gecici": ("matrah", "hesaplanan"),
+            "muhtasar": ("tahakkuk_eden", "turler")}[tur]
     if not all(k in alanlar for k in need):
         raise BeyannameHatasi("Beyannamedeki tutarlar okunamadı. Form biçimi değişmiş olabilir.")
     return Beyanname(tur, alt, yil, ay, vkn, _unvan(lines), vd.strip() if vd else None,
                      " ".join(onay.split()) if onay else None,
                      "duzeltme" in head, alanlar)
+
+
+def _muhtasar_turler(lines: list[str]) -> dict:
+    """Matrah ve vergi bildirimi tablosu: ödeme türü kodu, gayrisafi tutar, kesinti. Gruplara göre toplam da döner."""
+    turler, i = [], next((k for k, ln in enumerate(lines) if "matrah ve vergi bildirimi" in fold(ln)), None)
+    if i is None:
+        return {}
+    for ln in lines[i + 1:i + 60]:
+        f = fold(ln)
+        if f.startswith("toplam"):
+            break
+        m = _TUR_SATIR_RE.match(ln)
+        if m:
+            turler.append({"kod": m.group(1), "gayrisafi": _kurus(m.group(2)), "kesinti": _kurus(m.group(3))})
+    if not turler:
+        return {}
+    gruplar: dict[str, dict] = {}
+    for t in turler:
+        g = "damga" if t["kod"].startswith("3") else MUHTASAR_GRUP.get(t["kod"][:2], "diger")
+        x = gruplar.setdefault(g, {"gayrisafi": 0, "kesinti": 0})
+        x["gayrisafi"] += t["gayrisafi"]
+        x["kesinti"] += t["kesinti"]
+    return {"turler": turler, "gruplar": gruplar}
 
 
 def peek(content: bytes) -> dict:
