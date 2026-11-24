@@ -20,7 +20,7 @@
 {% for f in findings %}
   {% set cs = cases.get(f.fingerprint) %}
   <tr><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td>
-    <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
+    <td>{{ f.title }}{% if f.explanation %}<div class="muted">{{ f.explanation }}</div>{% endif %}{% set neden = NEDEN(f.rule_id) %}{% if neden %}<div class="r-neden"><strong>Neden önemli:</strong> {{ neden }}</div>{% endif %}{% set ad = ADIMLAR(f) %}{% if ad %}<div class="r-neden"><strong>Yapılacak:</strong> {{ ad|join(' ') }}</div>{% endif %}{% if cs and cs.note %}<div class="r-note">Not: {{ cs.note }}</div>{% endif %}</td>
     <td class="num">{{ f.amount|tl if f.amount is not none else '' }}</td>
     <td>{{ STATUS_LABELS[cs.status] if cs else 'Yeni' }}</td></tr>
 {% endfor %}

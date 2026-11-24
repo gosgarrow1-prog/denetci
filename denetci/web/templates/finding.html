@@ -38,7 +38,7 @@
 
   {% if acik.dikkat %}
   <section class="bulgu-not">
-    <strong>Şu durumlarda sorun olmayabilir</strong>
+    <strong>{{ acik.dikkat_baslik }}</strong>
     <ul>{% for d in acik.dikkat %}<li>{{ d }}</li>{% endfor %}</ul>
   </section>
   {% endif %}

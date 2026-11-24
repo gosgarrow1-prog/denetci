@@ -134,6 +134,9 @@ templates.env.globals["STATUS_LABELS"] = STATUS_LABELS
 KIND_LABELS = {"A": "Aritmetik/veri tutarsızlığı", "K": "Kurala dayalı olası uygunsuzluk", "I": "İstatistiksel anomali",
                "D": "Ek belge / mesleki değerlendirme"}
 templates.env.globals["KIND_LABELS"] = KIND_LABELS
+templates.env.globals["HUKUM"] = lambda kind: aciklama.HUKUM.get(kind, aciklama.HUKUM["K"])[0]
+templates.env.globals["NEDEN"] = lambda rule_id: aciklama.NEDEN.get(rule_id, "")
+templates.env.globals["ADIMLAR"] = lambda f: aciklama.adimlar(f.next_step)[0]
 templates.env.globals["kod_aranir"] = lambda u: kod_aranir(u)
 SEVERITY_ORDER = {"Kritik": 0, "Yüksek": 1, "Orta": 2, "Düşük": 3}
 

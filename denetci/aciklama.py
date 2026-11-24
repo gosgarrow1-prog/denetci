@@ -74,6 +74,10 @@ _DAYANAK_NOT = re.compile(
     r"Süreler doğrulanmalı\.)", re.IGNORECASE)
 
 
+# Hüküm etiketinin zaten söylediği cümleler.
+_GEREKSIZ = {"yalnızca bir göstergedir", "bir göstergedir", "tek başına hata göstermez"}
+
+
 def _cumleler(metin: str) -> list[str]:
     """Metni cümlelere böler (kısaltma ve tutarlardaki noktalara dokunmadan)."""
     parcalar = re.split(r"(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ0-9])", (metin or "").strip())
@@ -94,7 +98,7 @@ def dikkat(certainty: str, exceptions: str | None) -> list[str]:
         for cumle in _cumleler(kaynak):
             cumle = _BELIRSIZ_GIRIS.sub("", cumle)
             anahtar = _sade(cumle)
-            if not anahtar or anahtar in gorulen or any(anahtar in g or g in anahtar for g in gorulen):
+            if not anahtar or anahtar in _GEREKSIZ or anahtar in gorulen or any(anahtar in g or g in anahtar for g in gorulen):
                 continue
             gorulen.add(anahtar)
             maddeler.append(cumle[0].upper() + cumle[1:])
@@ -138,6 +142,7 @@ def bulgu(f, rule=None) -> dict:
         "neden": NEDEN.get(f.rule_id) or (rule.description if rule else ""),
         "adimlar": maddeler,
         "belgeler": belgeler,
+        "dikkat_baslik": "Olası nedenler" if f.kind == "A" else "Şu durumlarda sorun olmayabilir",
         "dikkat": dikkat(f.certainty, rule.exceptions if rule else None),
         "dayanak": dayanak_metni,
         "teyitsiz": teyitsiz,

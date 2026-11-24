@@ -25,7 +25,7 @@
   {% for f in findings %}
     {% set st = STATUS_LABELS[cases[f.fingerprint].status] if f.fingerprint in cases else 'Yeni' %}
     {{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title,
-       'detail': KIND_LABELS[f.kind] ~ ' · ' ~ f.severity ~ ' önem · takip: ' ~ st, 'amount': f.amount,
+       'detail': HUKUM(f.kind) ~ ' · ' ~ (NEDEN(f.rule_id) or (f.severity ~ ' önem')) ~ ' · Takip: ' ~ st, 'amount': f.amount,
        'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}
   {% endfor %}
   </div>

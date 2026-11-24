@@ -69,7 +69,7 @@
   <div class="block-head"><h2>Bulgular</h2><span class="muted">{{ a_findings|length }} açık</span></div>
   {% if a_findings %}
   <div class="alerts">
-  {% for f in a_findings %}{{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title, 'detail': KIND_LABELS[f.kind], 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
+  {% for f in a_findings %}{{ alert_row({'level': {'Kritik': 'onemli', 'Yüksek': 'onemli', 'Orta': 'dikkat'}.get(f.severity, 'bilgi'), 'text': f.title, 'detail': HUKUM(f.kind) ~ ' · ' ~ (NEDEN(f.rule_id) or f.explanation), 'amount': f.amount, 'href': '/mukellef/' ~ c.id ~ '/bulgu/' ~ f.id, 'action': 'İncele'}) }}{% endfor %}
   </div>
   {% elif run %}<div class="alert-row lv-ok"><span class="al-ic">{{ icon('check', 22) }}</span><span class="al-text">Bu analizde açık bulgu yok.</span></div>
   {% else %}<p class="muted">Belgeler yüklenince kontroller çalışır.</p>{% endif %}
