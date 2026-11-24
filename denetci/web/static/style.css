@@ -635,3 +635,33 @@ label.check input { min-height: 0; width: 18px; height: 18px; accent-color: var(
 .tk-tbl .tk-act { text-align: right; white-space: nowrap; }
 .tk-tbl .tk-act .btn { margin-left: 6px; }
 .tbl-scroll { overflow-x: auto; }
+
+/* ---- Bulgu ayrıntısı: Ne buldu / Neden önemli / Ne yapmalı ---- */
+.bulgu { display: flex; flex-direction: column; gap: 14px; max-width: 860px; }
+.bulgu-bas { display: flex; flex-direction: column; gap: 8px; }
+.bulgu-bas p { margin: 0; }
+.bulgu-rozetler { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; }
+.hukum { font-size: 12.5px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+.hukum-kesin { background: var(--red-soft); color: var(--red-ink); }
+.hukum-olasi { background: var(--amber-soft); color: var(--amber-ink); }
+.hukum-dikkat { background: var(--blue-soft); color: var(--blue); }
+.hukum-belge { background: #ede9fe; color: #5b21b6; }
+.bulgu-hesap { color: var(--muted); }
+.bulgu-tutar { font-size: 24px; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
+.bulgu-blok { gap: 8px; }
+.bulgu-blok p { margin: 0; font-size: 15.5px; line-height: 1.6; }
+.bulgu-blok h2 { display: flex; align-items: center; gap: 10px; }
+.bno { width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font: 700 13px/1 var(--f-metin, inherit);
+  display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.bulgu-yap { border-left: 4px solid var(--green); }
+.bulgu-adim { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 15.5px; line-height: 1.55; }
+.bulgu-belge { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.chip { background: var(--gray-soft); color: var(--ink-2); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+.bulgu-not { background: var(--amber-soft); border-radius: 4px; padding: 14px 18px; color: var(--amber-ink); font-size: 14px; }
+.bulgu-not ul { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.bulgu-takip { display: flex; flex-direction: column; gap: 10px; }
+.bulgu-takip button { align-self: flex-start; }
+.bulgu-teknik { font-size: 13px; color: var(--muted); padding: 4px 2px 20px; }
+.bulgu-teknik summary { color: var(--muted); font-weight: 600; font-size: 13px; }
+.bulgu-teknik dl { display: grid; grid-template-columns: 90px 1fr; gap: 6px 12px; margin: 10px 0 0; }
+.bulgu-teknik dt { font-weight: 600; } .bulgu-teknik dd { margin: 0; }

@@ -23,7 +23,7 @@ from ..importer.load import DuplicateFile, ImportError_, confirm, create_draft, 
 from ..importer.luca import PROFILE_LABELS
 from ..importer.tables import DOC_FIELDS, DOC_LABELS, FIELD_DEFS, REQUIRED
 from ..yz import maliyet as yz_maliyet
-from .. import takip, yil_sonu
+from .. import aciklama, takip, yil_sonu
 from ..models import (Buro, IsDurumu, YzSoru, AnalysisRun, AuditLog, Client, Declaration, Finding, FindingCase, FindingEvidence, ImportBatch, InvoiceList, Period, RawRow,
                       SourceFile, User)
 from ..parsing import ParseError, kurus_str, parse_amount
@@ -1866,7 +1866,8 @@ def create_app() -> FastAPI:
             evidence.append({"ev": ev, "raw": raw, "batch": batch, "sf": sf, "header": header.cells if header else []})
         case = s.scalar(select(FindingCase).where(FindingCase.client_id == cid, FindingCase.fingerprint == f.fingerprint))
         rule = next((r for r, _ in ALL_RULES if r.id == f.rule_id), None)
-        return render(request, "finding.html", c=c, f=f, run=run, evidence=evidence, case=case, rule=rule)
+        return render(request, "finding.html", c=c, f=f, run=run, evidence=evidence, case=case, rule=rule,
+                      acik=aciklama.bulgu(f, rule))
 
     @app.post("/mukellef/{cid}/bulgu/{fid}/durum")
     async def finding_status(cid: int, fid: int, request: Request, user=Depends(current_user), s=Depends(get_session)):

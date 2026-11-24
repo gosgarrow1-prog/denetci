@@ -1,46 +1,83 @@
 {% extends "base.html" %}
-{% block crumb %} › <a href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Analiz #{{ run.id }}</a> › {{ f.rule_id }}{% endblock %}
+{% block crumb %} › <a href="/mukellef/{{ c.id }}/analiz/{{ run.id }}">Analiz #{{ run.id }}</a> › Bulgu{% endblock %}
 {% block content %}
-<h1>{{ f.title }}</h1>
-<table class="grid narrowt">
-<tbody>
-<tr><th>Önem</th><td><span class="sev sev-{{ f.severity }}">{{ f.severity }}</span></td></tr>
-<tr><th>Tür</th><td>{{ KIND_LABELS[f.kind] }}</td></tr>
-<tr><th>Kural</th><td>{{ f.rule_id }} {{ rule.title if rule }} · sürüm {{ f.rule_version }}</td></tr>
-<tr><th>Dayanak</th><td>{{ rule.basis if rule }}{% if rule and not rule.basis_verified %} <span class="tag warn">doğrulanmadı</span>{% endif %}</td></tr>
-<tr><th>Tutar</th><td>{{ f.amount|tl }} TL</td></tr>
-<tr><th>Hesap</th><td>{{ f.hesap_kodu or '—' }}</td></tr>
-</tbody>
-</table>
-
-<h2>Tespit</h2><p>{{ f.explanation }}</p>
-<h2>Kesinlik</h2><p>{{ f.certainty }}</p>
-<h2>Önerilen inceleme adımı</h2><p>{{ f.next_step }}</p>
-{% if rule %}<p class="muted">Bilinen istisnalar: {{ rule.exceptions }}</p>{% endif %}
-
-<h2>Kaynak kayıtlar ({{ evidence|length }})</h2>
-{% for e in evidence %}
-<div class="evidence">
-  <div><strong>{{ e.ev.label }}</strong> — {{ e.sf.orig_name }} · sayfa “{{ e.raw.sheet }}” · satır {{ e.raw.row_no }}{% if e.raw.note %} · <em>{{ e.raw.note }}</em>{% endif %}</div>
-  <div class="scroll">
-  <table class="grid small">
-    {% if e.header %}<thead><tr>{% for h in e.header %}<th>{{ h if h is not none else '' }}</th>{% endfor %}</tr></thead>{% endif %}
-    <tbody><tr>{% for v in e.raw.cells %}<td>{{ v if v is not none else '' }}</td>{% endfor %}</tr></tbody>
-  </table>
+<div class="bulgu">
+  <div class="bulgu-bas">
+    <div class="bulgu-rozetler">
+      <span class="hukum hukum-{{ acik.hukum_sinif }}">{{ acik.hukum }}</span>
+      <span class="sev sev-{{ f.severity }}">Önem: {{ f.severity }}</span>
+      {% if f.hesap_kodu %}<span class="bulgu-hesap">Hesap {{ f.hesap_kodu }}</span>{% endif %}
+    </div>
+    <h1>{{ f.title }}</h1>
+    {% if f.amount %}<div class="bulgu-tutar">{{ f.amount|tl }} TL</div>{% endif %}
+    <p class="muted">{{ acik.hukum_aciklama }}</p>
   </div>
-</div>
-{% else %}
-<p>Bu bulgu tek bir kayda değil, dosyanın toplamlarına dayanıyor.</p>
-{% endfor %}
 
-<section class="card">
-<h2>Takip</h2>
-<p class="muted">Durum değiştirmek kaynak veriyi değiştirmez. Not ve durum, bu bulgu sonraki analizlerde de görülürse korunur.</p>
-<form method="post" action="/mukellef/{{ c.id }}/bulgu/{{ f.id }}/durum">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <label>Durum <select name="durum">{% for k, v in STATUS_LABELS.items() %}<option value="{{ k }}" {% if case and case.status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
-  <label>Not <textarea name="not" rows="3">{{ case.note if case and case.note else '' }}</textarea></label>
-  <button>Kaydet</button>
-</form>
-</section>
+  <section class="card bulgu-blok">
+    <h2><span class="bno">1</span> Ne buldu?</h2>
+    <p>{{ acik.ne_buldu }}</p>
+  </section>
+
+  {% if acik.neden %}
+  <section class="card bulgu-blok">
+    <h2><span class="bno">2</span> Neden önemli?</h2>
+    <p>{{ acik.neden }}</p>
+  </section>
+  {% endif %}
+
+  <section class="card bulgu-blok bulgu-yap">
+    <h2><span class="bno">{{ 3 if acik.neden else 2 }}</span> Ne yapmalı?</h2>
+    {% if acik.adimlar|length > 1 %}
+    <ol class="bulgu-adim">{% for a in acik.adimlar %}<li>{{ a }}</li>{% endfor %}</ol>
+    {% else %}<p>{{ acik.adimlar[0] if acik.adimlar else f.next_step }}</p>{% endif %}
+    {% if acik.belgeler %}
+    <div class="bulgu-belge"><strong>Bakılacak belgeler:</strong>
+      {% for b in acik.belgeler %}<span class="chip">{{ b }}</span>{% endfor %}</div>
+    {% endif %}
+  </section>
+
+  {% if acik.dikkat %}
+  <section class="bulgu-not">
+    <strong>Şu durumlarda sorun olmayabilir</strong>
+    <ul>{% for d in acik.dikkat %}<li>{{ d }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>Defterdeki satırlar ({{ evidence|length }})</h2>
+    {% for e in evidence %}
+    <div class="evidence">
+      <div><strong>{{ e.ev.label }}</strong> <span class="muted">· {{ e.sf.orig_name }} · satır {{ e.raw.row_no }}{% if e.raw.note %} · {{ e.raw.note }}{% endif %}</span></div>
+      <div class="scroll">
+      <table class="grid small">
+        {% if e.header %}<thead><tr>{% for h in e.header %}<th>{{ h if h is not none else '' }}</th>{% endfor %}</tr></thead>{% endif %}
+        <tbody><tr>{% for v in e.raw.cells %}<td>{{ v if v is not none else '' }}</td>{% endfor %}</tr></tbody>
+      </table>
+      </div>
+    </div>
+    {% else %}
+    <p class="muted">Bu bulgu tek bir satıra değil, dosyanın toplamlarına dayanıyor.</p>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>Takip</h2>
+    <form method="post" action="/mukellef/{{ c.id }}/bulgu/{{ f.id }}/durum" class="bulgu-takip">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label>Durum <select name="durum">{% for k, v in STATUS_LABELS.items() %}<option value="{{ k }}" {% if case and case.status == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Not <textarea name="not" rows="3" placeholder="Ör. Mükellefle görüşüldü, fatura iki kez girilmiş, düzeltildi.">{{ case.note if case and case.note else '' }}</textarea></label>
+      <button>Kaydet</button>
+    </form>
+    <p class="muted">Not ve durum sonraki analizlerde de korunur; defter verisine dokunmaz.</p>
+  </section>
+
+  <details class="bulgu-teknik">
+    <summary>Teknik ayrıntı</summary>
+    <dl>
+      <dt>Kontrol</dt><dd>{{ f.rule_id }}{% if rule %} · {{ rule.title }}{% endif %} · sürüm {{ f.rule_version }}</dd>
+      <dt>Tür</dt><dd>{{ KIND_LABELS[f.kind] }}</dd>
+      {% if acik.dayanak %}<dt>Dayanak</dt><dd>{{ acik.dayanak }}{% if acik.teyitsiz %} <span class="tag warn">henüz teyit edilmedi</span>{% endif %}</dd>{% endif %}
+    </dl>
+  </details>
+</div>
 {% endblock %}
