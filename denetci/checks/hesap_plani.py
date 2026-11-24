@@ -13,8 +13,9 @@ from ..parsing import fold, kurus_str
 from ..thp import GELIR_ALACAK, GIDER_BORC, THP, YEDI_A, YEDI_B, serbest
 from .rules import D0, Context, Draft, Evidence, Result, Rule
 
-DAYANAK = ("1 Sıra No.lu Muhasebe Sistemi Uygulama Genel Tebliği (Tekdüzen Hesap Planı ve hesapların işleyişi), "
-           "e-Defter uygulamasında hesap kodlarının bu plana göre kullanılması.")
+DAYANAK = ("VUK 175 ve mükerrer 257. maddelerine dayanan 1 Sıra No.lu Muhasebe Sistemi Uygulama Genel Tebliği "
+           "(Tekdüzen Hesap Planı ve hesapların işleyişi); Elektronik Defter Genel Tebliği (Sıra No: 1). Tebliğlerin "
+           "varlığı ve dayanağı Vergino'da doğrulandı (2026-11-25); hesap listesi tebliğ ekiyle satır satır karşılaştırılmadı.")
 CERCEVE = ("THP_VUK",)
 BELGE_ADI = {"mizan": "mizan", "yevmiye": "yevmiye", "kebir": "defteri kebir", "muavin": "muavin"}
 
