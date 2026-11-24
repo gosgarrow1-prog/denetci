@@ -44,7 +44,7 @@
   {% endif %}
   <div class="sect">Vergi ve analiz</div>
   <a class="nav {{ 'on' if active == 'kdv' }}" href="/mukellef/{{ sc.id }}/kdv{{ q }}">{{ icon('percent') }}KDV Ön Kontrol</a>
-  <a class="nav {{ 'on' if active in ('risk', 'mutabakat') }}" href="/mukellef/{{ sc.id }}/risk{{ q }}">{{ icon('shield') }}Hata ve Risk Taraması</a>
+  <a class="nav {{ 'on' if active in ('risk', 'mutabakat', 'hesap_plani') }}" href="/mukellef/{{ sc.id }}/risk{{ q }}">{{ icon('shield') }}Hata ve Risk Taraması</a>
   <a class="nav {{ 'on' if active == 'stopaj' }}" href="/mukellef/{{ sc.id }}/stopaj{{ q }}">{{ icon('checks') }}Stopaj ve Muhtasar</a>
   <a class="nav {{ 'on' if active in ('finansal', 'ceyrek') }}" href="/mukellef/{{ sc.id }}/finansal{{ q }}">{{ icon('trend') }}Finansal Analiz</a>
   <a class="nav {{ 'on' if active == 'gecici' }}" href="/mukellef/{{ sc.id }}/gecici-vergi{{ q }}">{{ icon('calendar') }}Geçici Vergi</a>

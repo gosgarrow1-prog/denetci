@@ -27,7 +27,7 @@ KONULAR = [
     Konu("kdv", "KDV", "KDV hesap özeti, oranlara göre matrah, beyan–defter karşılaştırması, KDV kontrolleri."),
     Konu("gecici", "Geçici vergi", "Yılbaşından ticari kâr, matrah ve vergi hesabı, dönem sonu hazırlığı."),
     Konu("ceyrek", "Çeyrek analizi", "Çeyreğin ay ay gelir tablosu, önceki çeyrek ve geçen yılla karşılaştırma."),
-    Konu("risk", "Hata ve risk taraması", "Ters bakiye, kasa, ortaklar cari, örtülü sermaye, binek oto ve diğer riskler."),
+    Konu("risk", "Hata ve risk taraması", "Ters bakiye, kasa, ortaklar cari, örtülü sermaye, binek oto, Tekdüzen hesap planı uyumu ve diğer riskler."),
     Konu("mutabakat", "Defter mutabakatı", "Yevmiye, kebir, muavin ve mizanın birbiriyle tutarlılığı."),
     Konu("fatura", "Fatura mutabakatı", "e-Fatura / e-Arşiv listesinin deftere işlenip işlenmediği."),
     Konu("kredibilite", "Kredibilite (banka görünümü)", "Bankanın kredi verirken baktığı oranlar, Altman Z, A–E not ve istenecek belgeler."),

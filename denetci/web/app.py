@@ -1173,9 +1173,10 @@ def create_app() -> FastAPI:
             v[f"{konu}_a"] = a
             v[f"{konu}_results"], v[f"{konu}_findings"] = filtre(a)
             if konu == "risk":
-                if "stopaj" in by_key:  # stopaj kontrolleri ayrı sayfada; raporda risk başlığı altında
-                    r2, f2 = filtre(by_key["stopaj"])
-                    v["risk_results"], v["risk_findings"] = v["risk_results"] + r2, v["risk_findings"] + f2
+                for ek in ("hesap_plani", "stopaj"):  # ayrı sayfadaki kontroller raporda risk başlığı altında
+                    if ek in by_key:
+                        r2, f2 = filtre(by_key[ek])
+                        v["risk_results"], v["risk_findings"] = v["risk_results"] + r2, v["risk_findings"] + f2
 
     @app.get("/mukellef/{cid}/rapor", response_class=HTMLResponse)
     def report_page(cid: int, request: Request, user=Depends(current_user), s=Depends(get_session), donem: int | None = None,
@@ -1417,7 +1418,7 @@ def create_app() -> FastAPI:
     @app.get("/mukellef/{cid}/{key}", response_class=HTMLResponse)
     def analysis_page(cid: int, key: str, request: Request, user=Depends(current_user), s=Depends(get_session),
                       donem: int | None = None):
-        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk", "stopaj": "stopaj"}
+        keys = {"kdv": "kdv", "mutabakat": "mutabakat", "risk": "risk", "stopaj": "stopaj", "hesap-plani": "hesap_plani"}
         if key not in keys:
             _404()
         c = s.get(Client, cid) or _404()
